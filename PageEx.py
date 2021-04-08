@@ -1102,7 +1102,6 @@ class PageEx(Page):
         """
         frame_id = params["frameId"] if state != "navigated" else params["frame"]["id"]
         if frame_id == self.page_id:
-            print("[PAGE STATE]", state)
             self.loading_state = state
 
     async def HandleJavaScriptDialog(self, accept: bool, promptText: Optional[str] = "") -> None:
@@ -1129,6 +1128,7 @@ class PageEx(Page):
                                     на которую осуществляется переход.
         :return:
         """
+        if self.page_domain_enabled: self.loading_state = "do_navigate"
         _url_ = ("data:text/html," + quote(url)
             # передать разметку как data-url, если начало этой строки
             # не содержит признаков url-адреса или передать "как есть",
@@ -1148,11 +1148,19 @@ class PageEx(Page):
     ) -> None:
         """
         Дожидается указанного состояния загрузки документа.
+            Если включены уведомления домена Page — дожидается, пока основной фрейм
+            страницы не перестанет загружаться.
         :param desired_state:       Желаемое состояние загрузки. По умолчанию == полное.
         :param interval:            Таймаут ожидания.
         :return:        None
         """
-        await asyncio.sleep(1)
+
+        if self.page_domain_enabled:
+            while self.loading_state != "stopped":
+                await asyncio.sleep(.1)
+        else:
+            await asyncio.sleep(1)
+
         while (await self.Eval("document.readyState"))["value"] != desired_state:
             await asyncio.sleep(interval)
 
@@ -1383,6 +1391,7 @@ class PageEx(Page):
                                             Установите False, если это поведение не требуется.
         :return:
         """
+        if self.page_domain_enabled: self.loading_state = "do_reload"
         args = {}
         if ignoreCache:
             args.update({"ignoreCache": ignoreCache})
