@@ -22,6 +22,8 @@ class PageEx(Page):
         self._root: Union[Node, None] = None
         self.style_sheets = []                  # Если домен CSS активирован, сюда попадут все 'styleSheetId' страницы
 
+        self.loading_state = ""
+
         self.dom_domain_enabled       = False
         self.log_domain_enabled       = False
         self.network_domain_enabled   = False
@@ -1075,6 +1077,9 @@ class PageEx(Page):
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-enable
         :return:
         """
+        await self.AddListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher, "started")
+        await self.AddListenerForEvent("Page.frameNavigated", self._StateLoadWatcher, "navigated")
+        await self.AddListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher, "stopped")
         await self.Call("Page.enable")
         self.page_domain_enabled = True
 
@@ -1084,8 +1089,21 @@ class PageEx(Page):
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-disable
         :return:
         """
+        self.RemoveListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher)
+        self.RemoveListenerForEvent("Page.frameNavigated", self._StateLoadWatcher)
+        self.RemoveListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher)
         await self.Call("Page.disable")
         self.page_domain_enabled = False
+
+    async def _StateLoadWatcher(self, params: dict, state: str) -> None:
+        """
+        Устанавливает состояние загрузки фрейма страницы, если включены уведомления
+            домена Page.
+        """
+        frame_id = params["frameId"] if state != "navigated" else params["frame"]["id"]
+        if frame_id == self.page_id:
+            print("[PAGE STATE]", state)
+            self.loading_state = state
 
     async def HandleJavaScriptDialog(self, accept: bool, promptText: Optional[str] = "") -> None:
         """
