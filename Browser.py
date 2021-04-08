@@ -52,6 +52,7 @@ class Browser:
             dev_tool_profiles:      Optional[bool] = False,
             url: Optional[Union[str, bytes, None]] = None,
             flags:       Optional[list] = None,
+            default_tab: Optional[bool] = False,
             browser_path: Optional[str] = "",
             debug_port:   Optional[any] = 9222,
             browser_pid:  Optional[int] = 0,
@@ -105,6 +106,10 @@ class Browser:
                                     [ "--no-first-run", "--no-default-browser-check", "--browser-test",
                                     "--window-position=400,100", "--window-size=800,600", ... ]
                                     https://peter.sh/experiments/chromium-command-line-switches/
+
+        :param default_tab:     Если 'True' вкладка будет открыта с дефолтным бэкграундом, как если бы
+                                    пользователь открыл её обычным способом, не зависимо от того, что
+                                    было передано в параметре 'url'.
 
         :param browser_path:    Путь до исполняемого файла браузера. Если не указан, в реестре
                                     будет произведён поиск установленного браузера Chrome.
@@ -188,6 +193,11 @@ class Browser:
         if data_url_len > 30_000:
             Warning(f"Length data url ({data_url_len}) is approaching to critical length = 32767 symbols!")
 
+        if default_tab:
+            url = "chrome://newtab/"
+            # ! app не может быть True, если браузер стартует с дефолтной страницы
+            app = False
+
         # Если "app" == True:
         _url_ = (
             # открыть dataURL без содержимого, если в "url" ничего не передано
@@ -195,9 +205,9 @@ class Browser:
                 # иначе установить переданную разметку, если она пришла как строка
                 # и начало этой строки не содержит признаков url-адреса
                 "--app=data:text/html," + quote(url)
-                    if type(url) is str and "http" not in url[:4] else "--app=" + url
+                    if type(url) is str and "http" != url[:4] and "chrome" != url[:6] else "--app=" + url
                         # передать "как есть", раз это строка содержащая url
-                        if type(url) is str and "http" in url[:4] else
+                        if type(url) is str and "http" == url[:4] or "chrome" == url[:6] else
                             # иначе декодировать и установить её как Base64
                             "--app=data:text/html;Base64," + url.decode()
 
@@ -206,12 +216,13 @@ class Browser:
             # иначе передать разметку как data-url, если начало этой строки
             # не содержит признаков url-адреса
             "data:text/html," + quote(url)
-                if type(url) is str and "http" not in url[:4] else url
+                if type(url) is str and "http" != url[:4] and "chrome" != url[:6] else url
                     # или передать "как есть", раз это строка содержащая url
-                    if type(url) is str and "http" in url[:4] else
+                    if type(url) is str and "http" == url[:4] or "chrome" == url[:6] else
                         # иначе декодировать и установить её как Base64
                         "data:text/html;Base64," + url.decode()
         )
+
         self.position = position
         self.sizes    = sizes
         self.f_no_first_run  = f_no_first_run

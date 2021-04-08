@@ -1134,6 +1134,7 @@ class PageEx(Page):
         :param interval:            Таймаут ожидания.
         :return:        None
         """
+        await asyncio.sleep(1)
         while (await self.Eval("document.readyState"))["value"] != desired_state:
             await asyncio.sleep(interval)
 
