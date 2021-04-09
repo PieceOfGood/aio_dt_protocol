@@ -1119,22 +1119,29 @@ class PageEx(Page):
             args.update({"promptText": promptText})
         await self.Call("Page.handleJavaScriptDialog", args)
 
-    async def Navigate(self, url: Union[str, bytes], wait_for_load: Optional[bool] = True) -> None:
+    async def Navigate(
+            self,
+            url: Optional[Union[str, bytes]] = "about:blank",
+            default_tab: Optional[bool] = False,
+            wait_for_load: Optional[bool] = True
+    ) -> None:
         """
         Переходит на адрес указанного 'url'.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-navigate
         :param url:             Адрес, по которому происходит навигация.
+        :param default_tab:     Переход в дефолтное состояние вкладки, не зависимо от url.
         :param wait_for_load:   Если 'True' - ожидает 'complete' у 'document.readyState' страницы,
                                     на которую осуществляется переход.
         :return:
         """
+        if default_tab: url = "chrome://newtab/"
         if self.page_domain_enabled: self.loading_state = "do_navigate"
         _url_ = ("data:text/html," + quote(url)
             # передать разметку как data-url, если начало этой строки
             # не содержит признаков url-адреса или передать "как есть",
-            if type(url) is str and "http" not in url[:4] else url
-                # раз это строка содержащая url
-                if type(url) is str and "http" in url[:4] else
+            if type(url) is str and "http" != url[:4] and "chrome" != url[:6] and url != "about:blank" else url
+                # раз это строка содержащая url, или переход на пустую страницу
+                if type(url) is str and "http" == url[:4] or "chrome" == url[:6] or url == "about:blank" else
                     # иначе декодировать и установить её как Base64
                     "data:text/html;Base64," + url.decode()
         )
