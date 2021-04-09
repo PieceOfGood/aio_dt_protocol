@@ -251,9 +251,9 @@ class Browser:
         self.f_browser_test  = f_browser_test
         self.f_incognito     = f_incognito
         self.f_kiosk         = f_kiosk
-        self.browser_pid = browser_pid if browser_pid > 0 else self._RunChrome(_url_, flags)
+        self.browser_pid = browser_pid if browser_pid > 0 else self._RunBrowser(_url_, flags)
 
-    def _RunChrome(self, url: str, flags: list) -> int:
+    def _RunBrowser(self, url: str, flags: list) -> int:
         """
         Запускает браузер с переданными флагами.
         :param url:             Адрес. Если передан, будет загружен в первой вкладке.
@@ -303,7 +303,7 @@ class Browser:
             run_args += flags
         return subprocess.Popen(run_args).pid
 
-    def KillChrome(self) -> None:
+    def KillBrowser(self) -> None:
         """
         "Убивает" процесс браузера. Рекомендуется только в крайних случаях.
             Лучше всего вызывать метод Call("Browser.close") у инстанса страницы
