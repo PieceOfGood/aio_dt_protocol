@@ -294,9 +294,7 @@ class PageEx(Page):
         :param selector:        Селектор.
         :return:                <Node>
         """
-        repeat = 0;
-        max_repeat = 2;
-        error = ""
+        repeat = 0; max_repeat = 2; error = ""
         root_node_id = (await self.Call("DOM.getDocument"))["root"]["nodeId"]
         while repeat < max_repeat:
             try:
@@ -305,8 +303,7 @@ class PageEx(Page):
                 })
                 return Node(self, **node) if node["nodeId"] > 0 else None
             except Exception as e:
-                repeat += 1;
-                error = str(e)
+                repeat += 1; error = str(e)
         raise Exception(error)
 
     async def QuerySelectorAll(self, selector: str) -> List[Node]:
@@ -319,10 +316,7 @@ class PageEx(Page):
                                     элемент документа.
         :return:                [ <Node>, <Node>, ... ]
         """
-        repeat = 0;
-        max_repeat = 2;
-        nodes = [];
-        error = ""
+        repeat = 0; max_repeat = 2; nodes = []; error = ""
         root_node_id = (await self.Call("DOM.getDocument"))["root"]["nodeId"]
         while repeat < max_repeat:
             try:
@@ -332,8 +326,7 @@ class PageEx(Page):
                     nodes.append(Node(self, node))
                 return nodes
             except Exception as e:
-                repeat += 1;
-                error = str(e)
+                repeat += 1; error = str(e)
         raise Exception(error)
 
     async def PerformSearch(self, query: str, searchInShadowDOM: Optional[bool] = None) -> dict:
@@ -371,6 +364,8 @@ class PageEx(Page):
         nodes = []
         args = {"searchId": searchId, "fromIndex": fromIndex, "toIndex": toIndex}
         for node_id in (await self.Call("DOM.getSearchResults", args))["nodeIds"]:
+            if self.verbose:
+                print("[SearchResults] node_id =", node_id)
             nodes.append(Node(self, node_id))
         return nodes
 
