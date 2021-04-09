@@ -35,7 +35,8 @@ class BrowserEx(Browser):
                     page_data["id"],
                     callback,
                     self.profile_path == "",
-                    self.verbose
+                    self.verbose,
+                    self.browser_name
                 )
                 await page.Activate()
                 return page
@@ -67,18 +68,16 @@ class BrowserEx(Browser):
         return await self.GetPageBy("url", value, match_mode, index, callback)
 
     async def CreatePage(
-        self,  url: Optional[str] = "about:blank", default_tab: Optional[bool] = False,
+        self,  url: Optional[str] = "about:blank",
         newWindow: Optional[bool] = False, background: Optional[bool] = False
     ) -> PageEx:
         """
         Создаёт новую вкладку в браузере.
         :param url:                     - (optional) Адрес будет открыт при создании.
-        :param default_tab:             - (optional) Если 'True' — будет открыт дефолтный бэкграунд, как
-                                            при обычном создании новой вкладки.
         :param newWindow:               - (optional) Если 'True' — страница будет открыта в новом окне.
         :param background:              - (optional) Если 'True' — страница будет открыта в фоне.
         :return:                    * Инстанс страницы <PageEx>
         """
         return await self.GetPageByID(
-            (await (await self.GetPage()).CreateTarget(url, default_tab, newWindow, background))
+            (await (await self.GetPage()).CreateTarget(url, newWindow, background))
         )

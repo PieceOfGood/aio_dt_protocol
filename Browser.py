@@ -8,6 +8,7 @@ from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
 from aio_dt_protocol.Page import Page
 
 class Browser:
+
     @staticmethod
     def FindInstances(for_port: int = None, browser: str = "chrome.exe") -> Dict[int, int]:
         """
@@ -57,7 +58,7 @@ class Browser:
             debug_port:   Optional[any] = 9222,
             browser_pid:  Optional[int] = 0,
             app:         Optional[bool] = False,
-            browser_exe:  Optional[str] = "chrome" if sys.platform == "win32" else "google-chrome",
+            browser_exe:  Optional[str] = "chrome",
             proxy_port:   Optional[any] = "",
             verbose:     Optional[bool] = False,
             position: Optional[Tuple[int, int]] = None,
@@ -171,6 +172,25 @@ class Browser:
 
         self.first_run = profile_path == "" or not os.path.exists(profile_path)
 
+        if browser_exe == "chrome":
+            self.browser_name = "chrome"
+            browser_exe = "chrome" if sys.platform == "win32" else "google-chrome"
+        elif browser_exe == "brave":
+            self.browser_name = "brave"
+            browser_exe = "brave" if sys.platform == "win32" else "brave-browser"
+        else:
+            raise ValueError(browser_exe + " — not supported")
+
+        # ? Константы URL соответствующих вкладок
+        self.NEW_TAB:    str = self.browser_name + "://newtab/"          # дефолтная вкладка
+        self.SETTINGS:   str = self.browser_name + "://settings/"        # настройки
+        self.REWARDS:    str = self.browser_name + "://rewards/"         # вознаграждения (brave only)
+        self.HISTORY:    str = self.browser_name + "://history/"         # история переходов
+        self.BOOKMARKS:  str = self.browser_name + "://bookmarks/"       # закладки
+        self.DOWNLOADS:  str = self.browser_name + "://downloads/"       # загрузки
+        self.WALLET:     str = self.browser_name + "://wallet/"          # кошельки (brave only)
+        self.EXTENSIONS: str = self.browser_name + "://extensions/"      # расширения
+
         if sys.platform == "win32":
             browser_path = browser_path if browser_path else registry_read_key(browser_exe)
         elif sys.platform == "linux":
@@ -194,10 +214,11 @@ class Browser:
             Warning(f"Length data url ({data_url_len}) is approaching to critical length = 32767 symbols!")
 
         if default_tab:
-            url = "chrome://newtab/"
+            url = self.NEW_TAB
             # ! app не может быть True, если браузер стартует с дефолтной страницы
             app = False
 
+        b_name_len = len(self.browser_name)
         # Если "app" == True:
         _url_ = (
             # открыть dataURL без содержимого, если в "url" ничего не передано
@@ -205,9 +226,9 @@ class Browser:
                 # иначе установить переданную разметку, если она пришла как строка
                 # и начало этой строки не содержит признаков url-адреса
                 "--app=data:text/html," + quote(url)
-                    if type(url) is str and "http" != url[:4] and "chrome" != url[:6] else "--app=" + url
+                    if type(url) is str and "http" != url[:4] and self.browser_name != url[:b_name_len] else "--app=" + url
                         # передать "как есть", раз это строка содержащая url
-                        if type(url) is str and "http" == url[:4] or "chrome" == url[:6] else
+                        if type(url) is str and "http" == url[:4] or self.browser_name == url[:b_name_len] else
                             # иначе декодировать и установить её как Base64
                             "--app=data:text/html;Base64," + url.decode()
 
@@ -216,9 +237,9 @@ class Browser:
             # иначе передать разметку как data-url, если начало этой строки
             # не содержит признаков url-адреса
             "data:text/html," + quote(url)
-                if type(url) is str and "http" != url[:4] and "chrome" != url[:6] else url
+                if type(url) is str and "http" != url[:4] and self.browser_name != url[:b_name_len] else url
                     # или передать "как есть", раз это строка содержащая url
-                    if type(url) is str and "http" == url[:4] or "chrome" == url[:6] else
+                    if type(url) is str and "http" == url[:4] or self.browser_name == url[:b_name_len] else
                         # иначе декодировать и установить её как Base64
                         "data:text/html;Base64," + url.decode()
         )
@@ -346,7 +367,8 @@ class Browser:
                     page_data["id"],
                     callback,
                     self.profile_path == "",
-                    self.verbose
+                    self.verbose,
+                    self.browser_name
                 )
                 await page.Activate()
                 return page

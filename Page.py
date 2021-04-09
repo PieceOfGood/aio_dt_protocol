@@ -17,13 +17,15 @@ class Page:
         тогда это будет выполнено автоматом. Иначе в цикле событий останутся
         задачи связанные с поддержанием соединения, которое более не востребовано.
     """
+
     def __init__(
             self,
             ws_url:            str,
             page_id:           str,
             callback: Callable[[dict], Awaitable[None]],
             is_headless_mode:  bool,
-            verbose:           bool
+            verbose:           bool,
+            browser_name:      str
     ) -> None:
         """
         :param ws_url:              Адрес WebSocket
@@ -32,6 +34,7 @@ class Page:
                                         приходящие по WebSocket
         :param is_headless_mode:    "Headless" включён?
         :param verbose:             Печатать некие подробности процесса?
+        :param browser_name:        Имя браузера
         """
         self.ws_url            = ws_url
         self.page_id           = page_id
@@ -39,6 +42,7 @@ class Page:
         self.is_headless_mode  = is_headless_mode
 
         self.verbose           = verbose
+        self.browser_name      = browser_name
 
         self.id                = 0
         self.responses         = {}

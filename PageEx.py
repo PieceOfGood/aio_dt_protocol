@@ -1122,26 +1122,24 @@ class PageEx(Page):
     async def Navigate(
             self,
             url: Optional[Union[str, bytes]] = "about:blank",
-            default_tab: Optional[bool] = False,
             wait_for_load: Optional[bool] = True
     ) -> None:
         """
         Переходит на адрес указанного 'url'.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-navigate
         :param url:             Адрес, по которому происходит навигация.
-        :param default_tab:     Переход в дефолтное состояние вкладки, не зависимо от url.
         :param wait_for_load:   Если 'True' - ожидает 'complete' у 'document.readyState' страницы,
                                     на которую осуществляется переход.
         :return:
         """
-        if default_tab: url = "chrome://newtab/"
+        b_name_len = len(self.browser_name)
         if self.page_domain_enabled: self.loading_state = "do_navigate"
         _url_ = ("data:text/html," + quote(url)
             # передать разметку как data-url, если начало этой строки
             # не содержит признаков url-адреса или передать "как есть",
-            if type(url) is str and "http" != url[:4] and "chrome" != url[:6] and url != "about:blank" else url
+            if type(url) is str and "http" != url[:4] and self.browser_name != url[:b_name_len] and url != "about:blank" else url
                 # раз это строка содержащая url, или переход на пустую страницу
-                if type(url) is str and "http" == url[:4] or "chrome" == url[:6] or url == "about:blank" else
+                if type(url) is str and "http" == url[:4] or self.browser_name == url[:b_name_len] or url == "about:blank" else
                     # иначе декодировать и установить её как Base64
                     "data:text/html;Base64," + url.decode()
         )
@@ -1786,8 +1784,7 @@ class PageEx(Page):
 
     async def CreateTarget(
             self,
-                    url: Optional[str] = "about:blank",
-           default_tab: Optional[bool] = False,
+                   url:  Optional[str] = "about:blank",
              newWindow: Optional[bool] = False,
             background: Optional[bool] = False
     ) -> str:
@@ -1798,13 +1795,10 @@ class PageEx(Page):
             и возвращает готовый инстанс новой страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-createTarget
         :param url:             Адрес будет открыт при создании.
-        :param default_tab:     Если 'True' — будет открыт дефолтный бэкграунд, как
-                                    при обычном создании новой вкладки.
         :param newWindow:       Если 'True' — страница будет открыта в новом окне.
         :param background:      Если 'True' — страница будет открыта в фоне.
         :return:                targetId -> строка, представляющая идентификатор созданной страницы.
         """
-        url = "chrome://newtab/" if default_tab else url
         return (await self.Call("Target.createTarget", {
             "url": url,
             "newWindow": False if self.is_headless_mode else newWindow,
