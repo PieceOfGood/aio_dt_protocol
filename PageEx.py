@@ -6,7 +6,7 @@ from aio_dt_protocol.DOMElement import Node
 import asyncio
 import json, os, base64
 from urllib.parse import quote
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 
 
 class PageEx(Page):
@@ -24,9 +24,11 @@ class PageEx(Page):
 
         self.loading_state = ""
 
+        self.targets_discovered       = False
         self.dom_domain_enabled       = False
         self.log_domain_enabled       = False
         self.network_domain_enabled   = False
+        self.console_domain_enabled   = False
         self.page_domain_enabled      = False
         self.fetch_domain_enabled     = False
         self.css_domain_enabled       = False
@@ -125,7 +127,7 @@ class PageEx(Page):
             return True
         return False
 
-    async def GetVersion(self) -> dict:
+    async def GetVersion(self) -> Dict[str, str]:
         """
         Возвращает словарь с информацией о текущем билде браузера.
         https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-getVersion
@@ -1714,6 +1716,43 @@ class PageEx(Page):
     # region [ |>*<|=== Domains ===|>*<| ] Target [ |>*<|=== Domains ===|>*<| ]
     #   https://chromedevtools.github.io/devtools-protocol/tot/Target
 
+    async def CreateBrowserContext(
+            self,
+            disposeOnDetach: Optional[bool] = None,
+            proxyServer: Optional[str] = None,
+            proxyBypassList: Optional[str] = None,
+    ) -> str:
+        """
+        Создает новый пустой BrowserContext. Аналогичен профилю в режиме инкогнито, но их может быть несколько.
+        https://chromedevtools.github.io/devtools-protocol/tot/Target/#method-createBrowserContext
+        :param disposeOnDetach:     Если True — удаляет контекст при отключении сеанса отладки.
+        :param proxyServer:         Прокси-сервер, аналогичный тому, который передан --proxy-server.
+        :param proxyBypassList:     Список обхода прокси, аналогичный тому, который передается в --proxy-bypass-list.
+        :return:                Browser.BrowserContextID
+        """
+        args = {}
+        if disposeOnDetach is not None: args.update(disposeOnDetach=disposeOnDetach)
+        if proxyServer is not None: args.update(proxyServer=proxyServer)
+        if proxyBypassList is not None: args.update(proxyBypassList=proxyBypassList)
+        return (await self.Call("Target.createBrowserContext", args))["browserContextId"]
+
+    async def GetBrowserContexts(self) -> List[str]:
+        """
+        Возвращает все контексты браузера, созданные с помощью метода Target.createBrowserContext.
+        https://chromedevtools.github.io/devtools-protocol/tot/Target/#method-getBrowserContexts
+        :return:                [ Browser.BrowserContextID, Browser.BrowserContextID, ... ]
+        """
+        return (await self.Call("Target.getBrowserContexts"))["browserContextIds"]
+
+    async def DisposeBrowserContext(self, browserContextId: str) -> None:
+        """
+        Удаляет BrowserContext. Все соответствующие страницы будут закрыты без вызова их хуков beforeunload.
+        https://chromedevtools.github.io/devtools-protocol/tot/Target/#method-disposeBrowserContext
+        :param browserContextId:    Идентификатор контекста браузера.
+        :return:
+        """
+        await self.Call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
+
     async def GetTargetInfo(self, targetId: Optional[str] = "") -> dict:
         """
         (EXPERIMENTAL)
@@ -1730,8 +1769,7 @@ class PageEx(Page):
                                         "browserContextId": str,
                                     }
         """
-        if not targetId:
-            targetId = self.page_id
+        if not targetId: targetId = self.page_id
         return (await self.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]
 
     async def GetTargets(self) -> List[dict]:
@@ -1751,6 +1789,14 @@ class PageEx(Page):
         """
         await self.Call("Target.activateTarget", {"targetId": targetId})
 
+    async def AttachToBrowserTarget(self) -> str:
+        """
+        Присоединяется к target браузера, использует только режим flat sessionId.
+        https://chromedevtools.github.io/devtools-protocol/tot/Target#method-attachToBrowserTarget
+        :return:                    sessionId
+        """
+        return (await self.Call("Target.attachToBrowserTarget"))["sessionId"]
+
     async def AttachToTarget(self, targetId: str, flatten: Optional[bool] = None) -> str:
         """
         Присоединяется к 'target' по указанному 'targetId'.
@@ -1765,22 +1811,31 @@ class PageEx(Page):
             args.update({"flatten": flatten})
         return (await self.Call("Target.attachToTarget", args))["sessionId"]
 
-    async def DetachFromTarget(self, sessionId: Optional[str] = "") -> None:
+    async def DetachFromTarget(self, sessionId: Optional[str] = "", targetId: Optional[str] = "") -> None:
         """
         Отключается от сессии переданного 'sessionId'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-detachFromTarget
-        :param sessionId:       (optional) Строка, представляющая идентификатор созданной страницы.
+        :param sessionId:       (optional) Строка, представляющая идентификатор сессии.
+        :param targetId:        (optional) Строка, представляющая идентификатор созданной страницы.
         :return:
         """
         args = {}
         if sessionId:
             args.update({"sessionId": sessionId})
+        elif targetId:
+            args.update({"targetId": targetId})
+        else:
+            raise ValueError("At least one parameter must be specified 'sessionId' or 'targetId'")
         await self.Call("Target.detachFromTarget", args)
 
     async def CreateTarget(
             self,
-                   url:  Optional[str] = "about:blank",
-             newWindow: Optional[bool] = False,
+            url:  Optional[str] = "about:blank",
+            width: Optional[int] = None,
+            height: Optional[int] = None,
+            browserContextId: Optional[str] = None,
+            enableBeginFrameControl: Optional[bool] = False,
+            newWindow: Optional[bool] = False,
             background: Optional[bool] = False
     ) -> str:
         """
@@ -1789,16 +1844,26 @@ class PageEx(Page):
             сразу методом CreatePage(), который проделывает все эти операции под капотом
             и возвращает готовый инстанс новой страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-createTarget
-        :param url:             Адрес будет открыт при создании.
-        :param newWindow:       Если 'True' — страница будет открыта в новом окне.
-        :param background:      Если 'True' — страница будет открыта в фоне.
+        :param url:                         Адрес будет открыт при создании.
+        :param width:                       Ширина в Density-independent Pixels(DIP). Chrome Headless only!
+        :param height:                      Высота в (DIP). Chrome Headless only!
+        :param browserContextId:            Контекст браузера, которому предназначается создание target.
+        :param enableBeginFrameControl:     Будет ли BeginFrames для этой цели контролироваться с помощью DevTools
+                                                (только безголовый хром, пока не поддерживается в MacOS, по
+                                                умолчанию false).
+        :param newWindow:                   Если 'True' — страница будет открыта в новом окне.
+        :param background:                  Если 'True' — страница будет открыта в фоне.
         :return:                targetId -> строка, представляющая идентификатор созданной страницы.
         """
-        return (await self.Call("Target.createTarget", {
-            "url": url,
+        args = {
+            "url": url, "enableBeginFrameControl": enableBeginFrameControl,
             "newWindow": False if self.is_headless_mode else newWindow,
             "background": False if self.is_headless_mode else background
-        }))["targetId"]
+        }
+        if width is not None: args.update(width=width)
+        if height is not None: args.update(height=height)
+        if browserContextId is not None: args.update(browserContextId=browserContextId)
+        return (await self.Call("Target.createTarget", args))["targetId"]
 
     async def CloseTarget(self, targetId: Optional[str] = None) -> None:
         """
@@ -1820,9 +1885,42 @@ class PageEx(Page):
         :param discover:            'True' — включает эту надстройку, 'False' — выключает.
         :return:
         """
+        self.targets_discovered = discover
         await self.Call("Target.setDiscoverTargets", {"discover": discover})
 
     # endregion
+
+    # region [ |>*<|=== Domains ===|>*<| ] Console [ |>*<|=== Domains ===|>*<| ]
+    # Этот домен является устаревшим. Используйте Runtime или Log вместо него.
+    # endregion
+
+    async def ConsoleEnable(self) -> None:
+        """
+        Включает 'Log' домен, отправляет записи лога, собранные на данный момент, посредством
+            события 'entryAdded'.
+        https://chromedevtools.github.io/devtools-protocol/tot/Log#method-enable
+        :return:
+        """
+        await self.Call("Console.enable")
+        self.console_domain_enabled = True
+
+    async def ConsoleDisable(self) -> None:
+        """
+        Выключает 'Log' домен, останавливая отправку сообщений.
+        https://chromedevtools.github.io/devtools-protocol/tot/Log#method-disable
+        :return:
+        """
+        await self.Call("Console.disable")
+        self.console_domain_enabled = False
+
+    async def ClearConsole(self) -> None:
+        """
+        Очищает список ранее опубликованных сообщений лога.
+        https://chromedevtools.github.io/devtools-protocol/tot/Log#method-clear
+        :return:
+        """
+        await self.Call("Console.clearMessages")
+
 
     # region [ |>*<|=== Domains ===|>*<| ] Overlay [ |>*<|=== Domains ===|>*<| ]
     #   Этот домен предоставляет различные функции, связанные с рисованием на проверяемой странице.
@@ -2117,6 +2215,13 @@ class PageEx(Page):
 
     # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
     #
+
+    async def GetDocumentRect(self) -> List[int]:
+        """
+        Возвращает список с длиной и шириной вьюпорта браузера.
+        """
+        code = "(() => { return JSON.stringify([document.documentElement.clientWidth, document.documentElement.clientHeight]); })();"
+        return json.loads(await self.InjectJS(code))
 
     async def GetUrl(self):
         return (await self.GetTargetInfo())["url"]

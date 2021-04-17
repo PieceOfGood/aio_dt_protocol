@@ -32,6 +32,7 @@ WINDOWS_KEY_SET = {
     'MODECHANGE': 31,  # IME mode change request
 
     'ESCAPE': 27,    # ESC key
+    'ESC': 27,       # ESC key
     'SPACE': 32,     # Пробел
     'PRIOR': 33,     # PAGE UP key
     'NEXT': 34,      # PAGE DOWN key

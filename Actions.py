@@ -334,7 +334,7 @@ class Actions:
 
     # ==================================================================================================================
 
-    async def ClickTo(self, x: int, y: int) -> None:
+    async def ClickTo(self, x: int, y: int, delay: float = None) -> None:
         """
         Эмулирует клик мыши по координатам.
         :param x:               x - координата
@@ -342,6 +342,7 @@ class Actions:
         :return:
         """
         await self.DispatchMouseEvent("mousePressed", x, y, button="left")
+        if delay: await asyncio.sleep(delay)
         await self.DispatchMouseEvent("mouseReleased", x, y, button="left")
 
     async def MouseMoveTo(self, x: int, y: int) -> None:

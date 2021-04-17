@@ -182,14 +182,14 @@ class Browser:
             raise ValueError(browser_exe + " — not supported")
 
         # ? Константы URL соответствующих вкладок
-        self.NEW_TAB:    str = self.browser_name + "://newtab/"          # дефолтная вкладка
-        self.SETTINGS:   str = self.browser_name + "://settings/"        # настройки
-        self.REWARDS:    str = self.browser_name + "://rewards/"         # вознаграждения (brave only)
-        self.HISTORY:    str = self.browser_name + "://history/"         # история переходов
-        self.BOOKMARKS:  str = self.browser_name + "://bookmarks/"       # закладки
-        self.DOWNLOADS:  str = self.browser_name + "://downloads/"       # загрузки
-        self.WALLET:     str = self.browser_name + "://wallet/"          # кошельки (brave only)
-        self.EXTENSIONS: str = self.browser_name + "://extensions/"      # расширения
+        self.NEW_TAB:       str = self.browser_name + "://newtab/"          # дефолтная вкладка
+        self.SETTINGS:      str = self.browser_name + "://settings/"        # настройки
+        self.BRAVE_REWARDS: str = self.browser_name + "://rewards/"         # вознаграждения (brave only)
+        self.HISTORY:       str = self.browser_name + "://history/"         # история переходов
+        self.BOOKMARKS:     str = self.browser_name + "://bookmarks/"       # закладки
+        self.DOWNLOADS:     str = self.browser_name + "://downloads/"       # загрузки
+        self.BRAVE_WALLET:  str = self.browser_name + "://wallet/"          # кошельки (brave only)
+        self.EXTENSIONS:    str = self.browser_name + "://extensions/"      # расширения
 
         if sys.platform == "win32":
             browser_path = browser_path if browser_path else registry_read_key(browser_exe)

@@ -3,28 +3,41 @@ import asyncio
 from typing import List, Tuple, Dict, Optional, Union
 # from Chrome.PageEx import PageEx
 
+def to_dict_attrs(a: list) -> Union[dict, None]:
+    if not a: return None
+    return {a[i]: a[i+1] for i in range(0, len(a), 2)}
 
 class Node:
 
     def __init__(
         self, page_instance, nodeId: int,
+        parentId:              Optional[int] = None,
         backendNodeId:         Optional[int] = None,
         nodeType:              Optional[int] = None,
         nodeName:              Optional[str] = None,
         localName:             Optional[str] = None,
         nodeValue:             Optional[str] = None,
-        parentId:              Optional[int] = None,
-        publicId:              Optional[str] = None,
-        systemId:              Optional[str] = None,
         childNodeCount:        Optional[int] = None,
         children:       Optional[List[dict]] = None,
         attributes:      Optional[List[str]] = None,    # Идут в списке парами ['имя атрибута', 'значение атрибута', 'имя атрибута', 'значение атрибута', ... ]
-        frameId:               Optional[str] = None,    # доступен по дефолту в свойствах второго потомка рута  root.children[1].frameId
         documentURL:           Optional[str] = None,
         baseURL:               Optional[str] = None,
+        publicId:              Optional[str] = None,
+        systemId:              Optional[str] = None,
+        internalSubset:        Optional[str] = None,
         xmlVersion:            Optional[str] = None,
-        shadowRoots:  Optional[List["Node"]] = None,    # Появляются так же у <input /> вместо 'children'
+        name:                  Optional[str] = None,
+        value:                 Optional[str] = None,
+        pseudoType:            Optional[str] = None,    # Возможные варианты: first-line, first-letter, before, after, marker, backdrop, selection, target-text, spelling-error, grammar-error, first-line-inherited, scrollbar, scrollbar-thumb, scrollbar-button, scrollbar-track, scrollbar-track-piece, scrollbar-corner, resizer, input-list-button
+        frameId:               Optional[str] = None,    # доступен по дефолту в свойствах второго потомка рута  root.children[1].frameId
         shadowRootType:        Optional[str] = None,
+        contentDocument:    Optional["Node"] = None,
+        shadowRoots:  Optional[List["Node"]] = None,    # Появляются так же у <input /> вместо 'children'
+        templateContent:    Optional["Node"] = None,
+        pseudoElements: Optional[List["Node"]] = None,
+        importedDocument:    Optional["Node"] = None,
+        distributedNodes: Optional[List[dict]] = None,  #
+        isSVG:                Optional[bool] = None,    # является ли элемент SVG-элементом
 
     ):
         self.page_instance = page_instance  # PageEx
@@ -38,17 +51,28 @@ class Node:
         self.parentId = parentId
         self.publicId = publicId
         self.systemId = systemId
+        self.internalSubset = internalSubset
 
         self.childNodeCount = childNodeCount
         self.children = self._AddChildren(children)
-        self.attributes = attributes
+        self.attributes = to_dict_attrs(attributes)
         self.frameId = frameId
         self.documentURL = documentURL
         self.baseURL = baseURL
         self.xmlVersion = xmlVersion
+        self.name = name
+        self.value = value
+        self.pseudoType = pseudoType
 
-        self.shadowRoots = shadowRoots
+        self.shadowRoots = self._AddChildren(shadowRoots)
         self.shadowRootType = shadowRootType
+
+        self.contentDocument = self._AddChild(contentDocument)
+        self.templateContent = self._AddChild(templateContent)
+        self.pseudoElements = self._AddChildren(pseudoElements)
+        self.importedDocument = self._AddChild(importedDocument)
+        self.distributedNodes = distributedNodes
+        self.isSVG = isSVG
 
 
     def _AddChildren(self, children_list: Optional[List[dict]] = None) -> List["Node"]:
@@ -65,6 +89,9 @@ class Node:
             list_nodes.append(Node(self.page_instance, **child))
         return list_nodes
 
+    def _AddChild(self, child: Union[dict, None] = None) -> Union["Node", None]:
+        if not child: return None
+        return Node(self.page_instance, **child)
 
     async def QuerySelector(self, selector: str) -> Union["Node", None]:
         """
@@ -159,13 +186,13 @@ class Node:
         except:
             return False
 
-    async def GetAttributes(self) -> list:
+    async def GetAttributes(self) -> dict:
         """
         Возвращает список атрибутов элемента.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getAttributes
         :return:            array [ string ] - Чередующийся массив имен и значений атрибутов элемента.
         """
-        return (await self.page_instance.Call("DOM.getAttributes", {"nodeId": self.nodeId}))["attributes"]
+        return to_dict_attrs((await self.page_instance.Call("DOM.getAttributes", {"nodeId": self.nodeId}))["attributes"])
 
     async def RemoveAttribute(self, name: str) -> None:
         """
@@ -421,8 +448,8 @@ class Node:
         q = (await self.GetContentQuads())[0]
         return {"x": q[0], "y": q[1], "w": q[2] - q[0], "h": q[7] - q[1], "l": q[0], "r": q[2], "t": q[1], "b": q[7]}
 
-    async def Click(self) -> None:
+    async def Click(self, delay: float = None) -> None:
         """ Кликает в середину себя """
         (x, y) = await self.GetCenter()
         await self.page_instance.action.MouseMoveTo(x, y)
-        await self.page_instance.action.ClickTo(x, y)
+        await self.page_instance.action.ClickTo(x, y, delay)
