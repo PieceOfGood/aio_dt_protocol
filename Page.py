@@ -20,18 +20,18 @@ class Page:
 
     def __init__(
             self,
-            ws_url:            str,
-            page_id:           str,
-            callback: Callable[[dict], Awaitable[None]],
-            is_headless_mode:  bool,
-            verbose:           bool,
-            browser_name:      str
+            ws_url:           str,
+            page_id:          str,
+            callback:         Awaitable,
+            is_headless_mode: bool,
+            verbose:          bool,
+            browser_name:     str
     ) -> None:
         """
         :param ws_url:              Адрес WebSocket
         :param page_id:             Идентификатор страницы
         :param callback:            Колбэк, который будет получать все данные,
-                                        приходящие по WebSocket
+                                        приходящие по WebSocket в виде словарей
         :param is_headless_mode:    "Headless" включён?
         :param verbose:             Печатать некие подробности процесса?
         :param browser_name:        Имя браузера
@@ -76,10 +76,10 @@ class Page:
         response = self.responses.pop( _id )
         if "error" in response:
             raise Exception(
-                "Browser detect error: " +
-                f"error code -> '{response['error']['code']}'; " +
-                f"error message -> '{response['error']['message']}' <|>  "+
-                f"domain_and_method = '{domain_and_method}' | params = '{ str(params) }'"
+                "Browser detect error:\n" +
+                f"error code -> '{response['error']['code']}';\n" +
+                f"error message -> '{response['error']['message']}'\n"+
+                f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'"
             )
         return response["result"]
 
@@ -250,7 +250,7 @@ class Page:
         !Внимание! Каждый такой слушатель должен иметь один обязательный 'data'-аргумент,
             в который будут передаваться параметры случившегося события в виде словаря(dict).
 
-        :param event:           Имя события, для которого рагистируется слушатель. Например:
+        :param event:           Имя события, для которого регистируется слушатель. Например:
                                     'DOM.attributeModified'.
         :param listener:        Колбэк-функция.
         :param args:            (optional) любое кол-во агрументов, которые будут переданы

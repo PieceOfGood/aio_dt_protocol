@@ -334,7 +334,7 @@ class Browser:
     async def GetPageBy(
             self, key: Union[str, int], value: Union[str, int],
             match_mode: Optional[str] = "exact", index: Optional[int] = 0,
-            callback: Optional[Callable[[dict], Awaitable[None]]] = None
+            callback: Optional[Awaitable] = None
     ) -> Union[Page, None]:
         """
         Организует выбор нужного инстанса из процессов браузера по следующим критериям:
