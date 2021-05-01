@@ -194,6 +194,31 @@ class PageEx(Page):
             return
         await self.Call("Browser.setDockTile", args)
 
+    async def SetDownloadBehavior(
+            self, behavior: str,
+            browserContextId: Optional[str] = None,
+            downloadPath:     Optional[str] = None,
+            eventsEnabled:   Optional[bool] = None
+    ) -> None:
+        """
+        Устанавливает поведение при загрузке файлов.
+        https://chromedevtools.github.io/devtools-protocol/tot/Page#method-setDownloadBehavior
+        :param behavior:            Разрешить все или отклонить все запросы на загрузку, или использовать поведение
+                                        Chrome по умолчанию, если доступно (в противном случае запретить).
+                                        deny = запрет, allow = разрешить, default
+        :param browserContextId:    (optional) Если не указано, используется контекст браузера по умолчанию.
+        :param downloadPath:        (optional) Путь по умолчанию для сохранения загруженных файлов. Это необходимо,
+                                        если для поведения установлено значение 'allow' и если путь не передан, будет
+                                        установлено текущее расположение.
+        :param eventsEnabled:       (optional) Если не указано, используется контекст браузера по умолчанию.
+        :return:
+        """
+        args = {"behavior": behavior}
+        if browserContextId is not None: args.update(browserContextId=browserContextId)
+        if downloadPath is not None: args.update(downloadPath=downloadPath)
+        if eventsEnabled is not None: args.update(eventsEnabled=eventsEnabled)
+        await self.Call("Browser.setDownloadBehavior", args)
+
     # endregion
 
     # region [ |>*<|=== Domains ===|>*<| ] DOM [ |>*<|=== Domains ===|>*<| ]
@@ -1440,23 +1465,6 @@ class PageEx(Page):
         :return:
         """
         await self.Call("Page.resetNavigationHistory")
-
-    async def SetDownloadBehavior(self, behavior: str, downloadPath: Optional[str] = "") -> None:
-        """
-        Устанавливает поведение при загрузке файлов.
-        https://chromedevtools.github.io/devtools-protocol/tot/Page#method-setDownloadBehavior
-        :param behavior:            Разрешить все или отклонить все запросы на загрузку, или использовать поведение
-                                        Chrome по умолчанию, если доступно (в противном случае запретить).
-                                        deny = запрет, allow = разрешить, default
-        :param downloadPath:        (optional) Путь по умолчанию для сохранения загруженных файлов в. Это необходимо,
-                                        если для поведения установлено значение 'allow' и если путь не передан, будет
-                                        установлен текущее расположение.
-        :return:
-        """
-        args = {"behavior": behavior}
-        if (behavior == "allow" or behavior == "default") and downloadPath == "":
-            args.update({"downloadPath": os.path.abspath(".")})
-        await self.Call("Page.setDownloadBehavior", args)
 
     async def SetInterceptFileChooserDialog(self, enabled: bool) -> None:
         """

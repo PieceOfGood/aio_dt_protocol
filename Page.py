@@ -2,7 +2,7 @@ import asyncio
 import websockets
 from websockets.exceptions import ConnectionClosedError
 import json
-from typing import Callable, Optional, Awaitable, Union
+from typing import Callable, Optional, Union
 
 class Page:
     """
@@ -22,7 +22,7 @@ class Page:
             self,
             ws_url:           str,
             page_id:          str,
-            callback:         Awaitable,
+            callback:         callable,
             is_headless_mode: bool,
             verbose:          bool,
             browser_name:     str
