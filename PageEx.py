@@ -57,7 +57,7 @@ class PageEx(
         FetchDomain.__init__(self)
 
         self.storage = {}
-        self.action = Actions(self)
+        self.action = Actions(self)             # Совершает действия на странице. Клики; движения мыши; события клавиш
         self._root: Union[Node, None] = None
         self.style_sheets = []                  # Если домен CSS активирован, сюда попадут все 'styleSheetId' страницы
 

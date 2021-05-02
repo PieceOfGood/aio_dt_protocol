@@ -8,6 +8,12 @@ def to_dict_attrs(a: list) -> Union[dict, None]:
     return {a[i]: a[i+1] for i in range(0, len(a), 2)}
 
 class Node:
+    __slots__ = (
+        "page_instance", "nodeId", "parentId", "backendNodeId", "nodeType", "nodeName", "localName", "nodeValue",
+        "childNodeCount", "children", "attributes", "documentURL", "baseURL", "publicId", "systemId", "internalSubset",
+        "xmlVersion", "name", "value", "pseudoType", "frameId", "shadowRootType", "contentDocument", "shadowRoots",
+        "templateContent", "pseudoElements", "importedDocument", "distributedNodes", "isSVG"
+    )
 
     def __init__(
         self, page_instance, nodeId: int,
@@ -241,7 +247,9 @@ class Node:
         :return:            Строка HTML-разметки. 'Inner div <div>text</div> with HTML'.
         """
         html = await self.GetOuterHTML()
-        return re.findall(r"^<.*?>(.*)<.*?>$", html)[0]
+        if m := re.match(r"^<.*?>(.*)<.*?>$", html):
+            return m.group(1)
+        return html
 
     async def GetInnerText(self, with_new_line_symbols: Optional[bool] = True) -> str:
         """
