@@ -53,6 +53,41 @@ class Page:
         self.listeners_for_method = {}
         self.runtime_enabled      = False
 
+    @property
+    def connected(self) -> bool: return self._connected
+
+    @connected.setter
+    def connected(self, value) -> None: self._connected = value
+
+
+    @property
+    def page_id(self) -> str: return self._page_id
+
+    @page_id.setter
+    def page_id(self, value) -> None: self._page_id = value
+
+
+    @property
+    def verbose(self) -> bool: return self._verbose
+
+    @verbose.setter
+    def verbose(self, value) -> None: self._verbose = value
+
+
+    @property
+    def browser_name(self) -> str: return self._browser_name
+
+    @browser_name.setter
+    def browser_name(self, value) -> None: self._browser_name = value
+
+
+    @property
+    def is_headless_mode(self) -> bool: return self._is_headless_mode
+
+    @is_headless_mode.setter
+    def is_headless_mode(self, value) -> None: self._is_headless_mode = value
+
+
     async def Call(
             self, domain_and_method: str,
                        params: Optional[dict] = None,
