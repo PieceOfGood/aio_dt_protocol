@@ -11,7 +11,7 @@ HTML/js-css/bundle*
 # *.ahk
 *.db
 .idea/
-BraveControl_*/
+Test.py
 # -------------------------------
 
 # Byte-compiled / optimized / DLL files
