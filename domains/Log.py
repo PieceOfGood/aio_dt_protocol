@@ -6,6 +6,7 @@ class Log(ABC):
     #   https://chromedevtools.github.io/devtools-protocol/tot/Log
     #   LogEntry -> https://chromedevtools.github.io/devtools-protocol/tot/Log#type-LogEntry
     """
+    __slots__ = ()
 
     def __init__(self):
         self.log_domain_enabled = False

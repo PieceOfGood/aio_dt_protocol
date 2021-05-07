@@ -5,6 +5,7 @@ class Network(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Network
     """
+    __slots__ = ()
 
     def __init__(self):
         self.network_domain_enabled   = False
@@ -23,9 +24,9 @@ class Network(ABC):
 
     async def NetworkEnable(
             self,
-            maxTotalBufferSize: Optional[int] = None,
+            maxTotalBufferSize:    Optional[int] = None,
             maxResourceBufferSize: Optional[int] = None,
-            maxPostDataSize: Optional[int] = None
+            maxPostDataSize:       Optional[int] = None
     ) -> None:
         """
         Включает отслеживание сети, сетевые события теперь будут доставляться клиенту.
@@ -56,11 +57,11 @@ class Network(ABC):
         self.network_domain_enabled = False
 
     async def EmulateNetworkConditions(
-            self, latency: int,
-            downloadThroughput: Optional[int] = -1,
-            uploadThroughput: Optional[int] = -1,
-            offline: Optional[bool] = False,
-            connectionType: Optional[str] = ""
+        self, latency: int,
+        downloadThroughput: Optional[int] = -1,
+        uploadThroughput:   Optional[int] = -1,
+        offline:           Optional[bool] = False,
+        connectionType:     Optional[str] = ""
     ) -> None:
         """
         Активирует эмуляцию состояния сети.
@@ -142,9 +143,9 @@ class Network(ABC):
 
     async def DeleteCookies(
             self, name: str,
-            url: Optional[str] = "",
+            url:    Optional[str] = "",
             domain: Optional[str] = "",
-            path: Optional[str] = ""
+            path:   Optional[str] = ""
     ) -> None:
         """
         Удаляет файлы cookie браузера с соответствующими именами и URL-адресами или парой домен / путь.
@@ -164,14 +165,14 @@ class Network(ABC):
 
     async def SetCookie(
             self, name: str, value: str,
-            url: Optional[str] = "",
-            domain: Optional[str] = "",
-            path: Optional[str] = "",
-            secure: Optional[bool] = None,
+            url:       Optional[str] = "",
+            domain:    Optional[str] = "",
+            path:      Optional[str] = "",
+            secure:   Optional[bool] = None,
             httpOnly: Optional[bool] = None,
-            sameSite: Optional[str] = "",
-            expires: Optional[int] = -1,
-            priority: Optional[str] = ""
+            sameSite:  Optional[str] = "",
+            expires:   Optional[int] = -1,
+            priority:  Optional[str] = ""
     ) -> bool:
         """
         Устанавливает cookie с указанными данными cookie. Если они существуют, то будут перезаписаны.
@@ -226,10 +227,10 @@ class Network(ABC):
         await self.Call("Network.setExtraHTTPHeaders", {"headers": headers})
 
     async def NetworkSetUserAgent(
-            self, userAgent: str,
-            acceptLanguage: Optional[str] = None,
-            platform: Optional[str] = None,
-            userAgentMetadata: Optional[dict] = None
+        self, userAgent: str,
+        acceptLanguage:     Optional[str] = None,
+        platform:           Optional[str] = None,
+        userAgentMetadata: Optional[dict] = None
     ) -> None:
         """
         Позволяет переопределить пользовательский агент с заданной строкой. Функционал ничем не
@@ -259,9 +260,33 @@ class Network(ABC):
         if userAgentMetadata: args.update({"userAgentMetadata": userAgentMetadata})
         await self.Call("Network.setUserAgentOverride", args)
 
+    async def LoadNetworkResource(
+        self,
+        url:      Optional[str] = None,
+        options: Optional[dict] = None,
+        frameId:  Optional[str] = None
+    ) -> dict:
+        """
+        Выбирает ресурс и возвращает контент.
+        https://chromedevtools.github.io/devtools-protocol/tot/Network#method-loadNetworkResource
+        :param url:             (optional) URL ресурса, для которого нужно получить контент.
+        :param options:         (optional) Опции запроса
+        :param frameId:         (optional) Идентификатор фрейма
+        :return:
+        """
+        if url is None: url = await self.GetUrl()
+        if options is None: options = {"disableCache": False, "includeCredentials": True}
+        if frameId is None: frameId = self.page_id
+        args = { "url": url, "options": options, "frameId": frameId }
+        return (await self.Call("Network.loadNetworkResource", args))["resource"]
+
+    @abstractmethod
+    async def GetUrl(self) -> str:
+        raise NotImplementedError("async method GetUrl() — is not implemented")
+
     @abstractmethod
     async def Call(
-            self, domain_and_method: str,
-            params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+        self, domain_and_method: str,
+        params:            Optional[dict] = None,
+        wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")

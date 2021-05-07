@@ -5,6 +5,7 @@ class Emulation(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Emulation
     """
+    __slots__ = ()
 
     @property
     def connected(self) -> bool:

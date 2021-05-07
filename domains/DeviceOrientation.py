@@ -5,6 +5,7 @@ class DeviceOrientation(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/DeviceOrientation
     """
+    __slots__ = ()
 
     @property
     def connected(self) -> bool:

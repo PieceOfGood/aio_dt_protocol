@@ -5,6 +5,7 @@ class Browser(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Browser/
     """
+    __slots__ = ()
 
     @property
     def connected(self) -> bool:

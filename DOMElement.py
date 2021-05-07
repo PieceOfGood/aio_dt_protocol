@@ -393,7 +393,6 @@ class Node:
         :param name:            Новое имя элемента(узла).
         :return:
         """
-
         self.nodeId = (await self.page_instance.Call("DOM.setNodeName", {"nodeId": self.nodeId, "name": name}))["nodeId"]
 
     async def SetNewValue(self, value: str) -> None:
@@ -441,6 +440,23 @@ class Node:
         for node_id in (await self.page_instance.Call("DOM.getNodesForSubtreeByStyle", args))["nodeIds"]:
             nodes.append(Node(node_id, self.page_instance))
         return nodes
+
+    async def GetComputedStyle(self) -> List[Dict[str, str]]:
+        """
+        Возвращает список словарей описывающих свойства указанного Узла.
+        https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-getComputedStyleForNode
+        :return:            [ {name: "prop_name", value: "prop_value"}, ... ]
+        """
+        return (await self.page_instance.Call("CSS.getComputedStyleForNode", {"nodeId": self.nodeId}))["computedStyle"]
+
+    async def GetInlineStyles(self) -> Dict[str, dict]:
+        """
+        Возвращает стили, определенные встроенными (явно в атрибуте style и неявно, используя атрибуты DOM) для
+            узла DOM, идентифицированного с помощью nodeId.
+        https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-getInlineStylesForNode
+        :return:            { inlineStyle: {}, attributeStyle: {} }
+        """
+        return await self.page_instance.Call("CSS.getInlineStylesForNode", {"nodeId": self.nodeId})
 
     # ==================================================================================================================
 

@@ -3,39 +3,24 @@ import websockets
 from websockets.exceptions import ConnectionClosedError
 import json
 from typing import Callable, Optional, Union
+from abc import ABC
 
-class Page:
-    """
-    Инстанс страницы должен быть активирован после создания вызовом метода Activate(),
-        это создаст подключение по WebSocket и запустит задачи обеспечивающие
-        обратную связь. Метод GetPageBy() инстанса браузера, заботится об этом
-        по умолчанию.
-
-    Если инстанс страницы более не нужен, например, при перезаписи в него нового
-        инстанса, перед этим [-!-] ОБЯЗАТЕЛЬНО [-!-] - вызовите у него метод
-        Detach(), или закройте вкладку/страницу браузера, с которой он связан,
-        тогда это будет выполнено автоматом. Иначе в цикле событий останутся
-        задачи связанные с поддержанием соединения, которое более не востребовано.
-    """
+class AbsPage(ABC):
+    __slots__ = (
+        "ws_url", "page_id", "callback", "is_headless_mode", "verbose", "browser_name", "id", "responses",
+        "connected", "ws_session", "receiver", "listeners", "listeners_for_event", "runtime_enabled",
+        "_connected", "_page_id", "_verbose", "_browser_name", "_is_headless_mode"
+    )
 
     def __init__(
-            self,
-            ws_url:           str,
-            page_id:          str,
-            callback:         callable,
-            is_headless_mode: bool,
-            verbose:          bool,
-            browser_name:     str
+        self,
+        ws_url:           str,
+        page_id:          str,
+        callback:         callable,
+        is_headless_mode: bool,
+        verbose:          bool,
+        browser_name:     str
     ) -> None:
-        """
-        :param ws_url:              Адрес WebSocket
-        :param page_id:             Идентификатор страницы
-        :param callback:            Колбэк, который будет получать все данные,
-                                        приходящие по WebSocket в виде словарей
-        :param is_headless_mode:    "Headless" включён?
-        :param verbose:             Печатать некие подробности процесса?
-        :param browser_name:        Имя браузера
-        """
         self.ws_url            = ws_url
         self.page_id           = page_id
         self.callback          = callback
@@ -50,8 +35,44 @@ class Page:
         self.ws_session        = None
         self.receiver          = None
         self.listeners         = {}
-        self.listeners_for_method = {}
-        self.runtime_enabled      = False
+        self.listeners_for_event = {}
+        self.runtime_enabled     = False
+
+
+class Page(AbsPage):
+    """
+    Инстанс страницы должен быть активирован после создания вызовом метода Activate(),
+        это создаст подключение по WebSocket и запустит задачи обеспечивающие
+        обратную связь. Метод GetPageBy() инстанса браузера, заботится об этом
+        по умолчанию.
+
+    Если инстанс страницы более не нужен, например, при перезаписи в него нового
+        инстанса, перед этим [-!-] ОБЯЗАТЕЛЬНО [-!-] - вызовите у него метод
+        Detach(), или закройте вкладку/страницу браузера, с которой он связан,
+        тогда это будет выполнено автоматом. Иначе в цикле событий останутся
+        задачи связанные с поддержанием соединения, которое более не востребовано.
+    """
+    __slots__ = ()
+
+    def __init__(
+        self,
+        ws_url:           str,
+        page_id:          str,
+        callback:         callable,
+        is_headless_mode: bool,
+        verbose:          bool,
+        browser_name:     str
+    ) -> None:
+        """
+        :param ws_url:              Адрес WebSocket
+        :param page_id:             Идентификатор страницы
+        :param callback:            Колбэк, который будет получать все данные,
+                                        приходящие по WebSocket в виде словарей
+        :param is_headless_mode:    "Headless" включён?
+        :param verbose:             Печатать некие подробности процесса?
+        :param browser_name:        Имя браузера
+        """
+        AbsPage.__init__(self, ws_url, page_id, callback, is_headless_mode, verbose, browser_name)
 
     @property
     def connected(self) -> bool: return self._connected
@@ -59,13 +80,11 @@ class Page:
     @connected.setter
     def connected(self, value) -> None: self._connected = value
 
-
     @property
     def page_id(self) -> str: return self._page_id
 
     @page_id.setter
     def page_id(self, value) -> None: self._page_id = value
-
 
     @property
     def verbose(self) -> bool: return self._verbose
@@ -73,13 +92,11 @@ class Page:
     @verbose.setter
     def verbose(self, value) -> None: self._verbose = value
 
-
     @property
     def browser_name(self) -> str: return self._browser_name
 
     @browser_name.setter
     def browser_name(self, value) -> None: self._browser_name = value
-
 
     @property
     def is_headless_mode(self) -> bool: return self._is_headless_mode
@@ -87,11 +104,10 @@ class Page:
     @is_headless_mode.setter
     def is_headless_mode(self, value) -> None: self._is_headless_mode = value
 
-
     async def Call(
-            self, domain_and_method: str,
-                       params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+        self, domain_and_method: str,
+        params:            Optional[dict] = None,
+        wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]:
         self.id += 1
         _id = self.id
@@ -102,7 +118,9 @@ class Page:
         }
 
         await self._Send(json.dumps(data))
-        if not wait_for_response: return
+        if not wait_for_response:
+            self.responses = {}
+            return
 
         self.responses[ _id ] = None
         while not self.responses[ _id ]:
@@ -119,17 +137,16 @@ class Page:
         return response["result"]
 
     async def Eval(
-            self, expression: str,
-                      objectGroup:  Optional[str] = "console",
-            includeCommandLineAPI: Optional[bool] = True,
-                           silent: Optional[bool] = False,
-                    returnByValue: Optional[bool] = False,
-                      userGesture: Optional[bool] = True,
-                     awaitPromise: Optional[bool] = False
+        self, expression: str,
+        objectGroup:            Optional[str] = "console",
+        includeCommandLineAPI: Optional[bool] = True,
+        silent:                Optional[bool] = False,
+        returnByValue:         Optional[bool] = False,
+        userGesture:           Optional[bool] = True,
+        awaitPromise:          Optional[bool] = False
     ) -> dict:
         response = await self.Call(
-            "Runtime.evaluate",
-            {
+            "Runtime.evaluate", {
                 "expression": expression,
                 "objectGroup": objectGroup,
                 "includeCommandLineAPI": includeCommandLineAPI,
@@ -154,12 +171,13 @@ class Page:
             # ! Браузер разорвал соединение
             except ConnectionClosedError as e:
                 if self.verbose: print(f"[<- V ->] | ConnectionClosedError '{e}'")
-                data_msg = {}
                 self.Detach()
+                return
 
             if ("method" in data_msg and data_msg["method"] == "Inspector.detached"
                     and data_msg["params"]["reason"] == "target_closed"):
                 self.Detach()
+                return
 
             # Ожидающие ответов вызовы API получают ответ по id входящих сообщений.
             if "id" in data_msg and data_msg["id"] in self.responses:
@@ -178,7 +196,7 @@ class Page:
             # и если среди зарегистрированных слушателей есть с именем "testFunc",
             #   то он немедленно получит распакованный список args[ ... ], вместе
             #   с переданными ему аргументами, если таковые имеются.
-            method = data_msg.get("method")
+            method: str = data_msg.get("method")
             if (    # =============================================================
                     self.listeners
                             and
@@ -199,13 +217,13 @@ class Page:
             #   определённого метода, вызванного в контексте страницы,
             #   если для этого метода они зарегистрированы.
             if (    # =============================================================
-                    self.listeners_for_method
+                    self.listeners_for_event
                             and
-                    method in self.listeners_for_method
+                    method in self.listeners_for_event
             ):      # =============================================================
-                # Получаем словарь слушателей, в котором ключи — слушатели
+                # Получаем словарь слушателей, в котором ключи — слушатели,
                 #   значения — их аргументы.
-                listeners: dict = self.listeners_for_method[ method ]
+                listeners: dict = self.listeners_for_event[ method]
                 p = data_msg.get("params")
                 for listener, args in listeners.items():
                     asyncio.create_task(
@@ -252,10 +270,15 @@ class Page:
                     args: [1, "test"]
                 }))
             Вызовет следующего Python-слушателя:
-                def test_func(id, text):
-                    print(id, text)
+                async def test_func(id, text, action):
+                    print(id, text, action)
+            Зарегистрированного следующим образом:
+                await page.AddListener(test_func, "test-action")
 
-        :param listener:        Колбэк-функция.
+            !!! ВНИМАНИЕ !!! В качестве слушателя может выступать ТОЛЬКО асинхронная
+                функция, или метод.
+
+        :param listener:        Асинхронная колбэк-функция.
         :param args:            (optional) любое кол-во агрументов, которые будут переданы
                                     в функцию последними.
         :return:        None
@@ -276,7 +299,7 @@ class Page:
             del self.listeners[ listener.__name__ ]
 
     async def AddListenerForEvent(
-            self, event: str, listener: Callable, *args: Optional[any]) -> None:
+        self, event: str, listener: Callable, *args: Optional[any]) -> None:
         """
         Регистирует слушателя, который будет вызываться при вызове определённых событий
             в браузере. Список таких событий можно посмотреть в разделе "Events" почти
@@ -292,31 +315,31 @@ class Page:
                                     в функцию последними.
         :return:        None
         """
-        if event not in self.listeners_for_method:
-            self.listeners_for_method[event]: dict = {}
-        self.listeners_for_method[ event][listener] = args
+        if event not in self.listeners_for_event:
+            self.listeners_for_event[event]: dict = {}
+        self.listeners_for_event[ event][listener] = args
         if not self.runtime_enabled:
             await self.Call("Runtime.enable")
             self.runtime_enabled = True
 
     def RemoveListenerForEvent(self, event: str, listener: Callable) -> None:
         """
-        Удаляет регистрацию слушателя для указанного метода.
+        Удаляет регистрацию слушателя для указанного события.
         :param event:           Имя метода, для которого была регистрация.
         :param listener:        Колбэк-функция, которую нужно удалить.
         :return:        None
         """
-        if m := self.listeners_for_method.get(event):
+        if m := self.listeners_for_event.get(event):
             if listener in m: m.pop(listener)
 
 
     def RemoveListenersForEvent(self, event: str) -> None:
         """
-        Удаляет регистрацию метода и слушателей вместе с ним для указанного метода.
+        Удаляет регистрацию метода и слушателей вместе с ним для указанного события.
         :param event:          Имя метода, для которого была регистрация.
         :return:        None
         """
-        self.listeners_for_method.pop(event)
+        self.listeners_for_event.pop(event)
 
     def __del__(self) -> None:
         if self.verbose: print("[<- V ->] [ DELETED ]", self.page_id)

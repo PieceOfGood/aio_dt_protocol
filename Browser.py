@@ -165,12 +165,15 @@ class Browser:
 
         self.dev_tool_profiles = dev_tool_profiles if profile_path else False
 
-        if self.dev_tool_profiles and not re.search(r"[\\/]", profile_path):
+        if self.dev_tool_profiles:
             self.profile_path = os.path.join(expanduser("~"), "DevTools_Profiles", profile_path)
+        elif profile_path != "":
+            self.profile_path = os.path.abspath(profile_path)
         else:
-            self.profile_path = profile_path
+            self.profile_path = ""
 
-        self.first_run = profile_path == "" or not os.path.exists(profile_path)
+        #  and not re.search(r"[\\/]", profile_path)
+        self.first_run = self.profile_path == "" or not os.path.exists(self.profile_path)
 
         if browser_exe == "chrome":
             self.browser_name = "chrome"
@@ -195,7 +198,7 @@ class Browser:
             browser_path = browser_path if browser_path else registry_read_key(browser_exe)
         elif sys.platform == "linux":
             browser_path = browser_path if browser_path else os.popen("which " + browser_exe).read().strip()
-        else: raise OSError(f"Платформа '{sys.platform}' — не поддерживается")
+        else: raise OSError(f"Platform '{sys.platform}' — not supported")
 
         if not os.path.exists(browser_path) or not os.path.isfile(browser_path):
             raise FileNotFoundError(f"Переданный 'browser_path' => '{browser_path}' — не существует, или содержит ошибку")

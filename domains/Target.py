@@ -5,6 +5,7 @@ class Target(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Target
     """
+    __slots__ = ()
 
     def __init__(self):
         self.targets_discovered = False

@@ -6,6 +6,7 @@ class DOM(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/DOM
     """
+    __slots__ = ()
 
     def __init__(self):
         self.dom_domain_enabled = False

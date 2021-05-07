@@ -8,6 +8,7 @@ class Page(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Page
     """
+    __slots__ = ()
 
     def __init__(self):
         self.page_domain_enabled = False
@@ -41,11 +42,12 @@ class Page(ABC):
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-enable
         :return:
         """
-        await self.AddListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher, "started")
-        await self.AddListenerForEvent("Page.frameNavigated", self._StateLoadWatcher, "navigated")
-        await self.AddListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher, "stopped")
-        await self.Call("Page.enable")
-        self.page_domain_enabled = True
+        if not self.page_domain_enabled:
+            await self.AddListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher, "started")
+            await self.AddListenerForEvent("Page.frameNavigated", self._StateLoadWatcher, "navigated")
+            await self.AddListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher, "stopped")
+            await self.Call("Page.enable")
+            self.page_domain_enabled = True
 
     async def PageDisable(self) -> None:
         """
@@ -53,11 +55,12 @@ class Page(ABC):
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-disable
         :return:
         """
-        self.RemoveListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher)
-        self.RemoveListenerForEvent("Page.frameNavigated", self._StateLoadWatcher)
-        self.RemoveListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher)
-        await self.Call("Page.disable")
-        self.page_domain_enabled = False
+        if self.page_domain_enabled:
+            self.RemoveListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher)
+            self.RemoveListenerForEvent("Page.frameNavigated", self._StateLoadWatcher)
+            self.RemoveListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher)
+            await self.Call("Page.disable")
+            self.page_domain_enabled = False
 
     async def _StateLoadWatcher(self, params: dict, state: str) -> None:
         """
@@ -74,13 +77,12 @@ class Page(ABC):
             приглашение или onbeforeunload).
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-handleJavaScriptDialog
         :param accept:          'True' — принять, 'False' — отклонить диалог.
-        :param promptText:      Текст для ввода в диалоговом окне, прежде чем принять. Используется,
-                                    только если это диалоговое окно с подсказкой.
+        :param promptText:      (optional) Текст для ввода в диалоговом окне, прежде чем принять.
+                                    Используется, только если это диалоговое окно с подсказкой.
         :return:
         """
         args = {"accept": accept}
-        if promptText:
-            args.update({"promptText": promptText})
+        if promptText: args.update({"promptText": promptText})
         await self.Call("Page.handleJavaScriptDialog", args)
 
     async def Navigate(
@@ -92,8 +94,8 @@ class Page(ABC):
         Переходит на адрес указанного 'url'.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-navigate
         :param url:             Адрес, по которому происходит навигация.
-        :param wait_for_load:   Если 'True' - ожидает 'complete' у 'document.readyState' страницы,
-                                    на которую осуществляется переход.
+        :param wait_for_load:   (optional) Если 'True' - ожидает 'complete' у 'document.readyState'
+                                    страницы, на которую осуществляется переход.
         :return:
         """
         b_name_len = len(self.browser_name)
@@ -119,8 +121,8 @@ class Page(ABC):
         Дожидается указанного состояния загрузки документа.
             Если включены уведомления домена Page — дожидается, пока основной фрейм
             страницы не перестанет загружаться.
-        :param desired_state:       Желаемое состояние загрузки. По умолчанию == полное.
-        :param interval:            Таймаут ожидания.
+        :param desired_state:       (optional) Желаемое состояние загрузки. По умолчанию == полное.
+        :param interval:            (optional) Таймаут ожидания.
         :return:        None
         """
 
@@ -132,6 +134,25 @@ class Page(ABC):
         while (await self.Eval("document.readyState"))["value"] != desired_state:
             await asyncio.sleep(interval)
 
+    async def WaitNavigate(
+            self,
+            url: Optional[Union[str, bytes]] = "about:blank",
+            wait_for_load: Optional[bool]    = True,
+            timeout: Optional[float]         = 10.0
+    ) -> bool:
+        """
+        Дожидается совершения перехода на адрес за указанный интервал времени возвращая True, или False,
+            если дождаться не удалось.
+        :param url:                 Адрес, по которому происходит навигация.
+        :param wait_for_load:       (optional) Если 'True' - ожидает 'complete' у 'document.readyState'
+                                        страницы, на которую осуществляется переход.
+        :param timeout:             (optional) Кол-во секунд ожидания.
+        :return:
+        """
+        try: await asyncio.wait_for(self.Navigate(url, wait_for_load), timeout)
+        except asyncio.exceptions.TimeoutError: return False
+        else: return True
+
     async def AddScriptOnLoad(self, src: str) -> str:
         """
         Запускает полученный 'src' скрипта в каждом фрейме и перед загрузкой скриптов самого фрейма.
@@ -142,8 +163,7 @@ class Page(ABC):
         :param src:             Текст сценария.
         :return:                identifier -> Уникальный идентификатор скрипта.
         """
-        if not self.page_domain_enabled:
-            await self.PageEnable()
+        if not self.page_domain_enabled: await self.PageEnable()
         return (await self.Call("Page.addScriptToEvaluateOnNewDocument", {"source": src}))["identifier"]
 
     async def RemoveScriptOnLoad(self, identifier: str) -> None:
@@ -155,16 +175,17 @@ class Page(ABC):
         """
         await self.Call("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
 
-    async def SetDocumentContent(self, frameId: str, html: str) -> None:
+    async def SetDocumentContent(self, html: str, frameId: str = None) -> None:
         """
-        Удаляет данный скрипт из списка запускаемых при загрузке фрейма.
+        Устанавливает полученную разметку как HTML-код документа.
             frameId — можно найти среди параметров события 'Runtime.executionContextCreated',
             а так же у конрневого элемента документа root.children[1].frameId
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-setDocumentContent
-        :param frameId:         Иденификатор фрейма, которому предназначается html.
         :param html:            HTML-разметка.
+        :param frameId:         Иденификатор фрейма, которому предназначается html.
         :return:
         """
+        if frameId is None: frameId = self.page_id
         await self.Call("Page.setDocumentContent", {"frameId": frameId, "html": html})
 
     async def SetAdBlockingEnabled(self, enabled: bool) -> None:
@@ -175,8 +196,7 @@ class Page(ABC):
         :param enabled:         Включить?
         :return:
         """
-        if not self.page_domain_enabled:
-            await self.PageEnable()
+        if not self.page_domain_enabled: await self.PageEnable()
         await self.Call("Page.setAdBlockingEnabled", {"enabled": enabled})
 
     async def SetFontFamilies(self, fontFamilies: dict) -> None:
@@ -376,6 +396,7 @@ class Page(ABC):
         :param entryId:             Уникальный идентификатор записи для перехода.
         :return:
         """
+        if self.page_domain_enabled: self.loading_state = "do_navigate"
         await self.Call("Page.navigateToHistoryEntry", {"entryId": entryId})
 
     async def ResetNavigationHistory(self) -> None:
@@ -404,7 +425,7 @@ class Page(ABC):
 
     @abstractmethod
     def RemoveListenerForEvent(self, event: str, listener: Callable) -> None:
-        raise NotImplementedError("async method RemoveListenerForEvent() — is not implemented")
+        raise NotImplementedError("method RemoveListenerForEvent() — is not implemented")
 
     @abstractmethod
     async def Eval(

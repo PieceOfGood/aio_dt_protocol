@@ -6,6 +6,7 @@ class Console(ABC):
     #   Этот домен является устаревшим. Используйте Runtime или Log вместо него.
     #   https://chromedevtools.github.io/devtools-protocol/tot/Console/
     """
+    __slots__ = ()
 
     def __init__(self):
         self.console_domain_enabled   = False

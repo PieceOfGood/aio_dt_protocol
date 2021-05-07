@@ -61,17 +61,9 @@ class PageEx(
         self._root: Union[Node, None] = None
         self.style_sheets = []                  # Если домен CSS активирован, сюда попадут все 'styleSheetId' страницы
 
-        self.loading_state = ""
-
-        self.dom_domain_enabled       = False
-        self.targets_discovered       = False
-        self.log_domain_enabled       = False
-        self.network_domain_enabled   = False
-        self.console_domain_enabled   = False
-        self.page_domain_enabled      = False
-        self.fetch_domain_enabled     = False
-        self.css_domain_enabled       = False
-        self.overlay_domain_enabled   = False
+        self.loading_state = ""                 # Состояние загрузки страницы(основного фрейма). Отслеживается, если
+                                                #   включены уведомления домена Page. Может иметь значения:
+                                                # |  started; navigated; stopped; do_navigate; do_reload |
 
 
     # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
@@ -84,10 +76,10 @@ class PageEx(
         code = "(() => { return JSON.stringify([document.documentElement.clientWidth, document.documentElement.clientHeight]); })();"
         return json.loads(await self.InjectJS(code))
 
-    async def GetUrl(self):
+    async def GetUrl(self) -> str:
         return (await self.GetTargetInfo())["url"]
 
-    async def GetTitle(self):
+    async def GetTitle(self) -> str:
         return (await self.GetTargetInfo())["title"]
 
     async def MakeScreenshot(

@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union, Callable
+from typing import Optional, Union, Callable, List
 
 class CSS(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Log
     #   LogEntry -> https://chromedevtools.github.io/devtools-protocol/tot/Log#type-LogEntry
     """
+    __slots__ = ()
 
     def __init__(self):
         self.css_domain_enabled = False
@@ -61,6 +62,67 @@ class CSS(ABC):
             await self.Call("CSS.disable")
             self.css_domain_enabled = False
 
+    async def AddRule(
+        self, styleSheetId: str, ruleText: str,
+        startLine:   Optional[int] = 0,
+        startColumn: Optional[int] = 0,
+        endLine:     Optional[int] = 0,
+        endColumn:   Optional[int] = 0
+    ) -> dict:
+        """
+        Вставляет новое правило с заданным ruleText в таблицу стилей с заданным styleSheetId в позицию,
+            указанную с помощью location.
+        https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-addRule
+        :param styleSheetId:            Идентификатор стилей.
+        :param ruleText:                Текст правила (например: 'body { background: red }').
+
+        Текстовый диапазон в ресурсе. Все числа отсчитываются от нуля.
+        :param startLine:               (optional) - Стартовая линия диапазона.
+        :param startColumn:             (optional) - Начальный столбец диапазона (включительно).
+        :param endLine:                 (optional) - Конечная строка диапазона.
+        :param endColumn:               (optional) - Конечный столбец диапазона (исключая).
+        :return:    https://chromedevtools.github.io/devtools-protocol/tot/CSS/#type-CSSRule
+        """
+        location = {"startLine": startLine, "startColumn": startColumn, "endLine": endLine, "endColumn": endColumn}
+        args = {
+            "styleSheetId": styleSheetId,
+            "ruleText": ruleText,
+            "location": location
+        }
+        return (await self.Call("CSS.addRule", args))["rule"]
+
+    async def CollectClassNames(self, styleSheetId: str) -> List[str]:
+        """
+        Возвращает список всех имён классов для указанного ID.
+        https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-collectClassNames
+        :param styleSheetId:            Идентификатор стилей.
+        :return:
+        """
+        return (await self.Call("CSS.collectClassNames", {"styleSheetId": styleSheetId}))["classNames"]
+
+    async def CreateStyleSheet(self, frameId: str = None) -> str:
+        """
+        Создает новую специальную таблицу стилей через "инспектор" во фрейме с заданным frameId.
+            Если frameId не указан, будет использован frameId главного фрейма текущей страницы.
+            Возвращает ID созданного styleSheet.
+        https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-createStyleSheet
+        :param frameId:                 Идентификатор фрейма, в котором будет создан styleSheet.
+        :return:                styleSheetId
+        """
+        frameId = frameId if frameId else self.page_id
+        styleSheetId = (await self.Call("CSS.createStyleSheet", {"frameId": frameId}))["styleSheetId"]
+        self.style_sheets.append(styleSheetId)
+        return styleSheetId
+
+    async def GetStyleSheetText(self, styleSheetId: str) -> str:
+        """
+        Возвращает текстовый контент стилей для указанного ID.
+        https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-getStyleSheetText
+        :param styleSheetId:            Идентификатор стилей.
+        :return:
+        """
+        return (await self.Call("CSS.getStyleSheetText", {"styleSheetId": styleSheetId}))["text"]
+
     @abstractmethod
     async def AddListenerForEvent(
             self, event: str, listener: Callable, *args: Optional[any]) -> None:
@@ -68,7 +130,7 @@ class CSS(ABC):
 
     @abstractmethod
     def RemoveListenerForEvent(self, event: str, listener: Callable) -> None:
-        raise NotImplementedError("async method RemoveListenerForEvent() — is not implemented")
+        raise NotImplementedError("method RemoveListenerForEvent() — is not implemented")
 
     @abstractmethod
     async def Call(

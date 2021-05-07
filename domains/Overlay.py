@@ -5,6 +5,7 @@ class Overlay(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Overlay
     """
+    __slots__ = ()
 
     def __init__(self):
         self.overlay_domain_enabled = False

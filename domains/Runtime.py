@@ -7,6 +7,7 @@ class Runtime(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Runtime
     """
+    __slots__ = ()
 
     def __init__(self):
         self.runtime_enabled = False

@@ -5,6 +5,7 @@ class Fetch(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Fetch
     """
+    __slots__ = ()
 
     def __init__(self):
         self.fetch_domain_enabled = False
