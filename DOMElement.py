@@ -1,7 +1,7 @@
 import re
 import asyncio
-from typing import List, Tuple, Dict, Optional, Union
-# from Chrome.PageEx import PageEx
+from typing import List, Dict, Optional, Union
+from aio_dt_protocol.Data import NodeCenter, NodeRect, StyleProp, BoxModel
 
 def to_dict_attrs(a: list) -> Union[dict, None]:
     if not a: return None
@@ -192,11 +192,11 @@ class Node:
         except:
             return False
 
-    async def GetAttributes(self) -> dict:
+    async def GetAttributes(self) -> Dict[str, str]:
         """
         Возвращает список атрибутов элемента.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getAttributes
-        :return:            array [ string ] - Чередующийся массив имен и значений атрибутов элемента.
+        :return:            {'id': 'element-id', 'style': 'position:absolute;...', ...}
         """
         return to_dict_attrs((await self.page_instance.Call("DOM.getAttributes", {"nodeId": self.nodeId}))["attributes"])
 
@@ -217,21 +217,13 @@ class Node:
         """
         await self.page_instance.Call("DOM.removeNode", {"nodeId": self.nodeId})
 
-    async def GetBoxModel(self) -> list:
+    async def GetBoxModel(self) -> BoxModel:
         """
         Возвращает 'box-model' элемента.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getBoxModel
-        :return:            {
-                                "content": Quad,                    -> Content box
-                                "padding": Quad,                    -> Padding box
-                                "border": Quad,                     -> Border box
-                                "margin": Quad,                     -> Margin box
-                                "width": Integer,                   -> Node width
-                                "height": Integer,                  -> Node height
-                                "shapeOutside": ShapeOutsideInfo    -> (optional) внешняя форма
-                            }
+        :return:            <BoxModel>
         """
-        return (await self.page_instance.Call("DOM.getBoxModel", {"nodeId": self.nodeId}))["model"]
+        return BoxModel(**(await self.page_instance.Call("DOM.getBoxModel", {"nodeId": self.nodeId}))["model"])
 
     async def GetOuterHTML(self) -> str:
         """
@@ -441,18 +433,20 @@ class Node:
             nodes.append(Node(node_id, self.page_instance))
         return nodes
 
-    async def GetComputedStyle(self) -> List[Dict[str, str]]:
+    async def GetComputedStyle(self) -> List[StyleProp]:
         """
-        Возвращает список словарей описывающих свойства указанного Узла.
+        Возвращает список <NodeProp> описывающих свойства указанного Узла.
         https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-getComputedStyleForNode
-        :return:            [ {name: "prop_name", value: "prop_value"}, ... ]
+        :return:            [ <StyleProp>, ... ]
         """
-        return (await self.page_instance.Call("CSS.getComputedStyleForNode", {"nodeId": self.nodeId}))["computedStyle"]
+        r = (await self.page_instance.Call("CSS.getComputedStyleForNode", {"nodeId": self.nodeId}))["computedStyle"]
+        return [StyleProp(**i) for i in r]
 
     async def GetInlineStyles(self) -> Dict[str, dict]:
         """
         Возвращает стили, определенные встроенными (явно в атрибуте style и неявно, используя атрибуты DOM) для
             узла DOM, идентифицированного с помощью nodeId.
+            !ВНИМАНИЕ! Требует включения уведомлений домена CSS и DOM.
         https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-getInlineStylesForNode
         :return:            { inlineStyle: {}, attributeStyle: {} }
         """
@@ -460,20 +454,20 @@ class Node:
 
     # ==================================================================================================================
 
-    async def GetCenter(self) -> Tuple[int, int]:
+    async def GetCenter(self) -> NodeCenter:
         """ Возвращает координаты центра узла """
         quad = (await self.GetContentQuads())[0]
         x = (quad[2] - quad[0]) // 2 + quad[0]
         y = (quad[7] - quad[1]) // 2 + quad[1]
-        return (x, y)
+        return NodeCenter(x, y)
 
-    async def GetRect(self) -> Dict[str, int]:
-        """ Возвращает словарь свойств, описывающих пространственное положение узла """
+    async def GetRect(self) -> NodeRect:
+        """ Возвращает <NodeRect> свойств, описывающих пространственное положение узла """
         q = (await self.GetContentQuads())[0]
-        return {"x": q[0], "y": q[1], "w": q[2] - q[0], "h": q[7] - q[1], "l": q[0], "r": q[2], "t": q[1], "b": q[7]}
+        return NodeRect(q[0], q[1], q[2] - q[0], q[7] - q[1], q[0], q[2], q[1], q[7])
 
     async def Click(self, delay: float = None) -> None:
         """ Кликает в середину себя """
-        (x, y) = await self.GetCenter()
-        await self.page_instance.action.MouseMoveTo(x, y)
-        await self.page_instance.action.ClickTo(x, y, delay)
+        center = await self.GetCenter()
+        await self.page_instance.action.MouseMoveTo(center.x, center.y)
+        await self.page_instance.action.ClickTo(center.x, center.y, delay)

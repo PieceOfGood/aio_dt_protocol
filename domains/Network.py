@@ -105,6 +105,7 @@ class Network(ABC):
         """
         (EXPERIMENTAL)
         Блокирует загрузку URL-адресов.
+        !!!ВНИМАНИЕ!!! Требует активации доменов Page и Network!
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-setBlockedURLs
         :param urls:            Шаблоны URL для блокировки. Подстановочные знаки ('*') разрешены.
         :return:

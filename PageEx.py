@@ -2,10 +2,11 @@
 from aio_dt_protocol.Page import Page
 from aio_dt_protocol.Actions import Actions
 from aio_dt_protocol.DOMElement import Node
+from aio_dt_protocol.Data import ViewportRect
 
 import asyncio
 import json, base64
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from aio_dt_protocol.domains.Browser import Browser as BrowserDomain
 from aio_dt_protocol.domains.DOM import DOM as DOMDomain
@@ -20,7 +21,6 @@ from aio_dt_protocol.domains.Overlay import Overlay as OverlayDomain
 from aio_dt_protocol.domains.CSS import CSS as CSSDomain
 from aio_dt_protocol.domains.DeviceOrientation import DeviceOrientation as DeviceOrientationDomain
 from aio_dt_protocol.domains.Fetch import Fetch as FetchDomain
-
 
 class PageEx(
     Page, BrowserDomain, DOMDomain, EmulationDomain, LogDomain, NetworkDomain,
@@ -69,12 +69,13 @@ class PageEx(
     # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
     #
 
-    async def GetDocumentRect(self) -> List[int]:
+    async def GetViewportRect(self) -> ViewportRect:
         """
         Возвращает список с длиной и шириной вьюпорта браузера.
         """
         code = "(() => { return JSON.stringify([document.documentElement.clientWidth, document.documentElement.clientHeight]); })();"
-        return json.loads(await self.InjectJS(code))
+        data = json.loads(await self.InjectJS(code))
+        return ViewportRect(int(data[0]), int(data[1]))
 
     async def GetUrl(self) -> str:
         return (await self.GetTargetInfo())["url"]

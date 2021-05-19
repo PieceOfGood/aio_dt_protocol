@@ -100,17 +100,6 @@ class Browser(ABC):
             args.update({"browserContextId": browserContextId})
         await self.Call("Browser.resetPermissions", args)
 
-    async def CloseBrowser(self) -> bool:
-        """
-        Изящно завершает работу браузера.
-        https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-close
-        :return:        Успех/неудача
-        """
-        if self.connected:
-            await self.Call("Browser.close")
-            return True
-        return False
-
     async def GetVersion(self) -> Dict[str, str]:
         """
         Возвращает словарь с информацией о текущем билде браузера.

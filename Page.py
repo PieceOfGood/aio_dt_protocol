@@ -1,8 +1,9 @@
 import asyncio
 import websockets
 from websockets.exceptions import ConnectionClosedError
+from inspect import iscoroutinefunction
 import json
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Union, Tuple
 from abc import ABC
 
 class AbsPage(ABC):
@@ -119,7 +120,7 @@ class Page(AbsPage):
 
         await self._Send(json.dumps(data))
         if not wait_for_response:
-            self.responses = {}
+            # self.responses = {}
             return
 
         self.responses[ _id ] = None
@@ -283,11 +284,30 @@ class Page(AbsPage):
                                     в функцию последними.
         :return:        None
         """
+        if not iscoroutinefunction(listener):
+            raise TypeError("Listener must be a async callable object!")
         if listener.__name__ not in self.listeners:
             self.listeners[ listener.__name__ ] = {"function": listener, "args": args}
             if not self.runtime_enabled:
                 await self.Call("Runtime.enable")
                 self.runtime_enabled = True
+
+    async def AddListeners(self, *list_of_tuple_listeners_and_args: Tuple[Callable, list]) -> None:
+        """
+        Делает то же самое, что и AddListener(), но может зарегистрировать сразу несколько слушателей.
+            Принимает кортежи с двумя элементами, вида (async_func_or_method, list_args), где:
+                async_func_or_method    - синхронная фукция или метод
+                list_args               - список её аргументов(может быть пустым)
+        """
+        for action in list_of_tuple_listeners_and_args:
+            (listener, args) = (action[0], action[1])
+            if not iscoroutinefunction(listener):
+                raise TypeError("Listener must be a async callable object!")
+            if listener.__name__ not in self.listeners:
+                self.listeners[listener.__name__] = {"function": listener, "args": args}
+                if not self.runtime_enabled:
+                    await self.Call("Runtime.enable")
+                    self.runtime_enabled = True
 
     def RemoveListener(self, listener: Callable) -> None:
         """
@@ -295,6 +315,8 @@ class Page(AbsPage):
         :param listener:        Колбэк-функция.
         :return:        None
         """
+        if not iscoroutinefunction(listener):
+            raise TypeError("Listener must be a async callable object!")
         if listener.__name__ in self.listeners:
             del self.listeners[ listener.__name__ ]
 
@@ -315,6 +337,8 @@ class Page(AbsPage):
                                     в функцию последними.
         :return:        None
         """
+        if not iscoroutinefunction(listener):
+            raise TypeError("Listener must be a async callable object!")
         if event not in self.listeners_for_event:
             self.listeners_for_event[event]: dict = {}
         self.listeners_for_event[ event][listener] = args
@@ -329,6 +353,8 @@ class Page(AbsPage):
         :param listener:        Колбэк-функция, которую нужно удалить.
         :return:        None
         """
+        if not iscoroutinefunction(listener):
+            raise TypeError("Listener must be a async callable object!")
         if m := self.listeners_for_event.get(event):
             if listener in m: m.pop(listener)
 

@@ -63,7 +63,7 @@ class Target(ABC):
         """
         await self.Call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
 
-    async def GetTargetInfo(self, targetId: Optional[str] = "") -> dict:
+    async def GetTargetInfo(self, targetId: Optional[str] = None) -> dict:
         """
         (EXPERIMENTAL)
         Возвращает информацию о "target", или о себе, если идентификатор не передан.
@@ -79,7 +79,7 @@ class Target(ABC):
                                         "browserContextId": str,
                                     }
         """
-        if not targetId: targetId = self.page_id
+        if targetId is None: targetId = self.page_id
         return (await self.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]
 
     async def GetTargets(self) -> List[dict]:
@@ -89,15 +89,6 @@ class Target(ABC):
         :return:                [ targetInfo, targetInfo, ... ]
         """
         return (await self.Call("Target.getTargets"))["targetInfos"]
-
-    async def ActivateTarget(self, targetId: str) -> None:
-        """
-        Активирует (создаёт фокус) "target".
-        https://chromedevtools.github.io/devtools-protocol/tot/Target#method-activateTarget
-        :param targetId:        Строка, представляющая идентификатор созданной страницы.
-        :return:
-        """
-        await self.Call("Target.activateTarget", {"targetId": targetId})
 
     async def AttachToBrowserTarget(self) -> str:
         """

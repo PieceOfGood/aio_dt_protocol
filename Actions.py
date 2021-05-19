@@ -1,37 +1,13 @@
 import time
 import asyncio
 import random
-from typing import Tuple, Optional
-# import Chrome.PageEx
-from aio_dt_protocol.KeyCodes import WINDOWS_KEY_SET
+from typing import Tuple, List, Optional
+from aio_dt_protocol.Data import WINDOWS_KEY_SET, WindowBounds, TouchPoint
+
 
 class Actions:
     def __init__(self, page_instance):
         self.page_instance = page_instance
-
-
-    async def SetWindowBounds(self, bounds: dict, windowId: Optional[int] = None) -> None:
-        """
-        (EXPERIMENTAL)
-        Устанавливает позицию и/или размер окна.
-        https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-setWindowBounds
-        :param bounds:          Новые границы окна, а так же состояние, в виде словаря:
-                                    {
-                                        "left":        (int) - (optional) Смещение от левого края экрана до окна в пикселях.
-                                        "top":         (int) - (optional) Смещение от верхнего края экрана к окну в пикселях.
-                                        "width":       (int) - (optional) Ширина окна в пикселях.
-                                        "height":      (int) - (optional) Высота окна в пикселях.
-                                        "windowState": (str) - (optional) normal, minimized, maximized, fullscreen
-                                            'minimized', 'maximized' и 'fullscreen' нельзя сочетать с  'left', 'top',
-                                            'width' или 'height'. Неопределенные поля останутся без изменений.
-                                    }
-        :param windowId:        Идентификатор окна.
-
-        :return:        None
-        """
-        if windowId is None:
-            windowId = (await self.page_instance.GetWindowForTarget())["windowId"]
-        await self.page_instance.Call("Browser.setWindowBounds", {"windowId": windowId, "bounds": bounds})
 
 
 # region [ |>*<|=== Domains ===|>*<| ] Input [ |>*<|=== Domains ===|>*<| ]
@@ -39,21 +15,21 @@ class Actions:
     #   https://godoc.org/github.com/unixpickle/muniverse/chrome
 
     async def DispatchKeyEvent(
-            self, type_: str,
-                        modifiers: Optional[int] = 0,
-                        timestamp: Optional[int] = None,
-                             text: Optional[str] = "",
-                   unmodifiedText: Optional[str] = "",
-                    keyIdentifier: Optional[str] = "",
-                             code: Optional[str] = "",
-                              key: Optional[str] = "",
-            windowsVirtualKeyCode: Optional[int] = 0,
-             nativeVirtualKeyCode: Optional[int] = 0,
-                      autoRepeat: Optional[bool] = False,
-                        isKeypad: Optional[bool] = True,
-                     isSystemKey: Optional[bool] = False,
-                         location: Optional[int] = 0,
-                        commands: Optional[list] = None
+        self, type_: str,
+        modifiers:             Optional[int] = 0,
+        timestamp:             Optional[int] = None,
+        text:                  Optional[str] = "",
+        unmodifiedText:        Optional[str] = "",
+        keyIdentifier:         Optional[str] = "",
+        code:                  Optional[str] = "",
+        key:                   Optional[str] = "",
+        windowsVirtualKeyCode: Optional[int] = 0,
+        nativeVirtualKeyCode:  Optional[int] = 0,
+        autoRepeat:           Optional[bool] = False,
+        isKeypad:             Optional[bool] = True,
+        isSystemKey:          Optional[bool] = False,
+        location:              Optional[int] = 0,
+        commands:             Optional[list] = None
     ) -> None:
         """
         Отправляет событие кнопки на страницу.
@@ -100,24 +76,24 @@ class Actions:
         if timestamp is not None:
             args.update({"timestamp": timestamp})
         else:
-            args.update({"timestamp": int(time.time())})
+            args.update({"timestamp": int(time.time() * 1000)})
         await self.page_instance.Call("Input.dispatchKeyEvent", args)
 
     async def DispatchMouseEvent(
-            self, type_: str, x: float, y: float,
-                       modifiers: Optional[int] = 0,
-                       timestamp: Optional[int] = None,
-                          button: Optional[str] = "none",
-                         buttons: Optional[int] = 0,
-                      clickCount: Optional[int] = 1,
-                         force: Optional[float] = 0,
-            tangentialPressure: Optional[float] = 0,
-                           tiltX: Optional[int] = 0,
-                           tiltY: Optional[int] = 0,
-                           twist: Optional[int] = 0,
-                        deltaX: Optional[float] = 0,
-                        deltaY: Optional[float] = 0,
-                     pointerType: Optional[str] = "mouse"
+        self, type_: str, x: float, y: float,
+        modifiers:            Optional[int] = 0,
+        timestamp:            Optional[int] = None,
+        button:               Optional[str] = "none",
+        buttons:              Optional[int] = 0,
+        clickCount:           Optional[int] = 1,
+        force:              Optional[float] = 0,
+        tangentialPressure: Optional[float] = 0,
+        tiltX:                Optional[int] = 0,
+        tiltY:                Optional[int] = 0,
+        twist:                Optional[int] = 0,
+        deltaX:             Optional[float] = 0,
+        deltaY:             Optional[float] = 0,
+        pointerType:          Optional[str] = "mouse"
     ) -> None:
         """
         Отправляет событие мышки на страницу.
@@ -169,14 +145,14 @@ class Actions:
         if timestamp is not None:
             args.update({"timestamp": timestamp})
         else:
-            args.update({"timestamp": int(time.time())})
+            args.update({"timestamp": int(time.time() * 1000)})
         await self.page_instance.Call("Input.dispatchMouseEvent", args)
 
     async def DispatchTouchEvent(
-            self, type_: str,
-            touchPoints: Optional[list] = None,
-               modifiers: Optional[int] = 0,
-               timestamp: Optional[int] = None
+        self, type_: str,
+        touchPoints: Optional[List[TouchPoint]] = None,
+        modifiers:                Optional[int] = 0,
+        timestamp:                Optional[int] = None
     ) -> None:
         """
         Отправляет событие прикосновения на страницу.
@@ -196,15 +172,13 @@ class Actions:
         """
         args = { "type": type_, "modifiers": modifiers }
         if type_ == "touchEnd" or type_ == "touchCancel":
-            args.update({"touchPoints": []})
-        else:
             if len(touchPoints) == 0 or touchPoints is None:
-                raise Exception(f"Для действия '{type_}', аргумент 'touchPoints' должен получить хотя-бы одну координату")
+                raise ValueError(f"Для действия '{type_}', аргумент 'touchPoints' должен получить хотя-бы одну координату")
+            args.update({"touchPoints": [point.to_dict() for point in touchPoints]})
 
-        if timestamp is not None:
-            args.update({"timestamp": timestamp})
-        else:
-            args.update({"timestamp": int(time.time())})
+        if timestamp is not None: args.update({"timestamp": timestamp})
+        else: args.update({"timestamp": int(time.time() * 1000)})
+
         await self.page_instance.Call("Input.dispatchTouchEvent", args)
 
     async def InsertText(self, text: str) -> None:
@@ -248,8 +222,8 @@ class Actions:
             self, x: float, y: float,
                       xDistance: Optional[float] = None,
                       yDistance: Optional[float] = None,
-                      xOverscroll: Optional[int] = None,
-                      yOverscroll: Optional[str] = None,
+                    xOverscroll: Optional[float] = None,
+                    yOverscroll: Optional[float] = None,
                     preventFling: Optional[bool] = None,
                             speed: Optional[int] = None,
                 gestureSourceType: Optional[str] = None,
@@ -260,6 +234,7 @@ class Actions:
         """
         (EXPERIMENTAL)
         Синтезирует жест прокрутки в течение определенного периода времени, генерируя соответствующие сенсорные события.
+            Возвращает управление только после выполнения жеста!
         https://chromedevtools.github.io/devtools-protocol/tot/Input/#method-synthesizeScrollGesture
         :param x:                       Координата X начала жеста в пикселях CSS.
         :param y:                       Координата Y начала жеста в пикселях CSS.
@@ -304,8 +279,8 @@ class Actions:
 
     async def SynthesizeTapGesture(
             self, x: float, y: float,
-                     duration: Optional[int] = None,
-                     tapCount: Optional[int] = None,
+            duration:          Optional[int] = None,
+            tapCount:          Optional[int] = None,
             gestureSourceType: Optional[str] = None
     ) -> None:
         """
@@ -330,9 +305,83 @@ class Actions:
             args.update({"gestureSourceType": gestureSourceType})
         await self.page_instance.Call("Input.synthesizeTapGesture", args)
 
+    async def ActivateTarget(self, targetId: Optional[str] = None) -> None:
+        """
+        Активирует (создаёт фокус) "target".
+        https://chromedevtools.github.io/devtools-protocol/tot/Target#method-activateTarget
+        :param targetId:        Строка, представляющая идентификатор созданной страницы.
+        :return:
+        """
+        if targetId is None: targetId = self.page_instance.page_id
+        await self.page_instance.Call("Target.activateTarget", {"targetId": targetId})
+
+    async def BringToFront(self) -> None:
+        """
+        Выводит страницу на передний план (активирует вкладку).
+        https://chromedevtools.github.io/devtools-protocol/tot/Page#method-bringToFront
+        :return:
+        """
+        await self.page_instance.Call("Page.bringToFront")
+
     # endregion
 
     # ==================================================================================================================
+
+    async def SwipeTo(
+        self,
+        direction:      Optional[str] = "up",
+        x:            Optional[float] = None,
+        y:            Optional[float] = None,
+        distance:     Optional[float] = None,
+        speed:        Optional[float] = None,
+        overscroll:   Optional[float] = None,
+        repeat_count:   Optional[int] = None,
+        repeat_delay: Optional[float] = None
+    ) -> None:
+        """
+        Скроллит вьюпорт жестом "touch" на всю его длину/высоту.
+            Возвращает управление только после выполнения жеста!
+        :param direction:       (optional) Направление. Может быть следующим:
+                                    up — пальцем вверх(прокрутка вниз)
+                                    down — пальцем вниз(прокрутка вверх)
+                                    left — пальцем влево(прокрутка вправо)
+                                    right — пальцем вправо(прокрутка влево)
+        :param x:               (optional) X-координата начальной точки.
+        :param y:               (optional) Y-координата начальной точки.
+        :param distance:        (optional) Дистанция движения.
+        :param speed:           (optional) Скорость движения(по умолчанию = 800).
+        :param overscroll:      (optional) Дополнительная дистанция в пикселях.
+        :param repeat_count:    (optional) Кол-во повторений сделанного жеста.
+        :param repeat_delay:    (optional) Задержка между повторениями.
+        :return:
+        """
+        if direction not in ["up", "down", "left", "right"]:
+            raise ValueError("'direction' must be one from — up; down; left; right")
+        sign = -1 if direction in ["up", "left"] else 1
+        rect = None
+        if x is None:
+            rect = await self.page_instance.GetViewportRect()
+            x = 10 if direction == "right" else rect.width - 10 if direction == "left" else rect.height / 2
+
+        if y is None:
+            rect = await self.page_instance.GetViewportRect()
+            y = 10 if direction == "down" else rect.height - 10 if direction == "up" else rect.width / 2
+
+        if distance is None:
+            rect = rect or await self.page_instance.GetViewportRect()
+            distance = (rect.height if direction in ["up", "down"] else rect.width) - 10
+
+        overscroll = overscroll if overscroll is not None else 0
+
+        args = {
+            "x": x, "y": y, "speed": speed, "repeatCount": repeat_count,
+            "repeatDelayMs": repeat_delay, "gestureSourceType": "touch",
+            "xDistance": distance * sign if direction in ["left", "right"] else None,
+            "yDistance": distance * sign if direction in ["up", "down"] else None,
+            "xOverscroll": overscroll * -sign if direction in ["left", "right"] else None,
+            "yOverscroll": overscroll * -sign if direction in ["up", "down"] else None,
+        }
+        await self.SynthesizeScrollGesture(**args)
 
     async def ClickTo(self, x: int, y: int, delay: float = None) -> None:
         """
@@ -359,6 +408,16 @@ class Actions:
         """
         await self.DispatchMouseEvent("mouseWheel", x, y, button="middle", deltaX=deltaX, deltaY=deltaY)
 
+    async def WheelTo(self, direction: Optional[str] = "down") -> None:
+        sign = -1 if direction in ["up", "left"] else 1
+        rect = await self.page_instance.GetViewportRect()
+        x = 10 if direction == "right" else rect.width - 10 if direction == "left" else rect.height / 2
+        y = 10 if direction == "down" else rect.height - 10 if direction == "up" else rect.width / 2
+        distance = ((rect.height if direction in ["up", "down"] else rect.width) - 10) * sign
+        delta = {"deltaX": distance} if direction in ["left", "rigth"] else {"deltaY": distance}
+        await self.MouseWheel(x, y, **delta)
+
+
     async def MouseMoveToCoordinatesAndClick(self, x: int, y: int) -> None:
         await self.MouseMoveTo(x, y)
         await self.ClickTo(x, y)
@@ -370,9 +429,8 @@ class Actions:
         :param char:             Символ для ввода.
         :return:
         """
-        if len(char) > 1: raise Exception(f"Передаваемая строка: '{char}' — должна быть последовательностью из одного символа!")
-        await self.DispatchKeyEvent("char", text=char)
-
+        if len(char) > 1: raise ValueError(f"Передаваемая строка: '{char}' — должна быть последовательностью из одного символа!")
+        await self.DispatchKeyEvent("char", text=char, key=char)
 
     async def SendText(
             self, text: str, interval: Optional[Tuple[float, float]] = None
@@ -386,10 +444,9 @@ class Actions:
                                      Кортеж (10, None) — устанавливает фиксированное ожидание в 10 секунд
         :return:
         """
-        delay = (random.uniform(interval[0], interval[1]) if interval[1] else interval[0]) if interval is not None else 0
         for letter in text:
             await self.SendChar(letter)
-            if delay: await asyncio.sleep(delay)
+            if interval is not None: await asyncio.sleep(random.uniform(interval[0], interval[1]))
 
     async def PressKeySet(self, key: str, modifiers: Optional[int] = 0) -> None:
         """
@@ -411,6 +468,12 @@ class Actions:
             "windowsVirtualKeyCode": WINDOWS_KEY_SET[upper_key],
             "nativeVirtualKeyCode": WINDOWS_KEY_SET[upper_key]
         }
+        await self.DispatchKeyEvent("keyDown", **args)
+        await self.DispatchKeyEvent("keyUp", **args)
+
+    async def SendKeyEvent(self, event: dict, modifiers: Optional[int] = 0) -> None:
+        args = { "modifiers": modifiers }
+        args.update(event)
         await self.DispatchKeyEvent("keyDown", **args)
         await self.DispatchKeyEvent("keyUp", **args)
 
@@ -436,3 +499,28 @@ class Actions:
         elif modify == 2:
             await self.ControlA()
             await self.PressKeySet("back")
+
+    async def CloseBrowser(self) -> bool:
+        """
+        Изящно завершает работу браузера.
+        https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-close
+        :return:        Закрылся/был закрыт
+        """
+        if self.page_instance.connected:
+            await self.page_instance.Call("Browser.close")
+            return True
+        return False
+
+    async def SetWindowBounds(self, bounds: WindowBounds, windowId: Optional[int] = None) -> None:
+        """
+        (EXPERIMENTAL)
+        Устанавливает позицию и/или размер окна.
+        https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-setWindowBounds
+        :param bounds:          Новые границы окна, а так же состояние.
+        :param windowId:        Идентификатор окна.
+
+        :return:        None
+        """
+        if windowId is None:
+            windowId = (await self.page_instance.GetWindowForTarget())["windowId"]
+        await self.page_instance.Call("Browser.setWindowBounds", {"windowId": windowId, "bounds": bounds.to_dict()})

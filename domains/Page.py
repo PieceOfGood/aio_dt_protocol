@@ -28,14 +28,6 @@ class Page(ABC):
     @property
     def browser_name(self) -> str: return ""
 
-    async def BringToFront(self) -> None:
-        """
-        Выводит страницу на передний план (активирует вкладку).
-        https://chromedevtools.github.io/devtools-protocol/tot/Page#method-bringToFront
-        :return:
-        """
-        await self.Call("Page.bringToFront")
-
     async def PageEnable(self) -> None:
         """
         Включает уведомления домена 'Page'.
@@ -87,15 +79,19 @@ class Page(ABC):
 
     async def Navigate(
             self,
-            url: Optional[Union[str, bytes]] = "about:blank",
-            wait_for_load: Optional[bool] = True
+            url:  Optional[Union[str, bytes]] = "about:blank",
+            wait_for_load:     Optional[bool] = True,
+            wait_for_complete: Optional[bool] = False
     ) -> None:
         """
         Переходит на адрес указанного 'url'.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-navigate
-        :param url:             Адрес, по которому происходит навигация.
-        :param wait_for_load:   (optional) Если 'True' - ожидает 'complete' у 'document.readyState'
-                                    страницы, на которую осуществляется переход.
+        :param url:                 Адрес, по которому происходит навигация.
+        :param wait_for_load:       (optional) Если 'True' - ожидает 'complete' у 'document.readyState'
+                                        страницы, на которую осуществляется переход, а так же состояния остановки
+                                        газрузки ресурсов, если активны уведомления домена Page.
+        :param wait_for_complete:   (optional) Если 'True' - ожидает 'complete' у 'document.readyState'
+                                        страницы, на которую осуществляется переход.
         :return:
         """
         b_name_len = len(self.browser_name)
@@ -110,23 +106,27 @@ class Page(ABC):
                      "data:text/html;Base64," + url.decode()
              )
 
-        await self.Call("Page.navigate", {"url": _url_}, False)
+        await self.Call("Page.navigate", {"url": _url_})
         if wait_for_load:
-            await self.WaitForLoad()
+            await self.WaitForLoad(ignore_loading_state=wait_for_complete)
 
     async def WaitForLoad(
-        self, desired_state: Optional[str] = "complete", interval: Optional[float] = .1
+        self,
+        desired_state:         Optional[str] = "complete",
+        interval:            Optional[float] = .1,
+        ignore_loading_state: Optional[bool] = False
     ) -> None:
         """
         Дожидается указанного состояния загрузки документа.
             Если включены уведомления домена Page — дожидается, пока основной фрейм
             страницы не перестанет загружаться.
-        :param desired_state:       (optional) Желаемое состояние загрузки. По умолчанию == полное.
-        :param interval:            (optional) Таймаут ожидания.
+        :param desired_state:           (optional) Желаемое состояние загрузки. По умолчанию == полное.
+        :param interval:                (optional) Таймаут ожидания.
+        :param ignore_loading_state:    (optional) Ожидать только состояния загрузки страницы?
         :return:        None
         """
 
-        if self.page_domain_enabled:
+        if self.page_domain_enabled and not ignore_loading_state:
             while self.loading_state != "stopped":
                 await asyncio.sleep(.1)
         else: await asyncio.sleep(1)
