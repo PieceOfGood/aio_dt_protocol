@@ -6,14 +6,17 @@ from os.path import expanduser
 if sys.platform == "win32": import winreg
 from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
 from aio_dt_protocol.Page import Page
+from aio_dt_protocol.Data import TargetConnectionInfo
+
 
 class Browser:
 
     @staticmethod
-    def FindInstances(for_port: int = None, browser: str = "chrome.exe") -> Dict[int, int]:
+    def FindInstances(for_port: Optional[int] = None, browser: Optional[str] = "chrome") -> Dict[int, int]:
         """
-        WINDOWS ONLY
         Используется для обнаружения уже запущенных инстансов браузера в режиме отладки.
+        Более быстрая альтернатива для win32 систем FindInstances() есть в aio_dt_utils.Utils,
+            но она требует установленный пакет pywin32 для использования COM.
         Например:
                 if browser_instances := Browser.FindInstances():
                     port, pid = [(k, v) for k, v in browser_instances.items()][0]
@@ -27,33 +30,45 @@ class Browser:
                     browser_instance = Browser(debug_port=port, chrome_pid=pid)
                 else:
                     browser_instance = Browser()
-        :param browser:     - браузер, для которого запрашивается поиск.
         :param for_port:    - порт, для которого осуществляется поиск.
+        :param browser:     - браузер, для которого запрашивается поиск.
         :return:            - словарь, ключами которого являются используемые порты запущенных
                                 браузеров, а значениями, их ProcessID, или пустой словарь,
                                 если ничего не найдено.
                                 { 9222: 16017, 9223: 2001, ... }
         """
-        result = {}; all_data = []; count = 0; browser = browser.encode()
-        cmd = 'WMIC PROCESS get Caption,Commandline,Processid'
-        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-        for line in proc.stdout:
-            if browser in line and b"--remote-debugging-port=" in line:
-                s_line = line.decode("utf-8"); count += 1
-                all_data.append(re.findall(r"--remote-debugging-port=(\d+).*?(\d+)\s*$", s_line)[0])
-        while count > 0:
-            count -= 1; port, pid = int(all_data[count][0]), int(all_data[count][1])
-            if for_port is None: result[port] = pid; break
-            elif for_port == port: result[port] = pid
-        return result
+        result = {}
+        if sys.platform == "win32":
+            if "chrome" in browser: browser = "chrome.exe"
+            elif "brave" in browser: browser = "brave.exe"
+            cmd = f"WMIC PROCESS WHERE NAME='{browser}' GET Commandline,Processid"
+            for line in subprocess.Popen(cmd, stdout=subprocess.PIPE).stdout:
+                if b"--type=renderer" not in line and b"--remote-debugging-port=" in line:
+                    port, pid = re.findall(r"--remote-debugging-port=(\d+).*?(\d+)\s*$", line.decode())[0]
+                    port, pid = int(port), int(pid)
+                    if for_port == port: return {port: pid}
+                    result[port] = pid
+        elif sys.platform == "linux":
+            if "chrome" in browser: browser = "google-chrome"
+            elif "brave" in browser: browser = "brave"
+            else: ValueError("Not support browser " + browser)
+            try: itr = map(int, subprocess.check_output(["pidof", browser]).split())
+            except subprocess.CalledProcessError: itr = []
+            for pid in itr:
+                with open("/proc/" + str(pid) + "/cmdline") as f: cmd_line =  f.read()[:-1]
+                if "--type=renderer" not in cmd_line and "--remote-debugging-port=" in cmd_line:
+                    port = int(re.findall(r"--remote-debugging-port=(\d+)", cmd_line)[0])
+                    if for_port == port: return {port: pid}
+                    result[port] = pid
+        else: raise OSError(f"Platform '{sys.platform}' — not supported")
+        return {} if for_port else result
 
     def __init__(
             self,
             profile_path: Optional[str] = "testProfile",
             dev_tool_profiles:      Optional[bool] = False,
             url: Optional[Union[str, bytes, None]] = None,
-            flags:       Optional[list] = None,
-            default_tab: Optional[bool] = False,
+            flags:  Optional[List[str]] = None,
             browser_path: Optional[str] = "",
             debug_port:   Optional[any] = 9222,
             browser_pid:  Optional[int] = 0,
@@ -108,10 +123,6 @@ class Browser:
                                     "--window-position=400,100", "--window-size=800,600", ... ]
                                     https://peter.sh/experiments/chromium-command-line-switches/
 
-        :param default_tab:     Если 'True' вкладка будет открыта с дефолтным бэкграундом, как если бы
-                                    пользователь открыл её обычным способом, не зависимо от того, что
-                                    было передано в параметре 'url'.
-
         :param browser_path:    Путь до исполняемого файла браузера. Если не указан, в реестре
                                     будет произведён поиск установленного браузера Chrome.
 
@@ -162,7 +173,7 @@ class Browser:
         :param f_kiosk:         По умолчанию False == добавляет к флагам запуска, kiosk,
                                     запускающий браузет в соответствующем режиме.
         """
-
+        if sys.platform not in ("win32", "linux"): raise OSError(f"Platform '{sys.platform}' — not supported")
         self.dev_tool_profiles = dev_tool_profiles if profile_path else False
 
         if self.dev_tool_profiles:
@@ -181,8 +192,9 @@ class Browser:
         elif browser_exe == "brave":
             self.browser_name = "brave"
             browser_exe = "brave" if sys.platform == "win32" else "brave-browser"
-        else:
-            raise ValueError(browser_exe + " — not supported")
+        elif browser_exe == "chromium":
+            self.browser_name = "chrome"
+            browser_exe = "chrome" if sys.platform == "win32" else "chromium-browser"
 
         # ? Константы URL соответствующих вкладок
         self.NEW_TAB:       str = self.browser_name + "://newtab/"          # дефолтная вкладка
@@ -196,9 +208,8 @@ class Browser:
 
         if sys.platform == "win32":
             browser_path = browser_path if browser_path else registry_read_key(browser_exe)
-        elif sys.platform == "linux":
+        else:   #  ! sys.platform == "linux"
             browser_path = browser_path if browser_path else os.popen("which " + browser_exe).read().strip()
-        else: raise OSError(f"Platform '{sys.platform}' — not supported")
 
         if not os.path.exists(browser_path) or not os.path.isfile(browser_path):
             raise FileNotFoundError(f"Переданный 'browser_path' => '{browser_path}' — не существует, или содержит ошибку")
@@ -215,11 +226,6 @@ class Browser:
         data_url_len = len(url) if url else 0
         if data_url_len > 30_000:
             Warning(f"Length data url ({data_url_len}) is approaching to critical length = 32767 symbols!")
-
-        if default_tab:
-            url = self.NEW_TAB
-            # ! app не может быть True, если браузер стартует с дефолтной страницы
-            app = False
 
         b_name_len = len(self.browser_name)
         # Если "app" == True:
@@ -247,6 +253,7 @@ class Browser:
                         "data:text/html;Base64," + url.decode()
         )
 
+        self.is_headless_mode = False
         self.position = position
         self.sizes    = sizes
         self.f_no_first_run  = f_no_first_run
@@ -266,12 +273,12 @@ class Browser:
 
         run_args = [
             self.browser_path,
-            f"--remote-debugging-port={self.debug_port}",
+            f"--remote-debugging-port={self.debug_port}", "--disable-breakpad", "--no-recovery-component",
             "--disable-gpu-shader-disk-cache", "--disable-sync-preferences",
             ("--log-file=null" if sys.platform == "win32" else "--log-file=/dev/null"),
             "--force-dark-mode", "--enable-features=WebUIDarkMode",
             ("--disk-cache-dir=null" if sys.platform == "win32" else "--disk-cache-dir=/dev/null"),
-            "--disk-cache-size=1000000"
+            "--disk-cache-size=1000000", "--disable-session-crashed-bubble"
         ]
 
         # ! Default mode
@@ -283,7 +290,9 @@ class Browser:
                 run_args.append("--window-size={},{}".format(*self.sizes))
 
         # ! Headless mode
-        else: run_args += ["--disable-gpu", "--headless"]
+        else:
+            run_args += ["--disable-gpu", "--headless"]
+            self.is_headless_mode = True
 
         if self.f_no_first_run:  run_args.append("--no-first-run")
         if self.f_default_check: run_args.append("--no-default-browser-check")
@@ -315,6 +324,15 @@ class Browser:
         try: os.kill(self.browser_pid, signal.SIGTERM)
         except PermissionError: pass
 
+    async def GetTargetConnectionInfoList(self) -> List[TargetConnectionInfo]:
+        return [TargetConnectionInfo(**i) for i in await self.GetPageList()]
+
+    async def GetTargetConnectionInfo(self, key: str = "type", value: str = "page") -> TargetConnectionInfo:
+        for page_data in await self.GetPageList():
+            data = page_data[key]
+            if value in data: return TargetConnectionInfo(**page_data)
+        raise ValueError(f"No have value {value} for key {key} in active target list")
+
     async def GetPageList(self) -> List[dict]:
         """
         Запрашивает у браузера список всех его дочерних процессов,
@@ -332,12 +350,12 @@ class Browser:
         """
         result = await self._Get(f"http://127.0.0.1:{self.debug_port}/json/list")
         if self.verbose: print("[<- V ->] GetPageList() => " + result)
-        return json.loads( result )
+        return json.loads(result)
 
     async def GetPageBy(
             self, key: Union[str, int], value: Union[str, int],
             match_mode: Optional[str] = "exact", index: Optional[int] = 0,
-            callback: Optional[Awaitable] = None
+            callback: Optional[Callable[[dict], Awaitable[None]]] = None
     ) -> Union[Page, None]:
         """
         Организует выбор нужного инстанса из процессов браузера по следующим критериям:
@@ -361,13 +379,14 @@ class Browser:
         """
         counter = 0; v = value.lower()
         for page_data in await self.GetPageList():
-            data = page_data[key].lower()
+            data = page_data[key]
             if ((match_mode == "exact" and data == v)
                 or (match_mode == "contains" and data.find(v) > -1 )
                     or (match_mode == "startswith" and data.find(v) == 0)) and counter == index:
                 page = Page(
                     page_data["webSocketDebuggerUrl"],
                     page_data["id"],
+                    page_data["devtoolsFrontendUrl"],
                     callback,
                     self.profile_path == "",
                     self.verbose,
@@ -464,7 +483,7 @@ def get_request(url: str) -> str:
 
 def registry_read_key(exe="chrome") -> str:
     reg_path = f"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\{exe}.exe"
-    key, path = re.findall(r"(^[^\\\/]+)[\\\/](.*)", reg_path)[0]
+    key, path = re.findall(r"(^[^\\/]+)[\\/](.*)", reg_path)[0]
     connect_to = eval(f"winreg.{key}")
     try: h_key = winreg.OpenKey( winreg.ConnectRegistry(None, connect_to), path )
     except FileNotFoundError: return ""

@@ -8,8 +8,8 @@ from abc import ABC
 
 class AbsPage(ABC):
     __slots__ = (
-        "ws_url", "page_id", "callback", "is_headless_mode", "verbose", "browser_name", "id", "responses",
-        "connected", "ws_session", "receiver", "listeners", "listeners_for_event", "runtime_enabled",
+        "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
+        "responses", "connected", "ws_session", "receiver", "listeners", "listeners_for_event", "runtime_enabled",
         "_connected", "_page_id", "_verbose", "_browser_name", "_is_headless_mode"
     )
 
@@ -17,6 +17,7 @@ class AbsPage(ABC):
         self,
         ws_url:           str,
         page_id:          str,
+        frontend_url:     str,
         callback:         callable,
         is_headless_mode: bool,
         verbose:          bool,
@@ -24,6 +25,7 @@ class AbsPage(ABC):
     ) -> None:
         self.ws_url            = ws_url
         self.page_id           = page_id
+        self.frontend_url      = frontend_url
         self.callback          = callback
         self.is_headless_mode  = is_headless_mode
 
@@ -59,6 +61,7 @@ class Page(AbsPage):
         self,
         ws_url:           str,
         page_id:          str,
+        frontend_url:     str,
         callback:         callable,
         is_headless_mode: bool,
         verbose:          bool,
@@ -67,13 +70,14 @@ class Page(AbsPage):
         """
         :param ws_url:              Адрес WebSocket
         :param page_id:             Идентификатор страницы
+        :param frontend_url:        devtoolsFrontendUrl по которому происходит подключение к дебаггеру
         :param callback:            Колбэк, который будет получать все данные,
                                         приходящие по WebSocket в виде словарей
         :param is_headless_mode:    "Headless" включён?
         :param verbose:             Печатать некие подробности процесса?
         :param browser_name:        Имя браузера
         """
-        AbsPage.__init__(self, ws_url, page_id, callback, is_headless_mode, verbose, browser_name)
+        AbsPage.__init__(self, ws_url, page_id, frontend_url, callback, is_headless_mode, verbose, browser_name)
 
     @property
     def connected(self) -> bool: return self._connected
@@ -229,7 +233,7 @@ class Page(AbsPage):
                 for listener, args in listeners.items():
                     asyncio.create_task(
                         listener(                                           # корутина
-                            p if p is not None else [],                     # её список аргументов вызова
+                            p if p is not None else [],                     # её "params"
                             *args                                           # список bind-агрументов
                         )
                     )
@@ -365,7 +369,8 @@ class Page(AbsPage):
         :param event:          Имя метода, для которого была регистрация.
         :return:        None
         """
-        self.listeners_for_event.pop(event)
+        if event in self.listeners_for_event:
+            self.listeners_for_event.pop(event)
 
     def __del__(self) -> None:
         if self.verbose: print("[<- V ->] [ DELETED ]", self.page_id)

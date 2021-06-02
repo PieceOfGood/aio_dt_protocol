@@ -1,6 +1,43 @@
-from typing import Optional
+from typing import Optional, List
 from dataclasses import dataclass
 
+
+@dataclass
+class TargetConnectionInfo:
+    description: str; devtoolsFrontendUrl: str
+    id: str; title: str; type: str; url: str; webSocketDebuggerUrl: str
+    faviconUrl: str = None
+
+@dataclass
+class ProcessInfo:
+    type: str           # Тип процесса
+    id: int             # Идентификатор процесса
+    cpuTime: float      # Совокупное использование ЦП в секундах для всех потоков процесса с момента его запуска.
+
+@dataclass
+class GPUInfo:
+    devices: List[dict]
+    driverBugWorkarounds: List[str]
+    videoDecoding: List[dict]
+    videoEncoding: List[dict]
+    imageDecoding: List[dict]
+    auxAttributes: Optional[dict] = None
+    featureStatus: Optional[dict] = None
+
+@dataclass
+class SystemData:
+    gpu: GPUInfo
+    modelName: str
+    modelVersion: str
+    commandLine: str
+
+@dataclass
+class TargetInfo:
+    targetId: str; type: str; title: str; url: str; attached: bool
+    openerId:         Optional[str] = None
+    canAccessOpener: Optional[bool] = None
+    openerFrameId:    Optional[str] = None
+    browserContextId: Optional[str] = None
 
 @dataclass
 class WindowBounds:
@@ -15,6 +52,11 @@ class WindowBounds:
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None}
+
+@dataclass
+class WindowInfo:
+    windowId: int
+    bounds: WindowBounds
 
 @dataclass
 class TouchPoint:
@@ -60,6 +102,11 @@ class NodeRect:
 @dataclass
 class ViewportRect:
     """ Ширина и высота вьюпорта """
+    width: int; height: int
+
+@dataclass
+class WindowRect:
+    """ Ширина и высота окна браузера(outer - свойства) """
     width: int; height: int
 
 @dataclass

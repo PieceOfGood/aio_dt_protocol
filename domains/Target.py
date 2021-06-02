@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Awaitable, Callable
+from aio_dt_protocol.Data import TargetInfo
 
 class Target(ABC):
     """
@@ -63,7 +64,7 @@ class Target(ABC):
         """
         await self.Call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
 
-    async def GetTargetInfo(self, targetId: Optional[str] = None) -> dict:
+    async def GetTargetInfo(self, targetId: Optional[str] = None) -> TargetInfo:
         """
         (EXPERIMENTAL)
         Возвращает информацию о "target", или о себе, если идентификатор не передан.
@@ -80,15 +81,16 @@ class Target(ABC):
                                     }
         """
         if targetId is None: targetId = self.page_id
-        return (await self.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]
+        return TargetInfo(**((await self.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]))
 
-    async def GetTargets(self) -> List[dict]:
+    async def GetTargets(self) -> List[TargetInfo]:
         """
         Возвращает список 'targetInfo' о доступных 'targets'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-getTargets
         :return:                [ targetInfo, targetInfo, ... ]
         """
-        return (await self.Call("Target.getTargets"))["targetInfos"]
+        result = (await self.Call("Target.getTargets"))["targetInfos"]
+        return [TargetInfo(**info) for i, info in enumerate(result)]
 
     async def AttachToBrowserTarget(self) -> str:
         """
@@ -173,14 +175,32 @@ class Target(ABC):
         if targetId is None: targetId = self.page_id
         await self.Call("Target.closeTarget", {"targetId": targetId})
 
-    async def SetDiscoverTargets(self, discover: bool) -> None:
+    async def SetDiscoverTargets(
+            self, discover: bool,
+            created:   Optional[Callable[[TargetInfo], Awaitable[None]]] = None,
+            changed:   Optional[Callable[[TargetInfo], Awaitable[None]]] = None,
+            destroyed: Optional[Callable[[TargetInfo], Awaitable[None]]] = None
+    ) -> None:
         """
         Управляет обнаружением доступных 'targets' уведомляя об их состоянии с помощью событий
             targetCreated / targetInfoChanged / targetDestroyed.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-setDiscoverTargets
         :param discover:            'True' — включает эту надстройку, 'False' — выключает.
+        :param created:             Корутина вызываемая для события 'Target.targetCreated'.
+        :param changed:             Корутина вызываемая для события 'Target.targetInfoChanged'.
+        :param destroyed:           Корутина вызываемая для события 'Target.targetDestroyed'.
         :return:
         """
+        async def decorator(params: dict, func: Callable[[TargetInfo], Awaitable[None]]) -> None:
+            await func(TargetInfo(**params["targetInfo"]))
+
+        if discover:
+            if created is not None: await self.AddListenerForEvent('Target.targetCreated', decorator, created)
+            if changed is not None: await self.AddListenerForEvent('Target.targetInfoChanged', decorator, changed)
+            if destroyed is not None: await self.AddListenerForEvent('Target.targetDestroyed', decorator, destroyed)
+        else:
+            for event in ['Target.targetCreated','Target.targetInfoChanged','Target.targetDestroyed']:
+                self.RemoveListenersForEvent(event)
         self.targets_discovered = discover
         await self.Call("Target.setDiscoverTargets", {"discover": discover})
 
@@ -190,3 +210,12 @@ class Target(ABC):
         params: Optional[dict]            = None,
         wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+    @abstractmethod
+    async def AddListenerForEvent(
+            self, event: str, listener: Callable, *args: Optional[any]) -> None:
+        raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
+
+    @abstractmethod
+    def RemoveListenersForEvent(self, event: str) -> None:
+        raise NotImplementedError("method RemoveListenersForEvent() — is not implemented")

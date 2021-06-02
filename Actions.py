@@ -429,8 +429,14 @@ class Actions:
         :param char:             Символ для ввода.
         :return:
         """
-        if len(char) > 1: raise ValueError(f"Передаваемая строка: '{char}' — должна быть последовательностью из одного символа!")
-        await self.DispatchKeyEvent("char", text=char, key=char)
+        upper_key = char.upper()
+        args = {
+            "text": char, "key": char, "keyIdentifier": f"U+{WINDOWS_KEY_SET[upper_key]:X}",
+            "windowsVirtualKeyCode": WINDOWS_KEY_SET[upper_key],
+            "nativeVirtualKeyCode": WINDOWS_KEY_SET[upper_key]
+        }
+        if len(char) > 1: raise ValueError(f"Передаваемая строка: '{char}' — должна быть из одного символа!")
+        await self.DispatchKeyEvent("char", **args)
 
     async def SendText(
             self, text: str, interval: Optional[Tuple[float, float]] = None
@@ -522,5 +528,5 @@ class Actions:
         :return:        None
         """
         if windowId is None:
-            windowId = (await self.page_instance.GetWindowForTarget())["windowId"]
+            windowId = (await self.page_instance.GetWindowForTarget()).windowId
         await self.page_instance.Call("Browser.setWindowBounds", {"windowId": windowId, "bounds": bounds.to_dict()})

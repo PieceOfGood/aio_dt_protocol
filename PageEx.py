@@ -2,7 +2,7 @@
 from aio_dt_protocol.Page import Page
 from aio_dt_protocol.Actions import Actions
 from aio_dt_protocol.DOMElement import Node
-from aio_dt_protocol.Data import ViewportRect
+from aio_dt_protocol.Data import ViewportRect, WindowRect
 
 import asyncio
 import json, base64
@@ -21,19 +21,20 @@ from aio_dt_protocol.domains.Overlay import Overlay as OverlayDomain
 from aio_dt_protocol.domains.CSS import CSS as CSSDomain
 from aio_dt_protocol.domains.DeviceOrientation import DeviceOrientation as DeviceOrientationDomain
 from aio_dt_protocol.domains.Fetch import Fetch as FetchDomain
+from aio_dt_protocol.domains.SystemInfo import SystemInfo as SystemInfoDomain
 
 class PageEx(
     Page, BrowserDomain, DOMDomain, EmulationDomain, LogDomain, NetworkDomain,
     PageDomain, RuntimeDomain, TargetDomain, ConsoleDomain, OverlayDomain,
-    CSSDomain, DeviceOrientationDomain, FetchDomain
+    CSSDomain, DeviceOrientationDomain, FetchDomain, SystemInfoDomain
 ):
     """
     Расширение для 'Page'. Включает сборку наиболее востребованных методов для работы
         с API 'ChromeDevTools Protocol'.
     """
     __slots__ = (
-        "ws_url", "page_id", "callback", "is_headless_mode", "verbose", "browser_name", "id", "responses",
-        "connected", "ws_session", "receiver", "listeners", "listeners_for_method", "runtime_enabled",
+        "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
+        "responses", "connected", "ws_session", "receiver", "listeners", "listeners_for_method", "runtime_enabled",
         "storage", "action", "_root", "style_sheets", "loading_state", "dom_domain_enabled", "targets_discovered",
         "log_domain_enabled", "network_domain_enabled", "console_domain_enabled", "page_domain_enabled",
         "fetch_domain_enabled", "css_domain_enabled", "overlay_domain_enabled"
@@ -55,6 +56,7 @@ class PageEx(
         CSSDomain.__init__(self)
         DeviceOrientationDomain.__init__(self)
         FetchDomain.__init__(self)
+        SystemInfoDomain.__init__(self)
 
         self.storage = {}
         self.action = Actions(self)             # Совершает действия на странице. Клики; движения мыши; события клавиш
@@ -73,15 +75,23 @@ class PageEx(
         """
         Возвращает список с длиной и шириной вьюпорта браузера.
         """
-        code = "(() => { return JSON.stringify([document.documentElement.clientWidth, document.documentElement.clientHeight]); })();"
+        code = "(()=>{return JSON.stringify([window.innerWidth,window.innerHeight]);})();"
         data = json.loads(await self.InjectJS(code))
         return ViewportRect(int(data[0]), int(data[1]))
 
+    async def GetWindowRect(self) -> WindowRect:
+        """
+        Возвращает список с длиной и шириной окна браузера.
+        """
+        code = "(()=>{return JSON.stringify([window.outerWidth,window.outerHeight]);})();"
+        data = json.loads(await self.InjectJS(code))
+        return WindowRect(int(data[0]), int(data[1]))
+
     async def GetUrl(self) -> str:
-        return (await self.GetTargetInfo())["url"]
+        return (await self.GetTargetInfo()).url
 
     async def GetTitle(self) -> str:
-        return (await self.GetTargetInfo())["title"]
+        return (await self.GetTargetInfo()).title
 
     async def MakeScreenshot(
             self,
@@ -122,7 +132,7 @@ class PageEx(
         try:
             result = await self.Eval(code)
         except Exception as error:
-            print("InjectJS() Exception with injected code ->\n", code, "\n")
+            print("InjectJS() Exception with injected code ->\n", code, "\n", error)
             raise
         return result.get('value')
 

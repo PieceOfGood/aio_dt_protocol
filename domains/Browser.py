@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Dict, List
+from aio_dt_protocol.Data import WindowBounds, WindowInfo
 
 class Browser(ABC):
     """
@@ -114,7 +115,7 @@ class Browser(ABC):
         """
         return await self.Call("Browser.getVersion")
 
-    async def GetWindowBounds(self, windowId: int) -> dict:
+    async def GetWindowBounds(self, windowId: int = None) -> WindowBounds:
         """
         (EXPERIMENTAL)
         Возвращает позицию и размер окна.
@@ -131,9 +132,11 @@ class Browser(ABC):
                                                                 maximized, fullscreen
                                 }
         """
-        return (await self.Call("Browser.getWindowBounds", {"windowId": windowId}))["bounds"]
+        if windowId is None:
+            windowId = (await self.GetWindowForTarget()).windowId
+        return WindowBounds(**(await self.Call("Browser.getWindowBounds", {"windowId": windowId}))["bounds"])
 
-    async def GetWindowForTarget(self, targetId: Optional[str] = None) -> dict:
+    async def GetWindowForTarget(self, targetId: Optional[str] = None) -> WindowInfo:
         """
         (EXPERIMENTAL)
         Возвращает идентификатор, а так же позицию и размер окна.
@@ -147,7 +150,8 @@ class Browser(ABC):
         """
         if targetId is None:
             targetId = self.page_id
-        return await self.Call("Browser.getWindowForTarget", {"targetId": targetId})
+        result = await self.Call("Browser.getWindowForTarget", {"targetId": targetId})
+        return WindowInfo(windowId=result["windowId"], bounds=WindowBounds(**result["bounds"]))
 
     async def SetDockTile(self, badgeLabel: Optional[str] = None, image: Optional[str] = None) -> None:
         """

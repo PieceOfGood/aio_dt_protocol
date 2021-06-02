@@ -12,11 +12,11 @@ class Node:
         "page_instance", "nodeId", "parentId", "backendNodeId", "nodeType", "nodeName", "localName", "nodeValue",
         "childNodeCount", "children", "attributes", "documentURL", "baseURL", "publicId", "systemId", "internalSubset",
         "xmlVersion", "name", "value", "pseudoType", "frameId", "shadowRootType", "contentDocument", "shadowRoots",
-        "templateContent", "pseudoElements", "importedDocument", "distributedNodes", "isSVG"
+        "templateContent", "pseudoElements", "importedDocument", "distributedNodes", "isSVG", "selector"
     )
 
     def __init__(
-        self, page_instance, nodeId: int,
+        self, page_instance, nodeId: int, selector: str,
         parentId:              Optional[int] = None,
         backendNodeId:         Optional[int] = None,
         nodeType:              Optional[int] = None,
@@ -80,6 +80,8 @@ class Node:
         self.distributedNodes = distributedNodes
         self.isSVG = isSVG
 
+        self.selector = selector
+
 
     def _AddChildren(self, children_list: Optional[List[dict]] = None) -> List["Node"]:
         """
@@ -114,7 +116,7 @@ class Node:
                     await self.page_instance.Call("DOM.querySelector", {
                         "nodeId": self.nodeId, "selector": selector
                     }))["nodeId"]
-                return Node(node_id, self.page_instance) if node_id else None
+                return Node(self.page_instance, node_id, selector) if node_id else None
             except Exception as e:
                 repeat += 1; error = str(e)
         raise Exception(error)
@@ -133,7 +135,7 @@ class Node:
                 for node_id in (await self.page_instance.Call("DOM.querySelectorAll", {
                             "nodeId": self.nodeId, "selector": selector
                         }))["nodeIds"]:
-                    nodes.append(Node(node_id, self.page_instance))
+                    nodes.append(Node(self.page_instance, node_id, selector))
                 return nodes
             except Exception as e:
                 repeat += 1; error = str(e)
@@ -167,7 +169,8 @@ class Node:
     async def ScrollIntoView(self, rect: dict = None) -> None:
         """
         (EXPERIMENTAL)
-        Прокручивает указанный прямоугольник, в котором находится узел, если он еще не виден.
+        Прокручивает указанный прямоугольник, в котором находится узел, если он еще не виден. После применения
+            идентификатор узла становится недействителен и его придётся запрашивать вновь.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-scrollIntoViewIfNeeded
         :param rect:        (optional) Прямоугольник, который будет прокручиваться в поле зрения относительно
                                 поля границы узла, в пикселях CSS. Если не указан, будет использоваться

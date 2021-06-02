@@ -110,7 +110,9 @@ class DOM(ABC):
         }
         :return:            <Node>.
         """
-        return Node(self, **(await self.Call("DOM.getDocument"))["root"])
+        node: dict = (await self.Call("DOM.getDocument"))["root"]
+        node["selector"] = ""
+        return Node(self, **node)
 
     async def QuerySelector(self, selector: str) -> Union[Node, None]:
         """
@@ -124,9 +126,10 @@ class DOM(ABC):
         root_node_id = (await self.Call("DOM.getDocument"))["root"]["nodeId"]
         while repeat < max_repeat:
             try:
-                node = await self.Call("DOM.querySelector", {
+                node: dict = await self.Call("DOM.querySelector", {
                     "nodeId": root_node_id, "selector": selector
                 })
+                node["selector"] = selector
                 return Node(self, **node) if node["nodeId"] > 0 else None
             except Exception as e:
                 repeat += 1; error = str(e)
@@ -149,7 +152,7 @@ class DOM(ABC):
                 for node in (await self.Call("DOM.querySelectorAll", {
                     "nodeId": root_node_id, "selector": selector
                 }))["nodeIds"]:
-                    nodes.append(Node(self, node))
+                    nodes.append(Node(self, node, selector))
                 return nodes
             except Exception as e:
                 repeat += 1; error = str(e)

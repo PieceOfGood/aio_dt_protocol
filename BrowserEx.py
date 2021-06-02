@@ -17,7 +17,7 @@ class BrowserEx(Browser):
     def get_domain(url):
         if url == "about:blank":
             return "about:blank"
-        return re.search(r"^[^\.]+", urlparse(url).netloc)[0]
+        return re.search(r"^[^.]+", urlparse(url).netloc)[0]
 
     async def GetPageBy(
             self, key: str, value: str, match_mode: Optional[str] = "exact",
@@ -33,6 +33,7 @@ class BrowserEx(Browser):
                 page = PageEx(
                     page_data["webSocketDebuggerUrl"],
                     page_data["id"],
+                    page_data["devtoolsFrontendUrl"],
                     callback,
                     self.profile_path == "",
                     self.verbose,
@@ -79,5 +80,16 @@ class BrowserEx(Browser):
         :return:                    * Инстанс страницы <PageEx>
         """
         return await self.GetPageByID(
-            (await (await self.GetPage()).CreateTarget(url, newWindow, background))
+            (await (await self.GetPage()).CreateTarget(url, newWindow=newWindow, background=background))
+        )
+
+    async def ShowInspector(self, page: PageEx, new_window: bool = True) -> PageEx:
+        """
+        Открывает новую вкладку с дебаггером для инспектируемой страницы.
+        :param page:            - Инспектируемая страница
+        :param new_window:      - Создать target в отдельном окне?
+        :return:        <PageEx>
+        """
+        return await self.CreatePage(
+            "http://127.0.0.1:" + str(self.debug_port) + page.frontend_url, new_window
         )
