@@ -7,6 +7,7 @@ if sys.platform == "win32": import winreg
 from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
 from aio_dt_protocol.Page import Page
 from aio_dt_protocol.Data import TargetConnectionInfo
+import stat
 
 
 class Browser:
@@ -78,6 +79,7 @@ class Browser:
             verbose:     Optional[bool] = False,
             position: Optional[Tuple[int, int]] = None,
             sizes:    Optional[Tuple[int, int]] = None,
+            prevent_restore: Optional[bool] = False,
             f_no_first_run:  Optional[bool] = True,
             f_default_check: Optional[bool] = True,
             f_browser_test:  Optional[bool] = False,
@@ -155,6 +157,8 @@ class Browser:
         :param sizes:           Кортеж с длиной и шириной в которые будет установлено окно браузера.
                                     Не имеет смысла для Headless.
 
+        :param prevent_restore: Предотвращать восстановление предыдущей сессии после крашей.
+
         :param f_no_first_run:  По умолчанию True == добавляет к флагам запуска, отключающий
                                     процедуру ознакомиления с браузером.
 
@@ -183,8 +187,33 @@ class Browser:
         else:
             self.profile_path = ""
 
-        #  and not re.search(r"[\\/]", profile_path)
+        preferences_path = ""
+        if self.profile_path:
+            preferences_path = os.path.join(self.profile_path, "Default", "Preferences")
+
         self.first_run = self.profile_path == "" or not os.path.exists(self.profile_path)
+
+        # ? Предотвращать восстановление предыдущей сессии
+        if not self.first_run and prevent_restore and preferences_path and os.path.exists(preferences_path):
+            READ_WRITE = 33206 if sys.platform == "win32" else 33152
+            READ_ONLY  = 33060 if sys.platform == "win32" else 33024
+            # print("file attr =", os.stat(preferences_path).st_mode)
+            # ? НЕ только для чтения
+            if os.stat(preferences_path).st_mode == READ_WRITE:
+                with open(preferences_path, "r") as f:
+                    preferences = f.read()
+                # ? тип завершения
+                if exit_type := re.search(r'"exit_type":"(\w+)"', preferences):
+                    # ? НЕ нормальный
+                    if exit_type.group(1) != "Normal":
+                        result = re.sub(r'"exit_type":"\w+"', '"exit_type":"Normal"', preferences)
+                        with open(preferences_path, "w") as f: f.write(result)
+                # ? Только для чтения
+                # os.chmod(preferences_path, READ_ONLY)
+                if verbose: print("Файл настроек — изменён и сохранён")
+            else:
+                # os.chmod(preferences_path, READ_WRITE)
+                if verbose: print("Файл настроек — только для чтения")
 
         if browser_exe == "chrome":
             self.browser_name = "chrome"
@@ -275,10 +304,8 @@ class Browser:
             self.browser_path,
             f"--remote-debugging-port={self.debug_port}", "--disable-breakpad", "--no-recovery-component",
             "--disable-gpu-shader-disk-cache", "--disable-sync-preferences",
-            ("--log-file=null" if sys.platform == "win32" else "--log-file=/dev/null"),
-            "--force-dark-mode", "--enable-features=WebUIDarkMode",
-            ("--disk-cache-dir=null" if sys.platform == "win32" else "--disk-cache-dir=/dev/null"),
-            "--disk-cache-size=1000000", "--disable-session-crashed-bubble"
+            "--log-file=null", "--force-dark-mode", "--enable-features=WebUIDarkMode",
+            "--disk-cache-dir=null", "--disk-cache-size=1000000"
         ]
 
         # ! Default mode

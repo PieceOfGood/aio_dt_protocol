@@ -8,6 +8,7 @@ import asyncio
 import json, base64
 from typing import Optional, Union
 
+from aio_dt_protocol.domains.BackgroundService import BackgroundService as BackgroundServiceDomain
 from aio_dt_protocol.domains.Browser import Browser as BrowserDomain
 from aio_dt_protocol.domains.DOM import DOM as DOMDomain
 from aio_dt_protocol.domains.Emulation import Emulation as EmulationDomain
@@ -26,7 +27,7 @@ from aio_dt_protocol.domains.SystemInfo import SystemInfo as SystemInfoDomain
 class PageEx(
     Page, BrowserDomain, DOMDomain, EmulationDomain, LogDomain, NetworkDomain,
     PageDomain, RuntimeDomain, TargetDomain, ConsoleDomain, OverlayDomain,
-    CSSDomain, DeviceOrientationDomain, FetchDomain, SystemInfoDomain
+    CSSDomain, DeviceOrientationDomain, FetchDomain, SystemInfoDomain, BackgroundServiceDomain
 ):
     """
     Расширение для 'Page'. Включает сборку наиболее востребованных методов для работы
@@ -35,9 +36,10 @@ class PageEx(
     __slots__ = (
         "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
         "responses", "connected", "ws_session", "receiver", "listeners", "listeners_for_method", "runtime_enabled",
-        "storage", "action", "_root", "style_sheets", "loading_state", "dom_domain_enabled", "targets_discovered",
-        "log_domain_enabled", "network_domain_enabled", "console_domain_enabled", "page_domain_enabled",
-        "fetch_domain_enabled", "css_domain_enabled", "overlay_domain_enabled"
+        "storage", "action", "_root", "style_sheets", "loading_state", "observing_started", "recording_started",
+        "dom_domain_enabled", "targets_discovered", "log_domain_enabled", "network_domain_enabled",
+        "console_domain_enabled", "page_domain_enabled", "fetch_domain_enabled", "css_domain_enabled",
+        "overlay_domain_enabled"
     )
 
     def __init__(self, *args):
@@ -57,6 +59,7 @@ class PageEx(
         DeviceOrientationDomain.__init__(self)
         FetchDomain.__init__(self)
         SystemInfoDomain.__init__(self)
+        BackgroundServiceDomain.__init__(self)
 
         self.storage = {}
         self.action = Actions(self)             # Совершает действия на странице. Клики; движения мыши; события клавиш
