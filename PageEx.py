@@ -8,6 +8,8 @@ import asyncio
 import json, base64
 from typing import Optional, Union
 
+from aio_dt_protocol.exceptions import EvaluateError, JavaScriptError
+
 from aio_dt_protocol.domains.BackgroundService import BackgroundService as BackgroundServiceDomain
 from aio_dt_protocol.domains.Browser import Browser as BrowserDomain
 from aio_dt_protocol.domains.DOM import DOM as DOMDomain
@@ -134,9 +136,9 @@ class PageEx(
     async def InjectJS(self, code: str):
         try:
             result = await self.Eval(code)
-        except Exception as error:
-            print("InjectJS() Exception with injected code ->\n", code, "\n", error)
-            raise
+        except EvaluateError as error:
+            raise JavaScriptError(f"InjectJS() Exception with injected code: '{code}'\nDescription:\n{error}")
+
         return result.get('value')
 
     async def CatchMetaForUrl(self, url: str, uniq_key: Optional[str] = None) -> None:

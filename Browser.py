@@ -1,7 +1,7 @@
 import asyncio
 import urllib.request
 from urllib.parse import quote
-import json, re, os, sys, signal, subprocess
+import json, re, os, sys, signal, subprocess, getpass
 from os.path import expanduser
 if sys.platform == "win32": import winreg
 from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
@@ -42,6 +42,7 @@ class Browser:
         if sys.platform == "win32":
             if "chrome" in browser: browser = "chrome.exe"
             elif "brave" in browser: browser = "brave.exe"
+            elif "netbox" in browser: browser = "netboxbrowser.exe"
             cmd = f"WMIC PROCESS WHERE NAME='{browser}' GET Commandline,Processid"
             for line in subprocess.Popen(cmd, stdout=subprocess.PIPE).stdout:
                 if b"--type=renderer" not in line and b"--remote-debugging-port=" in line:
@@ -224,6 +225,9 @@ class Browser:
         elif browser_exe == "chromium":
             self.browser_name = "chrome"
             browser_exe = "chrome" if sys.platform == "win32" else "chromium-browser"
+        elif "netbox" in browser_exe:
+            self.browser_name = "chrome"
+            browser_exe = "netboxbrowser" if sys.platform == "win32" else "netbox-browser"
 
         # ? Константы URL соответствующих вкладок
         self.NEW_TAB:       str = self.browser_name + "://newtab/"          # дефолтная вкладка
@@ -236,7 +240,10 @@ class Browser:
         self.EXTENSIONS:    str = self.browser_name + "://extensions/"      # расширения
 
         if sys.platform == "win32":
-            browser_path = browser_path if browser_path else registry_read_key(browser_exe)
+            if "netbox" in browser_exe:
+                browser_path = os.getenv("SystemDrive") + fr"\Users\{getpass.getuser()}\AppData\Local\NetboxBrowser\Application\netboxbrowser.exe"
+            else:
+                browser_path = browser_path if browser_path else registry_read_key(browser_exe)
         else:   #  ! sys.platform == "linux"
             browser_path = browser_path if browser_path else os.popen("which " + browser_exe).read().strip()
 
@@ -305,7 +312,7 @@ class Browser:
             f"--remote-debugging-port={self.debug_port}", "--disable-breakpad", "--no-recovery-component",
             "--disable-gpu-shader-disk-cache", "--disable-sync-preferences",
             "--log-file=null", "--force-dark-mode", "--enable-features=WebUIDarkMode",
-            "--disk-cache-dir=null", "--disk-cache-size=1000000"
+            "--disk-cache-dir=null", "--disk-cache-size=1000000", "--no-service-autorun"
         ]
 
         # ! Default mode

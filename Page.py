@@ -1,8 +1,11 @@
+import json
 import asyncio
 import websockets
+
+from aio_dt_protocol.exceptions import EvaluateError, exception_store
+
 from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
-import json
 from typing import Callable, Optional, Union, Tuple
 from abc import ABC
 
@@ -133,12 +136,18 @@ class Page(AbsPage):
 
         response = self.responses.pop( _id )
         if "error" in response:
+
+            for title, ex in exception_store.items():
+                if title in response['error']['message']:
+                    raise ex(f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'")
+
             raise Exception(
-                "Browser detect error:\n" +
-                f"error code -> '{response['error']['code']}';\n" +
-                f"error message -> '{response['error']['message']}'\n"+
-                f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'"
-            )
+                    "Browser detect error:\n" +
+                    f"error code -> '{response['error']['code']}';\n" +
+                    f"error message -> '{response['error']['message']}'\n"+
+                    f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'"
+                )
+
         return response["result"]
 
     async def Eval(
@@ -162,7 +171,7 @@ class Page(AbsPage):
             }
         )
         if "exceptionDetails" in response:
-            raise Exception(str(response["result"]["description"]) + " => " + str(response["exceptionDetails"]))
+            raise EvaluateError(response["result"]["description"])
         return response["result"]
 
     async def _Send(self, data: str) -> None:
