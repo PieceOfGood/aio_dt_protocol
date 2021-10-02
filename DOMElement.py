@@ -2,6 +2,7 @@ import re
 import asyncio
 from typing import List, Dict, Optional, Union
 from aio_dt_protocol.Data import NodeCenter, NodeRect, StyleProp, BoxModel
+from aio_dt_protocol.exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
 
 def to_dict_attrs(a: list) -> Union[dict, None]:
     if not a: return None
@@ -109,17 +110,17 @@ class Node:
         :param selector:        Селектор.
         :return:        <Node>
         """
-        repeat = 0; max_repeat = 2; error = ""
-        while repeat < max_repeat:
-            try:
-                node_id = (
-                    await self.page_instance.Call("DOM.querySelector", {
-                        "nodeId": self.nodeId, "selector": selector
-                    }))["nodeId"]
-                return Node(self.page_instance, node_id, selector) if node_id else None
-            except Exception as e:
-                repeat += 1; error = str(e)
-        raise Exception(error)
+        try:
+            node_id = (
+                await self.page_instance.Call("DOM.querySelector", {
+                    "nodeId": self.nodeId, "selector": selector
+                }))["nodeId"]
+        except CouldNotFindNodeWithGivenID as e:
+            if match := re.search(r"nodeId\': (\d+)", str(e)):
+                if match.group(1) == str(self.nodeId):
+                    raise RootIDNoLongerExists
+            raise
+        return Node(self.page_instance, node_id, selector) if node_id else None
 
     async def QuerySelectorAll(self, selector: str) -> List["Node"]:
         """
@@ -129,17 +130,18 @@ class Node:
         :param selector:        Селектор.
         :return:        [ <Node>, <Node>, ... ]
         """
-        repeat = 0; max_repeat = 2; nodes = []; error = ""
-        while repeat < max_repeat:
-            try:
-                for node_id in (await self.page_instance.Call("DOM.querySelectorAll", {
-                            "nodeId": self.nodeId, "selector": selector
-                        }))["nodeIds"]:
-                    nodes.append(Node(self.page_instance, node_id, selector))
-                return nodes
-            except Exception as e:
-                repeat += 1; error = str(e)
-        raise Exception(error)
+        nodes = []
+        try:
+            for node_id in (await self.page_instance.Call("DOM.querySelectorAll", {
+                        "nodeId": self.nodeId, "selector": selector
+                    }))["nodeIds"]:
+                nodes.append(Node(self.page_instance, node_id, selector))
+        except CouldNotFindNodeWithGivenID as e:
+            if match := re.search(r"nodeId\': (\d+)", str(e)):
+                if match.group(1) == str(self.nodeId):
+                    raise RootIDNoLongerExists
+            raise
+        return nodes
 
     async def GetChildNodes(self, depth: Optional[int] = -1, pierce: Optional[bool] = False) -> None:
         """

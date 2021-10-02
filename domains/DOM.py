@@ -1,6 +1,8 @@
+import re
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
 from aio_dt_protocol.DOMElement import Node
+from aio_dt_protocol.exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
 
 class DOM(ABC):
     """
@@ -122,18 +124,19 @@ class DOM(ABC):
         :param selector:        Селектор.
         :return:                <Node>
         """
-        repeat = 0; max_repeat = 2; error = ""
         root_node_id = (await self.Call("DOM.getDocument"))["root"]["nodeId"]
-        while repeat < max_repeat:
-            try:
-                node: dict = await self.Call("DOM.querySelector", {
-                    "nodeId": root_node_id, "selector": selector
-                })
-                node["selector"] = selector
-                return Node(self, **node) if node["nodeId"] > 0 else None
-            except Exception as e:
-                repeat += 1; error = str(e)
-        raise Exception(error)
+        try:
+            node: dict = await self.Call("DOM.querySelector", {
+                "nodeId": root_node_id, "selector": selector
+            })
+        except CouldNotFindNodeWithGivenID as e:
+            if match := re.search(r"nodeId\': (\d+)", str(e)):
+                if match.group(1) == str(root_node_id):
+                    raise RootIDNoLongerExists
+            raise
+        node["selector"] = selector
+        return Node(self, **node) if node["nodeId"] > 0 else None
+
 
     async def QuerySelectorAll(self, selector: str) -> List[Node]:
         """
@@ -145,18 +148,19 @@ class DOM(ABC):
                                     элемент документа.
         :return:                [ <Node>, <Node>, ... ]
         """
-        repeat = 0; max_repeat = 2; nodes = []; error = ""
+        nodes = []
         root_node_id = (await self.Call("DOM.getDocument"))["root"]["nodeId"]
-        while repeat < max_repeat:
-            try:
-                for node in (await self.Call("DOM.querySelectorAll", {
-                    "nodeId": root_node_id, "selector": selector
-                }))["nodeIds"]:
-                    nodes.append(Node(self, node, selector))
-                return nodes
-            except Exception as e:
-                repeat += 1; error = str(e)
-        raise Exception(error)
+        try:
+            for node in (await self.Call("DOM.querySelectorAll", {
+                "nodeId": root_node_id, "selector": selector
+            }))["nodeIds"]:
+                nodes.append(Node(self, node, selector))
+        except CouldNotFindNodeWithGivenID as e:
+            if match := re.search(r"nodeId\': (\d+)", str(e)):
+                if match.group(1) == str(root_node_id):
+                    raise RootIDNoLongerExists
+            raise
+        return nodes
 
     async def PerformSearch(self, query: str, searchInShadowDOM: Optional[bool] = None) -> dict:
         """
@@ -178,7 +182,7 @@ class DOM(ABC):
     async def GetSearchResults(
             self, searchId: str,
             fromIndex: Optional[int] = 0,
-              toIndex: Optional[int] = 0
+            toIndex:   Optional[int] = 0
     ) -> List["Node"]:
         """
         (EXPERIMENTAL)
@@ -195,7 +199,7 @@ class DOM(ABC):
         for node_id in (await self.Call("DOM.getSearchResults", args))["nodeIds"]:
             if self.verbose:
                 print("[SearchResults] node_id =", node_id)
-            nodes.append(Node(self, node_id))
+            nodes.append(Node(self, node_id, ""))
         return nodes
 
     async def Undo(self) -> None:

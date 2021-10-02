@@ -137,7 +137,7 @@ class PageEx(
         try:
             result = await self.Eval(code)
         except EvaluateError as error:
-            raise JavaScriptError(f"InjectJS() Exception with injected code: '{code}'\nDescription:\n{error}")
+            raise JavaScriptError(f"JavaScriptError: InjectJS() Exception with injected code: '{code}'\nDescription:\n{error}")
 
         return result.get('value')
 

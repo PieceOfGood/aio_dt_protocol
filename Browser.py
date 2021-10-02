@@ -7,7 +7,7 @@ if sys.platform == "win32": import winreg
 from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
 from aio_dt_protocol.Page import Page
 from aio_dt_protocol.Data import TargetConnectionInfo
-import stat
+import warnings
 
 
 class Browser:
@@ -260,8 +260,9 @@ class Browser:
         # https://stackoverflow.com/questions/2381241/what-is-the-subprocess-popen-max-length-of-the-args-parameter
         # data_url_len_is_high = len(url[0]) > 32_767
         data_url_len = len(url) if url else 0
+        # print("url =", url)
         if data_url_len > 30_000:
-            Warning(f"Length data url ({data_url_len}) is approaching to critical length = 32767 symbols!")
+            warnings.warn(f"Length data url ({data_url_len}) is approaching to critical length = 32767 symbols!")
 
         b_name_len = len(self.browser_name)
         # Если "app" == True:

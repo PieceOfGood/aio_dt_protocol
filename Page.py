@@ -1,6 +1,6 @@
 import json
 import asyncio
-import websockets
+import websockets.client
 
 from aio_dt_protocol.exceptions import EvaluateError, exception_store
 
@@ -142,11 +142,11 @@ class Page(AbsPage):
                     raise ex(f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'")
 
             raise Exception(
-                    "Browser detect error:\n" +
-                    f"error code -> '{response['error']['code']}';\n" +
-                    f"error message -> '{response['error']['message']}'\n"+
-                    f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'"
-                )
+                "Browser detect error:\n" +
+                f"error code -> '{response['error']['code']}';\n" +
+                f"error message -> '{response['error']['message']}'\n"+
+                f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'"
+            )
 
         return response["result"]
 
@@ -262,7 +262,7 @@ class Page(AbsPage):
         self.connected = False
 
     async def Activate(self) -> None:
-        self.ws_session = await websockets.connect(self.ws_url, ping_interval=None)
+        self.ws_session = await websockets.client.connect(self.ws_url, ping_interval=None)
         self.connected = True
         self.receiver = asyncio.create_task(self._Recv())
         if self.callback is not None and not self.runtime_enabled:
