@@ -1,4 +1,7 @@
-import json
+try:
+    import ujson as json
+except ModuleNotFoundError:
+    import json
 from abc import ABC, abstractmethod
 from typing import Optional, Union
 
@@ -122,7 +125,7 @@ class Runtime(ABC):
             https://chromedevtools.github.io/devtools-protocol/tot/Runtime#event-consoleAPICalled
             {
                 'method': 'Runtime.consoleAPICalled',
-                params': {
+                'params': {
                     'type': 'log',
                     'args': [{'type': 'string', 'value': 'you console data passed was be here'}],
                     'executionContextId': 2,

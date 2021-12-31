@@ -4,7 +4,7 @@ from aio_dt_protocol.PageEx import PageEx
 
 from urllib.parse import urlparse
 import re
-from typing import Union, Callable, Optional
+from typing import Union, Callable, Optional, List
 
 class BrowserEx(Browser):
     """
@@ -93,3 +93,43 @@ class BrowserEx(Browser):
         return await self.CreatePage(
             "http://127.0.0.1:" + str(self.debug_port) + page.frontend_url, new_window
         )
+
+    async def CreatePopupWindow(self, page: PageEx, url: str = "about:blank") -> Union[PageEx, None]:
+        """
+        Создаёт всплывающее окно с минимумом интерфейса браузера".
+        :param url:             - Адрес, ресурс которого будет загружен
+        :param page:            - Родительская страница, инициатор
+        :return:        PageEx or None
+        """
+        await page.InjectJS(f'window.open("{url}", "blank_window_name", "popup,noopener,noreferrer");')
+        return await self.GetPageByOpener(page)
+
+    async def GetPageByOpener(self, page: PageEx) -> Union[PageEx, None]:
+        """
+        Возвращает последний созданный инстанс страницы, открытие которого инициировано с конкретной страницы.
+            Например, при использовании JavaScript "window.open()".
+        :param page:            - Родительская страница, инициатор
+        :return:        PageEx or None
+        """
+        for target_info in await page.GetTargets():
+            if target_info.openerId == page.page_id:
+                return await self.GetPageByID(target_info.targetId)
+        return None
+
+    async def GetPagesByOpener(self, page: PageEx) -> List[PageEx]:
+        """
+        Возвращает список всех инстансов страниц, открытие которых инициировано с конкретной страницы.
+            Например, при использовании JavaScript "window.open()".
+        :param page:            - Родительская страница, инициатор открытых окон
+        :return:        List[PageEx]
+        """
+        pages = []
+        for target_info in await page.GetTargets():
+            if target_info.openerId == page.page_id:
+                pages.append(await self.GetPageByID(target_info.targetId))
+        return pages
+
+    async def Close(self) -> None:
+        """ Корректно закрывает браузер если остались ещё его инстансы, связи с которыми уже нет """
+        if page := await self.GetPage():
+            await page.action.CloseBrowser()

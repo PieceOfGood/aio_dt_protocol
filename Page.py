@@ -1,4 +1,7 @@
-import json
+try:
+    import ujson as json
+except ModuleNotFoundError:
+    import json
 import asyncio
 import websockets.client
 
@@ -125,12 +128,14 @@ class Page(AbsPage):
             "method": domain_and_method
         }
 
+        if wait_for_response:
+            self.responses[_id] = None
+
         await self._Send(json.dumps(data))
+
         if not wait_for_response:
-            # self.responses = {}
             return
 
-        self.responses[ _id ] = None
         while not self.responses[ _id ]:
             await asyncio.sleep(.01)
 
@@ -194,8 +199,8 @@ class Page(AbsPage):
                 return
 
             # Ожидающие ответов вызовы API получают ответ по id входящих сообщений.
-            if "id" in data_msg and data_msg["id"] in self.responses:
-                self.responses[data_msg["id"]] = data_msg
+            if (data_id := data_msg.get("id")) and data_id in self.responses:
+                self.responses[data_id] = data_msg
 
             # Если коллбэк функция была определена, она будет получать все
             #   уведомления из инстанса страницы.
@@ -218,14 +223,21 @@ class Page(AbsPage):
                             and
                     data_msg["params"].get("type") == "info"
             ):      # =============================================================
-                value = json.loads(data_msg["params"]["args"][0].get("value"))
-                if listener := self.listeners.get( value.get("funcName") ):
-                    asyncio.create_task(
-                        listener["function"](                               # корутина
-                            *(value["args"] if "args" in value else []),    # её список аргументов вызова
-                            *listener["args"]                               # список bind-агрументов
+                str_value = data_msg["params"]["args"][0].get("value")
+                try:
+                    value = json.loads(str_value)
+                except ValueError as e:
+                    if self.verbose:
+                        print("[<- V ->] | ValueError", e)
+                        print("[<- V ->] | Msg from browser", str_value)
+                else:
+                    if listener := self.listeners.get( value.get("funcName") ):
+                        asyncio.create_task(
+                            listener["function"](                               # корутина
+                                *(value["args"] if "args" in value else []),    # её список аргументов вызова
+                                *listener["args"]                               # список bind-агрументов
+                            )
                         )
-                    )
 
             # По этой же схеме будут вызваны все слушатели для обработки
             #   определённого метода, вызванного в контексте страницы,
@@ -237,7 +249,7 @@ class Page(AbsPage):
             ):      # =============================================================
                 # Получаем словарь слушателей, в котором ключи — слушатели,
                 #   значения — их аргументы.
-                listeners: dict = self.listeners_for_event[ method]
+                listeners: dict = self.listeners_for_event[ method ]
                 p = data_msg.get("params")
                 for listener, args in listeners.items():
                     asyncio.create_task(

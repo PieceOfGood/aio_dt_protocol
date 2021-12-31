@@ -2,6 +2,8 @@ class MyBaseException(Exception): pass
 
 class JavaScriptError(MyBaseException): pass
 
+class NullProperty(MyBaseException): pass
+
 class EvaluateError(MyBaseException): pass
 
 class TargetCrashed(MyBaseException): pass

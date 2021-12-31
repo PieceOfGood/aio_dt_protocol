@@ -47,7 +47,7 @@ class DOM(ABC):
         """
         Возвращает корневой узел документа.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getDocument
-        Корневой элемент ВСЕГДА имеет следующую структуру:
+        Корневой элемент ВСЕГДА имеет подобную структуру:
         'root': {
             'nodeId': 19,
             'backendNodeId': 2,
@@ -166,7 +166,8 @@ class DOM(ABC):
         """
         (EXPERIMENTAL)
         Ищет заданную строку в дереве DOM. Используйте 'GetSearchResults()' для доступа к результатам
-            поиска или 'CancelSearch()'( !не найдено! ), чтобы завершить этот сеанс поиска.
+            поиска или 'CancelSearch()'( !не найдено! ), чтобы завершить этот сеанс поиска. DOM-агент
+            должен быть влючён.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-performSearch
         :param query:               Обычный текст, селектор, или поисковый запрос XPath.
         :param searchInShadowDOM:   (optional) True - поиск будет так же выполнен в shadow DOM.
@@ -183,7 +184,7 @@ class DOM(ABC):
             self, searchId: str,
             fromIndex: Optional[int] = 0,
             toIndex:   Optional[int] = 0
-    ) -> List["Node"]:
+    ) -> List[Node]:
         """
         (EXPERIMENTAL)
         Возвращает список результатов поиска для поисковой сессии 'searchId', в интервале от 'fromIndex'

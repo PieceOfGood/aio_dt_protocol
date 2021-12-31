@@ -1,7 +1,11 @@
+try:
+    import ujson as json
+except ModuleNotFoundError:
+    import json
 import asyncio
 import urllib.request
 from urllib.parse import quote
-import json, re, os, sys, signal, subprocess, getpass
+import re, os, sys, signal, subprocess, getpass
 from os.path import expanduser
 if sys.platform == "win32": import winreg
 from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
@@ -72,11 +76,11 @@ class Browser:
             url: Optional[Union[str, bytes, None]] = None,
             flags:  Optional[List[str]] = None,
             browser_path: Optional[str] = "",
-            debug_port:   Optional[any] = 9222,
+            debug_port:   Optional[Union[str, int]] = 9222,
             browser_pid:  Optional[int] = 0,
             app:         Optional[bool] = False,
             browser_exe:  Optional[str] = "chrome",
-            proxy_port:   Optional[any] = "",
+            proxy_port:   Optional[Union[str, int]] = "",
             verbose:     Optional[bool] = False,
             position: Optional[Tuple[int, int]] = None,
             sizes:    Optional[Tuple[int, int]] = None,
@@ -291,16 +295,16 @@ class Browser:
         )
 
         self.is_headless_mode = False
-        self.position = position
-        self.sizes    = sizes
+
         self.f_no_first_run  = f_no_first_run
         self.f_default_check = f_default_check
         self.f_browser_test  = f_browser_test
         self.f_incognito     = f_incognito
         self.f_kiosk         = f_kiosk
-        self.browser_pid = browser_pid if browser_pid > 0 else self._RunBrowser(_url_, flags)
+        self.browser_pid = browser_pid if browser_pid > 0 else self._RunBrowser(_url_, flags, position, sizes)
 
-    def _RunBrowser(self, url: str, flags: list) -> int:
+    def _RunBrowser(self, url: str, flags: list, position: Optional[Tuple[int, int]] = None,
+                    sizes: Optional[Tuple[int, int]] = None) -> int:
         """
         Запускает браузер с переданными флагами.
         :param url:             Адрес. Если передан, будет загружен в первой вкладке.
@@ -318,11 +322,11 @@ class Browser:
 
         # ! Default mode
         if self.profile_path:
-            run_args.append( f"--user-data-dir={self.profile_path}")
-            if self.position is not None:
-                run_args.append("--window-position={},{}".format(*self.position))
-            if self.sizes is not None:
-                run_args.append("--window-size={},{}".format(*self.sizes))
+            run_args.append(f"--user-data-dir={self.profile_path}")
+            if position is not None:
+                run_args.append("--window-position={},{}".format(*position))
+            if sizes is not None:
+                run_args.append("--window-size={},{}".format(*sizes))
 
         # ! Headless mode
         else:

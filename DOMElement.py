@@ -471,8 +471,10 @@ class Node:
         q = (await self.GetContentQuads())[0]
         return NodeRect(q[0], q[1], q[2] - q[0], q[7] - q[1], q[0], q[2], q[1], q[7])
 
-    async def Click(self, delay: float = None) -> None:
+    async def Click(self, delay: float = None, has_link: bool = False) -> None:
         """ Кликает в середину себя """
+        if has_link:
+            self.page_instance.loading_state = "do_navigate"
         center = await self.GetCenter()
         await self.page_instance.action.MouseMoveTo(center.x, center.y)
         await self.page_instance.action.ClickTo(center.x, center.y, delay)
