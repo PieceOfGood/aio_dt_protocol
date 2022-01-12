@@ -196,6 +196,17 @@ class Browser(ABC):
         if eventsEnabled is not None: args.update(eventsEnabled=eventsEnabled)
         await self.Call("Browser.setDownloadBehavior", args)
 
+    async def CloseBrowser(self) -> bool:
+        """
+        Изящно завершает работу браузера.
+        https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-close
+        :return:        Закрылся/был закрыт
+        """
+        if self.connected:
+            await self.Call("Browser.close")
+            return True
+        return False
+
     @abstractmethod
     async def Call(
             self, domain_and_method: str,

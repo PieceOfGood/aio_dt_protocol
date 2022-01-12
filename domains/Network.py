@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
+from aio_dt_protocol.Data import Cookie
 
 class Network(ABC):
     """
@@ -121,16 +122,19 @@ class Network(ABC):
         """
         await self.Call("Network.setCacheDisabled", {"cacheDisabled": cacheDisabled})
 
-    async def GetAllCookies(self) -> list:
+    async def GetAllCookies(self) -> List[Cookie]:
         """
         Возвращает все куки браузера. В зависимости от поддержки бэкэнда, вернет подробную
             информацию о куки в поле куки.
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-getAllCookies
         :return: cookies -> (array Cookie) Array of cookie objects.
         """
-        return (await self.Call("Network.getAllCookies"))["cookies"]
+        cookies = []
+        for c in (await self.Call("Network.getAllCookies"))["cookies"]:
+            cookies.append(Cookie(**c))
+        return cookies
 
-    async def GetCookies(self, urls: Optional[list] = None) -> list:
+    async def GetCookies(self, urls: Optional[list] = None) -> List[Cookie]:
         """
         Возвращает все куки браузера для текущего URL. В зависимости от поддержки бэкэнда,
             вернет подробную информацию о куки в поле куки.
@@ -140,7 +144,10 @@ class Network(ABC):
         """
         args = {}
         if urls: args.update({"urls": urls})
-        return (await self.Call("Network.getCookies", args))["cookies"]
+        cookies = []
+        for c in (await self.Call("Network.getCookies", args))["cookies"]:
+            cookies.append(Cookie(**c))
+        return cookies
 
     async def DeleteCookies(
             self, name: str,

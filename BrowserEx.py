@@ -86,7 +86,7 @@ class BrowserEx(Browser):
     async def ShowInspector(self, page: PageEx, new_window: bool = True) -> PageEx:
         """
         Открывает новую вкладку с дебаггером для инспектируемой страницы.
-        :param page:            - Инспектируемая страница
+        :param page:            - Инспектируемая страница. Может принадлежать любому браузеру.
         :param new_window:      - Создать target в отдельном окне?
         :return:        <PageEx>
         """

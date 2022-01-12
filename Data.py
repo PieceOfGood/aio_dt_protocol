@@ -1,6 +1,25 @@
 from typing import Optional, List
 from dataclasses import dataclass
+from enum import Enum
 
+
+@dataclass
+class Cookie:
+    name: str
+    value: str
+    domain: str
+    path: str
+    expires: float
+    size: int
+    httpOnly: bool
+    secure: bool
+    priority: str                       # Allowed Values: Low, Medium, High
+    sameParty: bool
+    sourceScheme: str                   # Allowed Values: Unset, NonSecure, Secure
+    sourcePort: int                     # Valid values are {-1, [1, 65535]}, -1 indicates an unspecified port.
+    sameSite: Optional[str] = None      # Allowed status Values: Strict, Lax, None
+    partitionKey: Optional[str] = None
+    partitionKeyOpaque: Optional[bool] = None
 
 @dataclass
 class TargetConnectionInfo:
@@ -118,10 +137,9 @@ class BoxModel:
     content: list; padding: list; border: list; margin: list; width: int; height: int
     shapeOutside: Optional[ShapeOutsideInfo] = None
 
-@dataclass
-class KeyModifiers:
+class KeyModifiers(Enum):
     """ Клавиши-модификаторы """
-    alt = 1; ctrl = 2; meta = command = 4; shift = 8
+    none = 0; alt = 1; ctrl = 2; meta = command = 4; shift = 8
 
 @dataclass
 class KeyEvents:
@@ -138,7 +156,7 @@ class KeyEvents:
     alt =                 {"code": "Alt",             "text": "",   "keyIdentifier": "Alt",     "key": "Alt",       "windowsVirtualKeyCode": 18,  "nativeVirtualKeyCode": 18}
     alt_left =            {"code": "AltLeft",         "text": "",   "keyIdentifier": "U+00A4",  "key": "Alt",       "windowsVirtualKeyCode": 164, "nativeVirtualKeyCode": 164}
     alt_right =           {"code": "AltRight",        "text": "",   "keyIdentifier": "U+00A5",  "key": "Alt",       "windowsVirtualKeyCode": 165, "nativeVirtualKeyCode": 165}
-    escape =              {"code": "Escape",           "text": "",  "keyIdentifier": "U+001B",  "key": "Escape",    "windowsVirtualKeyCode": 27,  "nativeVirtualKeyCode": 27}
+    escape =              {"code": "Escape",          "text": "",   "keyIdentifier": "U+001B",  "key": "Escape",    "windowsVirtualKeyCode": 27,  "nativeVirtualKeyCode": 27}
     space =               {"code": "Space",           "text": " ",  "keyIdentifier": "U+0020",  "key": " ",         "windowsVirtualKeyCode": 32,  "nativeVirtualKeyCode": 32}
     arrow_left =          {"code": "ArrowLeft",       "text": "",   "keyIdentifier": "U+0025",  "key": "ArrowLeft", "windowsVirtualKeyCode": 37,  "nativeVirtualKeyCode": 37}
     arrow_up =            {"code": "ArrowUp",         "text": "",   "keyIdentifier": "U+0026",  "key": "ArrowUp",   "windowsVirtualKeyCode": 38,  "nativeVirtualKeyCode": 38}
