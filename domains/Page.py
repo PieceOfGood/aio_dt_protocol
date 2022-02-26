@@ -2,6 +2,7 @@ import asyncio
 from urllib.parse import quote
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Callable
+from aio_dt_protocol.Data import DomainEvent
 
 
 class Page(ABC):
@@ -445,3 +446,32 @@ class Page(ABC):
             params: Optional[dict] = None,
             wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+
+class PageEvent(DomainEvent):
+    domContentEventFired = "Page.domContentEventFired"
+    fileChooserOpened = "Page.fileChooserOpened"
+    frameAttached = "Page.frameAttached"
+    frameDetached = "Page.frameDetached"
+    frameNavigated = "Page.frameNavigated"
+    interstitialHidden = "Page.interstitialHidden"
+    interstitialShown = "Page.interstitialShown"
+    javascriptDialogClosed = "Page.javascriptDialogClosed"
+    javascriptDialogOpening = "Page.javascriptDialogOpening"
+    lifecycleEvent = "Page.lifecycleEvent"
+    loadEventFired = "Page.loadEventFired"
+    windowOpen = "Page.windowOpen"
+    frameClearedScheduledNavigation = "Page.frameClearedScheduledNavigation"    # DEPRECATED
+    frameScheduledNavigation = "Page.frameScheduledNavigation"                  # DEPRECATED
+    backForwardCacheNotUsed = "Page.backForwardCacheNotUsed"                    # ! EXPERIMENTAL
+    compilationCacheProduced = "Page.compilationCacheProduced"                  # ! EXPERIMENTAL
+    documentOpened = "Page.documentOpened"                                      # ! EXPERIMENTAL
+    frameRequestedNavigation = "Page.frameRequestedNavigation"                  # ! EXPERIMENTAL
+    frameResized = "Page.frameResized"                                          # ! EXPERIMENTAL
+    frameStartedLoading = "Page.frameStartedLoading"                            # ! EXPERIMENTAL
+    frameStoppedLoading = "Page.frameStoppedLoading"                            # ! EXPERIMENTAL
+    navigatedWithinDocument = "Page.navigatedWithinDocument"                    # ! EXPERIMENTAL
+    screencastFrame = "Page.screencastFrame"                                    # ! EXPERIMENTAL
+    screencastVisibilityChanged = "Page.screencastVisibilityChanged"            # ! EXPERIMENTAL
+    downloadProgress = "Page.downloadProgress"                                  # * EXPERIMENTAL DEPRECATED
+    downloadWillBegin = "Page.downloadWillBegin"                                # * EXPERIMENTAL DEPRECATED

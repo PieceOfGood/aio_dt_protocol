@@ -11,6 +11,7 @@ from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
 from typing import Callable, Optional, Union, Tuple
 from abc import ABC
+from aio_dt_protocol.Data import DomainEvent
 
 class AbsPage(ABC):
     __slots__ = (
@@ -254,7 +255,7 @@ class Page(AbsPage):
                 for listener, args in listeners.items():
                     asyncio.create_task(
                         listener(                                           # корутина
-                            p if p is not None else [],                     # её "params"
+                            p if p is not None else {},                     # её "params" — всегда передаётся
                             *args                                           # список bind-агрументов
                         )
                     )
@@ -320,12 +321,12 @@ class Page(AbsPage):
     async def AddListeners(self, *list_of_tuple_listeners_and_args: Tuple[Callable, list]) -> None:
         """
         Делает то же самое, что и AddListener(), но может зарегистрировать сразу несколько слушателей.
-            Принимает кортежи с двумя элементами, вида (async_func_or_method, list_args), где:
-                async_func_or_method    - синхронная фукция или метод
+            Принимает список кортежей с двумя элементами, вида (async_func_or_method, list_args), где:
+                async_func_or_method    - асинхронная фукция или метод
                 list_args               - список её аргументов(может быть пустым)
         """
         for action in list_of_tuple_listeners_and_args:
-            (listener, args) = (action[0], action[1])
+            listener, args = action
             if not iscoroutinefunction(listener):
                 raise TypeError("Listener must be a async callable object!")
             if listener.__name__ not in self.listeners:
@@ -346,7 +347,7 @@ class Page(AbsPage):
             del self.listeners[ listener.__name__ ]
 
     async def AddListenerForEvent(
-        self, event: str, listener: Callable, *args: Optional[any]) -> None:
+        self, event: Union[str, DomainEvent], listener: Callable, *args) -> None:
         """
         Регистирует слушателя, который будет вызываться при вызове определённых событий
             в браузере. Список таких событий можно посмотреть в разделе "Events" почти
@@ -362,25 +363,27 @@ class Page(AbsPage):
                                     в функцию последними.
         :return:        None
         """
+        e = event if type(event) is str else event.value
         if not iscoroutinefunction(listener):
             raise TypeError("Listener must be a async callable object!")
-        if event not in self.listeners_for_event:
-            self.listeners_for_event[event]: dict = {}
-        self.listeners_for_event[ event][listener] = args
+        if e not in self.listeners_for_event:
+            self.listeners_for_event[ e ]: dict = {}
+        self.listeners_for_event[ e ][listener] = args
         if not self.runtime_enabled:
             await self.Call("Runtime.enable")
             self.runtime_enabled = True
 
-    def RemoveListenerForEvent(self, event: str, listener: Callable) -> None:
+    def RemoveListenerForEvent(self, event: Union[str, DomainEvent], listener: Callable) -> None:
         """
         Удаляет регистрацию слушателя для указанного события.
         :param event:           Имя метода, для которого была регистрация.
         :param listener:        Колбэк-функция, которую нужно удалить.
         :return:        None
         """
+        e = event if type(event) is str else event.value
         if not iscoroutinefunction(listener):
             raise TypeError("Listener must be a async callable object!")
-        if m := self.listeners_for_event.get(event):
+        if m := self.listeners_for_event.get( e ):
             if listener in m: m.pop(listener)
 
 

@@ -90,6 +90,7 @@ class Browser:
             f_browser_test:  Optional[bool] = False,
             f_incognito:     Optional[bool] = False,
             f_kiosk:         Optional[bool] = False,
+            f_disable_webgl: Optional[bool] = False,
 
     ) -> None:
         """
@@ -181,6 +182,9 @@ class Browser:
 
         :param f_kiosk:         По умолчанию False == добавляет к флагам запуска, kiosk,
                                     запускающий браузет в соответствующем режиме.
+
+        :param f_disable_webgl: По умолчанию False == добавляет к флагам запуска, правило,
+                                    отключающее использование webgl в браузере.
         """
         if sys.platform not in ("win32", "linux"): raise OSError(f"Platform '{sys.platform}' — not supported")
         self.dev_tool_profiles = dev_tool_profiles if profile_path else False
@@ -240,7 +244,7 @@ class Browser:
         self.HISTORY:       str = self.browser_name + "://history/"         # история переходов
         self.BOOKMARKS:     str = self.browser_name + "://bookmarks/"       # закладки
         self.DOWNLOADS:     str = self.browser_name + "://downloads/"       # загрузки
-        self.BRAVE_WALLET:  str = self.browser_name + "://wallet/"          # кошельки (brave only)
+        self.WALLET:        str = self.browser_name + "://wallet/"          # кошельки (brave only)
         self.EXTENSIONS:    str = self.browser_name + "://extensions/"      # расширения
 
         if sys.platform == "win32":
@@ -301,6 +305,7 @@ class Browser:
         self.f_browser_test  = f_browser_test
         self.f_incognito     = f_incognito
         self.f_kiosk         = f_kiosk
+        self.f_disable_webgl = f_disable_webgl
         self.browser_pid = browser_pid if browser_pid > 0 else self._RunBrowser(_url_, flags, position, sizes)
 
     def _RunBrowser(self, url: str, flags: list, position: Optional[Tuple[int, int]] = None,
@@ -338,6 +343,7 @@ class Browser:
         if self.f_browser_test:  run_args.append("--browser-test")
         if self.f_incognito:     run_args.append("--incognito")
         if self.f_kiosk:         run_args.append("--kiosk")
+        if self.f_disable_webgl: run_args.append("--disable-webgl")
 
         if self.proxy_port:
             run_args.append("--proxy-server=http://127.0.0.1:" + self.proxy_port)

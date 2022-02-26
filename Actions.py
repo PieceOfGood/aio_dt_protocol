@@ -1,7 +1,7 @@
 import time
 import asyncio
 import random
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Literal
 from aio_dt_protocol.Data import WINDOWS_KEY_SET, WindowBounds, TouchPoint, KeyModifiers, KeyEvents
 
 
@@ -195,7 +195,7 @@ class Actions:
     async def SynthesizePinchGesture(
             self, x: float, y: float, scaleFactor: float,
                 relativeSpeed: Optional[int] = None,
-            gestureSourceType: Optional[str] = None
+            gestureSourceType: Optional[Literal["touch", "mouse"]] = None
     ) -> None:
         """
         (EXPERIMENTAL)
@@ -226,7 +226,7 @@ class Actions:
                     yOverscroll: Optional[float] = None,
                     preventFling: Optional[bool] = None,
                             speed: Optional[int] = None,
-                gestureSourceType: Optional[str] = None,
+                gestureSourceType: Optional[Literal["touch", "mouse"]] = None,
                       repeatCount: Optional[int] = None,
                     repeatDelayMs: Optional[int] = None,
             interactionMarkerName: Optional[str] = None
@@ -281,7 +281,7 @@ class Actions:
             self, x: float, y: float,
             duration:          Optional[int] = None,
             tapCount:          Optional[int] = None,
-            gestureSourceType: Optional[str] = None
+            gestureSourceType: Optional[Literal["touch", "mouse"]] = None
     ) -> None:
         """
         (EXPERIMENTAL)
@@ -329,30 +329,32 @@ class Actions:
 
     async def SwipeTo(
         self,
-        direction:      Optional[str] = "up",
-        x:            Optional[float] = None,
-        y:            Optional[float] = None,
+        direction: Literal["up", "down", "left", "right"],
+        x:            Optional[float] = 0,
+        y:            Optional[float] = 0,
         distance:     Optional[float] = None,
         speed:        Optional[float] = None,
         overscroll:   Optional[float] = None,
         repeat_count:   Optional[int] = None,
-        repeat_delay: Optional[float] = None
+        repeat_delay: Optional[float] = None,
+        gestureSourceType: Optional[Literal["touch", "mouse"]] = "mouse"
     ) -> None:
         """
         Скроллит вьюпорт жестом "touch" на всю его длину/высоту.
             Возвращает управление только после выполнения жеста!
-        :param direction:       (optional) Направление. Может быть следующим:
-                                    up — пальцем вверх(прокрутка вниз)
-                                    down — пальцем вниз(прокрутка вверх)
-                                    left — пальцем влево(прокрутка вправо)
-                                    right — пальцем вправо(прокрутка влево)
-        :param x:               (optional) X-координата начальной точки.
-        :param y:               (optional) Y-координата начальной точки.
-        :param distance:        (optional) Дистанция движения.
-        :param speed:           (optional) Скорость движения(по умолчанию = 800).
-        :param overscroll:      (optional) Дополнительная дистанция в пикселях.
-        :param repeat_count:    (optional) Кол-во повторений сделанного жеста.
-        :param repeat_delay:    (optional) Задержка между повторениями.
+        :param direction:           (optional) Направление. Может быть следующим:
+                                        up — пальцем вверх(прокрутка вниз)
+                                        down — пальцем вниз(прокрутка вверх)
+                                        left — пальцем влево(прокрутка вправо)
+                                        right — пальцем вправо(прокрутка влево)
+        :param x:                   (optional) X-координата начальной точки.
+        :param y:                   (optional) Y-координата начальной точки.
+        :param distance:            (optional) Дистанция движения.
+        :param speed:               (optional) Скорость движения(по умолчанию = 800).
+        :param overscroll:          (optional) Дополнительная дистанция в пикселях.
+        :param repeat_count:        (optional) Кол-во повторений сделанного жеста.
+        :param repeat_delay:        (optional) Задержка между повторениями.
+        :param gestureSourceType:   (optional) Задержка между повторениями.
         :return:
         """
         if direction not in ["up", "down", "left", "right"]:
@@ -375,7 +377,7 @@ class Actions:
 
         args = {
             "x": x, "y": y, "speed": speed, "repeatCount": repeat_count,
-            "repeatDelayMs": repeat_delay, "gestureSourceType": "touch",
+            "repeatDelayMs": repeat_delay, "gestureSourceType": gestureSourceType,
             "xDistance": distance * sign if direction in ["left", "right"] else None,
             "yDistance": distance * sign if direction in ["up", "down"] else None,
             "xOverscroll": overscroll * -sign if direction in ["left", "right"] else None,

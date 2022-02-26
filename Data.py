@@ -3,6 +3,14 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+class DomainEvent(Enum): pass
+
+
+class ConnectionType(Enum):
+    none = "none"; cellular2g = "cellular2g"; cellular3g = "cellular3g"; cellular4g = "cellular4g"
+    bluetooth = "bluetooth"; ethernet = "ethernet"; wifi = "wifi"; wimax = "wimax"; other = "other"
+
+
 @dataclass
 class Cookie:
     name: str
@@ -13,6 +21,7 @@ class Cookie:
     size: int
     httpOnly: bool
     secure: bool
+    session: bool
     priority: str                       # Allowed Values: Low, Medium, High
     sameParty: bool
     sourceScheme: str                   # Allowed Values: Unset, NonSecure, Secure
@@ -25,7 +34,7 @@ class Cookie:
 class TargetConnectionInfo:
     description: str; devtoolsFrontendUrl: str
     id: str; title: str; type: str; url: str; webSocketDebuggerUrl: str
-    faviconUrl: str = None
+    faviconUrl: str = None; parentId: str = None
 
 @dataclass
 class ProcessInfo:

@@ -76,6 +76,11 @@ class PageEx(
                                                 #   включены уведомления домена Page. Может иметь значения:
                                                 # |  started; navigated; stopped; do_navigate; do_reload |
 
+    def __eq__(self, other: "PageEx") -> bool:
+        return self.page_id == other.page_id
+
+    def __hash__(self) -> int:
+        return hash(self.page_id)
 
     # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
     #

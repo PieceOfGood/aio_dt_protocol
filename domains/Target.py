@@ -175,6 +175,12 @@ class Target(ABC):
         if targetId is None: targetId = self.page_id
         await self.Call("Target.closeTarget", {"targetId": targetId})
 
+    async def Close(self) -> None:
+        """
+        Закрывает вкладку.
+        """
+        await self.CloseTarget()
+
     async def SetDiscoverTargets(
             self, discover: bool,
             created:   Optional[Callable[[TargetInfo], Awaitable[None]]] = None,

@@ -1,3 +1,5 @@
+from asyncio import sleep, wait_for
+from urllib.error import URLError
 
 from aio_dt_protocol.Browser import Browser
 from aio_dt_protocol.PageEx import PageEx
@@ -47,31 +49,32 @@ class BrowserEx(Browser):
     async def GetPage(
             self, index: int = 0, page_type: str = "page",
             callback: Callable = None
-    ) -> PageEx:
+    ) -> Union[PageEx, None]:
         return await self.GetPageBy("type", page_type, "exact", index, callback)
 
     async def GetPageByID(
             self, page_id: str, index: int = 0,
             callback: Callable = None
-    ) -> PageEx:
+    ) -> Union[PageEx, None]:
         return await self.GetPageBy("id", page_id, "exact", index, callback)
 
     async def GetPageByTitle(
             self, value: any, match_mode: str = "startswith",
             index: int = 0, callback: Callable = None
-    ) -> PageEx:
+    ) -> Union[PageEx, None]:
         return await self.GetPageBy("title", value, match_mode, index, callback)
 
     async def GetPageByURL(
             self, value: any, match_mode: str = "startswith",
             index: int = 0, callback: Callable = None
-    ) -> PageEx:
+    ) -> Union[PageEx, None]:
         return await self.GetPageBy("url", value, match_mode, index, callback)
 
     async def CreatePage(
         self,  url: Optional[str] = "about:blank",
-        newWindow: Optional[bool] = False, background: Optional[bool] = False
-    ) -> PageEx:
+        newWindow: Optional[bool] = False, background: Optional[bool] = False,
+        wait_for_create: Optional[bool] = True
+    ) -> Union[PageEx, None]:
         """
         Создаёт новую вкладку в браузере.
         :param url:                     - (optional) Адрес будет открыт при создании.
@@ -79,11 +82,15 @@ class BrowserEx(Browser):
         :param background:              - (optional) Если 'True' — страница будет открыта в фоне.
         :return:                    * Инстанс страницы <PageEx>
         """
-        return await self.GetPageByID(
-            (await (await self.GetPage()).CreateTarget(url, newWindow=newWindow, background=background))
-        )
+        page_id = await (await self.GetPage()).CreateTarget(url, newWindow=newWindow, background=background)
+        if wait_for_create:
+            while not(page := await self.GetPageByID(page_id)):
+                await sleep(.5)
+        else:
+            page = await self.GetPageByID(page_id)
+        return page
 
-    async def ShowInspector(self, page: PageEx, new_window: bool = True) -> PageEx:
+    async def ShowInspector(self, page: PageEx, new_window: bool = True) -> Union[PageEx, None]:
         """
         Открывает новую вкладку с дебаггером для инспектируемой страницы.
         :param page:            - Инспектируемая страница. Может принадлежать любому браузеру.
@@ -129,7 +136,24 @@ class BrowserEx(Browser):
                 pages.append(await self.GetPageByID(target_info.targetId))
         return pages
 
+    async def WaitFirstTab(self, timeout: float = 20.0) -> PageEx:
+        """
+        Вызывает исключение 'asyncio.exceptions.TimeoutError' по истечении таймаута, или возвращает инстанс.
+        """
+        return await wait_for(self.GetFirstTab(), timeout)
+
+    async def GetFirstTab(self) -> PageEx:
+        """
+        Безусловно дожидается соединения со страницей.
+        """
+        while True:
+            try:
+                while (page := await self.GetPage()) is None:
+                    await sleep(.5)
+                return page
+            except URLError: await sleep(1)
+
     async def Close(self) -> None:
-        """ Корректно закрывает браузер если остались ещё его инстансы, связи с которыми уже нет """
+        """ Корректно закрывает браузер если остались ещё его инстансы """
         if page := await self.GetPage():
-            await page.action.CloseBrowser()
+            await page.CloseBrowser()

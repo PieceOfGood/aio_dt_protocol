@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
-from aio_dt_protocol.Data import Cookie
+from aio_dt_protocol.Data import Cookie, ConnectionType
 
 class Network(ABC):
     """
@@ -62,7 +62,7 @@ class Network(ABC):
         downloadThroughput: Optional[int] = -1,
         uploadThroughput:   Optional[int] = -1,
         offline:           Optional[bool] = False,
-        connectionType:     Optional[str] = ""
+        connectionType: Optional[ConnectionType] = None
     ) -> None:
         """
         Активирует эмуляцию состояния сети.
@@ -83,7 +83,7 @@ class Network(ABC):
         args = {"latency": latency, "offline": offline}
         if downloadThroughput > -1: args.update({"downloadThroughput": downloadThroughput})
         if uploadThroughput > -1: args.update({"uploadThroughput": uploadThroughput})
-        if connectionType: args.update({"connectionType": connectionType})
+        if connectionType: args.update({"connectionType": connectionType.value})
         await self.Call("Network.emulateNetworkConditions", args)
 
     async def ClearBrowserCache(self) -> None:
@@ -111,6 +111,8 @@ class Network(ABC):
         :param urls:            Шаблоны URL для блокировки. Подстановочные знаки ('*') разрешены.
         :return:
         """
+        if not self.network_domain_enabled:
+            await self.NetworkEnable()
         await self.Call("Network.setBlockedURLs", {"urls": urls})
 
     async def SetCacheDisabled(self, cacheDisabled: Optional[bool] = True) -> None:
