@@ -390,6 +390,7 @@ class Actions:
         Эмулирует клик мыши по координатам.
         :param x:               x - координата
         :param y:               y - координата
+        :param delay:           задержка перед отпусканием
         :return:
         """
         await self.DispatchMouseEvent("mousePressed", x, y, button="left")

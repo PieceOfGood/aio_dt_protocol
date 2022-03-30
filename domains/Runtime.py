@@ -3,7 +3,9 @@ try:
 except ModuleNotFoundError:
     import json
 from abc import ABC, abstractmethod
-from typing import Optional, Union
+from typing import Optional, Union, List, Literal, Callable
+from dataclasses import dataclass, field
+from aio_dt_protocol.Data import DomainEvent
 
 
 class Runtime(ABC):
@@ -14,6 +16,7 @@ class Runtime(ABC):
 
     def __init__(self):
         self.runtime_enabled = False
+        self.context_manager = ContextManager()
 
     @property
     def connected(self) -> bool:
@@ -115,7 +118,7 @@ class Runtime(ABC):
             raise Exception(response["result"]["description"] + "\n" + json.dumps(response["exceptionDetails"]))
         return response["result"]
 
-    async def RuntimeEnable(self) -> None:
+    async def RuntimeEnable(self, watch_for_execution_contexts: Optional[bool] = False) -> None:
         """
         Включает создание отчетов о создании контекстов выполнения с помощью события executeContextCreated.
             При включении, событие будет отправлено немедленно для каждого существующего контекста выполнения.
@@ -137,10 +140,19 @@ class Runtime(ABC):
             }
 
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-enable
+        :param watch_for_execution_contexts:    Регистрирует слушателей, ожидающих события создания/уничтожения
+                                                    контекстов, которые можно запрашивать через
+                                                    page_instance.context_manager.GetDefaultContext(frameId: str)
         :return:
         """
-        await self.Call("Runtime.enable")
-        self.runtime_enabled = True
+        if not self.runtime_enabled:
+            await self.Call("Runtime.enable")
+            self.runtime_enabled = True
+
+        if watch_for_execution_contexts and not self.context_manager.is_watch:
+            await self.AddListenerForEvent(RuntimeEvent.executionContextCreated, self.context_manager.on_create)
+            await self.AddListenerForEvent(RuntimeEvent.executionContextDestroyed, self.context_manager.on_destroy)
+            self.context_manager.is_watch = True
 
     async def RuntimeDisable(self) -> None:
         """
@@ -148,8 +160,14 @@ class Runtime(ABC):
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-disable
         :return:
         """
-        await self.Call("Runtime.disable")
-        self.runtime_enabled = False
+        if self.runtime_enabled:
+            await self.Call("Runtime.disable")
+            self.runtime_enabled = False
+
+        if self.context_manager.is_watch:
+            self.RemoveListenerForEvent(RuntimeEvent.executionContextCreated, self.context_manager.on_create)
+            self.RemoveListenerForEvent(RuntimeEvent.executionContextDestroyed, self.context_manager.on_destroy)
+            self.context_manager.is_watch = False
 
     async def DiscardConsoleEntries(self) -> None:
         """
@@ -173,7 +191,7 @@ class Runtime(ABC):
             sourceURL: Optional[str] = "",
             persistScript: Optional[bool] = True,
             executionContextId: Optional[int] = None
-    ) -> dict:
+    ) -> str:
         """
         Компилирует выражение.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-compileScript
@@ -196,6 +214,9 @@ class Runtime(ABC):
         if "exceptionDetails" in response:
             raise Exception(response["exceptionDetails"]["text"] + "\n" + json.dumps(response["exceptionDetails"]))
         return response["scriptId"]
+
+    async def BuildScript(self, expression: str, context: Optional['Context'] = None) -> 'Script':
+        return Script(self, expression, context)
 
     async def RunScript(
             self, scriptId: str,
@@ -270,3 +291,207 @@ class Runtime(ABC):
             params: Optional[dict] = None,
             wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+    @abstractmethod
+    async def AddListenerForEvent(
+            self, event: Union[str, DomainEvent], listener: Callable, *args: any) -> None:
+        raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
+
+    @abstractmethod
+    def RemoveListenerForEvent(self, event: Union[str, DomainEvent], listener: Callable) -> None:
+        raise NotImplementedError("async method RemoveListenerForEvent() — is not implemented")
+
+
+class RuntimeEvent(DomainEvent):
+    consoleAPICalled = "Runtime.consoleAPICalled"
+    exceptionRevoked = "Runtime.exceptionRevoked"
+    exceptionThrown = "Runtime.exceptionThrown"
+    executionContextCreated = "Runtime.executionContextCreated"
+    executionContextDestroyed = "Runtime.executionContextDestroyed"
+    executionContextsCleared = "Runtime.executionContextsCleared"
+    inspectRequested = "Runtime.inspectRequested"
+    bindingCalled = "Runtime.bindingCalled"                       # ! EXPERIMENTAL
+
+
+@dataclass
+class PropertyPreview:
+    name: str
+    type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "accessor", "bigint"]
+    valuePreview: Optional['ObjectPreview']
+    value: Optional[str] = None
+    _valuePreview: Optional['ObjectPreview'] = field(init=False, repr=False, default=None)
+    subtype: Literal[
+        "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
+        "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"] = None
+
+    @property
+    def valuePreview(self) -> 'ObjectPreview':
+        return self._valuePreview
+
+    @valuePreview.setter
+    def valuePreview(self, data: dict) -> None:
+        self._valuePreview = ObjectPreview(**data) if not isinstance(data, property) else None
+
+
+@dataclass
+class EntryPreview:
+    _value: 'ObjectPreview'
+    _key: Optional['ObjectPreview']
+
+    @property
+    def key(self) -> 'ObjectPreview':
+        return self._key
+
+    @key.setter
+    def key(self, data: dict) -> None:
+        self._key = ObjectPreview(**data)
+
+    @property
+    def value(self) -> 'ObjectPreview':
+        return self._value
+
+    @value.setter
+    def value(self, data: dict) -> None:
+        self._value = ObjectPreview(**data)
+
+
+@dataclass
+class CustomPreview:
+    header: str
+    bodyGetterId: Optional[str] = None
+
+
+@dataclass
+class ObjectPreview:
+    type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "bigint"]
+    overflow: bool
+    properties: List['PropertyPreview']
+    entries: List['EntryPreview']
+    subtype: Optional[Literal[
+        "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
+        "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"]] = None
+    description: Optional[str] = None
+    _entries: List['EntryPreview'] = field(init=False, repr=False, default=None)
+
+    @property
+    def properties(self) -> List['PropertyPreview']:
+        return self._properties
+
+    @properties.setter
+    def properties(self, data: List[dict]) -> None:
+        self._properties = [PropertyPreview(**item) for item in data]
+
+    @property
+    def entries(self) -> List['EntryPreview']:
+        return self._entries
+
+    @entries.setter
+    def entries(self, data: List[dict]) -> None:
+        self._entries = [EntryPreview(**item) for item in data] if not isinstance(data, property) else None
+
+
+@dataclass
+class RemoteObject:
+    """
+    Зеркальный объект, ссылающийся на исходный объект JavaScript.
+    # https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#type-RemoteObject
+    """
+    type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "bigint"]
+    preview: Optional['ObjectPreview']
+    customPreview: Optional['CustomPreview']
+    subtype: Optional[Literal[
+        "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
+        "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"]] = None
+    className: Optional[str] = None
+    value: Optional[any] = None
+    unserializableValue: Optional[str] = None   # ? Примитивное значение, которое не может быть преобразовано в строку
+                                                # ?     JSON, не имеет value, но получает это свойство.
+    description: Optional[str] = None
+    objectId: Optional[str] = None
+    _preview: Optional['ObjectPreview'] = field(init=False, repr=False, default=None)
+    _customPreview: Optional['CustomPreview'] = field(init=False, repr=False, default=None)
+
+    @property
+    def preview(self) -> 'ObjectPreview':
+        return self._preview
+
+    @preview.setter
+    def preview(self, data: dict) -> None:
+        self._vpreview = ObjectPreview(**data) if not isinstance(data, property) else None
+
+    @property
+    def customPreview(self) -> 'CustomPreview':
+        return self._customPreview
+
+    @customPreview.setter
+    def customPreview(self, data: dict) -> None:
+        self._customPreview = CustomPreview(**data) if not isinstance(data, property) else None
+
+
+class Script:
+    """
+    Упаковывает вызываемое в контексте указанного фрейма выражение. Если контекст не указан, в его качестве
+        будет выбран фрейм верхнего уровня. Выражение можно заменить при вызове.
+    """
+    def __init__(self, page_instance, expression: str, context: Optional[Union['Context', str]] = None):
+        self.page_instance = page_instance
+        self.expression = expression
+        self.unique_context_id = context if type(context) is str else context.uniqueId if context is not None else None
+
+    async def Call(self, expression: Optional[str] = None, returnByValue: Optional[bool] = None) -> 'RemoteObject':
+        if expression:
+            self.expression = expression
+        args = {"expression": self.expression}
+        if returnByValue is not None:
+            args.update(returnByValue=returnByValue)
+        if self.unique_context_id is not None:
+            args.update(uniqueContextId=self.unique_context_id)
+        result: dict = await self.page_instance.Call("Runtime.evaluate", args)
+        return RemoteObject(**result.get("result"))
+
+
+@dataclass
+class AuxData:
+    isDefault: bool
+    type: str
+    frameId: str
+
+
+@dataclass
+class Context:
+    id: int
+    origin: str     # url
+    name: str
+    uniqueId: str
+    auxData: AuxData
+
+    @property
+    def auxData(self) -> 'AuxData':
+        return self._auxData
+
+    @auxData.setter
+    def auxData(self, data: dict) -> None:
+        self._auxData = AuxData(**data)
+
+
+class ContextManager:
+    contexts: List['Context'] = []
+    is_watch: bool = False
+
+    async def on_create(self, data: dict) -> None:
+        self.contexts.append(Context(**data.get("context")))
+
+    async def on_destroy(self, data: dict) -> None:
+        context_id: int = data.get("executionContextId")
+        i = -1
+        for i, ctx in enumerate(self.contexts):
+            if ctx.id == context_id:
+                break
+
+        if i > -1: self.contexts.pop(i)
+
+    def GetDefaultContext(self, frameId: str) -> Union['Context', None]:
+        for ctx in self.contexts:
+            if ctx.auxData.frameId == frameId and ctx.auxData.isDefault:
+                return ctx
+        return None

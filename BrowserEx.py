@@ -1,8 +1,10 @@
+import asyncio
 from asyncio import sleep, wait_for
 from urllib.error import URLError
 
 from aio_dt_protocol.Browser import Browser
 from aio_dt_protocol.PageEx import PageEx
+from aio_dt_protocol.exceptions import NoTargetWithGivenIdFound
 
 from urllib.parse import urlparse
 import re
@@ -25,25 +27,25 @@ class BrowserEx(Browser):
             self, key: str, value: str, match_mode: Optional[str] = "exact",
             index: Optional[int] = 0, callback: Optional[Callable] = None
     ) -> Union[PageEx, None]:
-
         counter = 0; v = value.lower()
         for page_data in await self.GetPageList():
             data = page_data[key].lower()
             if ((match_mode == "exact" and data == v)
                 or (match_mode == "contains" and data.find(v) > -1)
-                    or (match_mode == "startswith" and data.find(v) == 0)) and counter == index:
-                page = PageEx(
-                    page_data["webSocketDebuggerUrl"],
-                    page_data["id"],
-                    page_data["devtoolsFrontendUrl"],
-                    callback,
-                    self.profile_path == "",
-                    self.verbose,
-                    self.browser_name
-                )
-                await page.Activate()
-                return page
-            counter += 1
+                    or (match_mode == "startswith" and data.find(v) == 0)):
+                if counter == index:
+                    page = PageEx(
+                        page_data["webSocketDebuggerUrl"],
+                        page_data["id"],
+                        page_data["devtoolsFrontendUrl"],
+                        callback,
+                        self.profile_path == "",
+                        self.verbose,
+                        self.browser_name
+                    )
+                    await page.Activate()
+                    return page
+                counter += 1
         return None
 
     async def GetPage(
@@ -157,3 +159,34 @@ class BrowserEx(Browser):
         """ Корректно закрывает браузер если остались ещё его инстансы """
         if page := await self.GetPage():
             await page.CloseBrowser()
+
+    async def CloseAllPagesExcept(self, *except_list: PageEx) -> None:
+        """ Закрывает все страницы браузера, кроме переданных """
+        for conn in await self.GetTargetConnectionInfoList():
+            if conn.type == "page":
+                condition = False
+                for page in except_list:
+                    condition |= page.page_id == conn.id
+                if not condition:
+                    i = 4
+                    try:
+                        while (tab := await self.GetPageByID(conn.id)) is None and i:
+                            await asyncio.sleep(.5)
+                            i -= 1
+                        if tab: await tab.Close()
+                    except NoTargetWithGivenIdFound:
+                        pass
+
+    async def GetFramesFor(self, page: PageEx) -> List[PageEx]:
+        """ Возвращает список iFrame для указанного инстанса """
+        result = []
+        for conn in await self.GetPageList():
+            if conn["type"] == "iframe" and conn["parentId"] == page.page_id:
+                result.append( await self.GetPageByID(conn["id"]) )
+        return result
+
+    def __eq__(self, other: "BrowserEx") -> bool:
+        return self.debug_port == other.debug_port
+
+    def __hash__(self) -> int:
+        return hash(self.debug_port)

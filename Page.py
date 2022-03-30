@@ -9,15 +9,15 @@ from aio_dt_protocol.exceptions import EvaluateError, exception_store
 
 from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
-from typing import Callable, Optional, Union, Tuple
+from typing import Callable, Awaitable, Optional, Union, Tuple, List
 from abc import ABC
 from aio_dt_protocol.Data import DomainEvent
 
 class AbsPage(ABC):
     __slots__ = (
         "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
-        "responses", "connected", "ws_session", "receiver", "listeners", "listeners_for_event", "runtime_enabled",
-        "_connected", "_page_id", "_verbose", "_browser_name", "_is_headless_mode"
+        "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_event",
+        "runtime_enabled", "context_manager", "_connected", "_page_id", "_verbose", "_browser_name", "_is_headless_mode"
     )
 
     def __init__(
@@ -44,6 +44,7 @@ class AbsPage(ABC):
         self.connected         = False
         self.ws_session        = None
         self.receiver          = None
+        self.on_detach_listener: List[Callable[[any], Awaitable[None]], list, dict] = []
         self.listeners         = {}
         self.listeners_for_event = {}
         self.runtime_enabled     = False
@@ -191,12 +192,12 @@ class Page(AbsPage):
             # ! Браузер разорвал соединение
             except ConnectionClosedError as e:
                 if self.verbose: print(f"[<- V ->] | ConnectionClosedError '{e}'")
-                self.Detach()
+                await self.Detach()
                 return
 
             if ("method" in data_msg and data_msg["method"] == "Inspector.detached"
                     and data_msg["params"]["reason"] == "target_closed"):
-                self.Detach()
+                await self.Detach()
                 return
 
             # Ожидающие ответов вызовы API получают ответ по id входящих сообщений.
@@ -261,7 +262,7 @@ class Page(AbsPage):
                     )
 
 
-    def Detach(self) -> None:
+    async def Detach(self) -> None:
         """
         Отключается от инстанса страницы. Вызывается автоматически при закрытии браузера,
             или инстанса текущей страницы. Принудительный вызов не закрывает страницу,
@@ -274,6 +275,24 @@ class Page(AbsPage):
         if self.verbose: print("[<- V ->] [ DETACH ]", self.page_id)
         self.connected = False
 
+        if self.on_detach_listener:
+            function, args, kvargs = self.on_detach_listener
+            await function(*args, **kvargs)
+
+    def RemoveOnDetach(self) -> None:
+        self.on_detach_listener = []
+
+    def SetOnDetach(self, function: Callable[[any], Awaitable[None]], *args, **kvargs) -> bool:
+        """
+        Регистрирует асинхронный коллбэк, который будет вызван с соответствующими аргументами
+            при разрыве соединения со страницей.
+        """
+        if not iscoroutinefunction(function):
+            raise TypeError("OnDetach-listener must be a async callable function!")
+        if not self.connected: return False
+        self.on_detach_listener = [function, args, kvargs]
+        return True
+
     async def Activate(self) -> None:
         self.ws_session = await websockets.client.connect(self.ws_url, ping_interval=None)
         self.connected = True
@@ -282,7 +301,7 @@ class Page(AbsPage):
             await self.Call("Runtime.enable")
             self.runtime_enabled = True
 
-    async def AddListener(self, listener: Callable, *args: Optional[any]) -> None:
+    async def AddListener(self, listener: Callable[[any], Awaitable[None]], *args: Optional[any]) -> None:
         """
         Добавляет 'слушателя', который будет ожидать свой вызов по имени функции.
             Вызов слушателей из контекста страницы осуществляется за счёт
@@ -305,8 +324,8 @@ class Page(AbsPage):
             !!! ВНИМАНИЕ !!! В качестве слушателя может выступать ТОЛЬКО асинхронная
                 функция, или метод.
 
-        :param listener:        Асинхронная колбэк-функция.
-        :param args:            (optional) любое кол-во агрументов, которые будут переданы
+        :param listener:        Асинхронная функция.
+        :param args:            (optional) любое кол-во аргументов, которые будут переданы
                                     в функцию последними.
         :return:        None
         """
@@ -318,7 +337,8 @@ class Page(AbsPage):
                 await self.Call("Runtime.enable")
                 self.runtime_enabled = True
 
-    async def AddListeners(self, *list_of_tuple_listeners_and_args: Tuple[Callable, list]) -> None:
+    async def AddListeners(
+            self, *list_of_tuple_listeners_and_args: Tuple[Callable[[any], Awaitable[None]], list]) -> None:
         """
         Делает то же самое, что и AddListener(), но может зарегистрировать сразу несколько слушателей.
             Принимает список кортежей с двумя элементами, вида (async_func_or_method, list_args), где:
@@ -335,7 +355,7 @@ class Page(AbsPage):
                     await self.Call("Runtime.enable")
                     self.runtime_enabled = True
 
-    def RemoveListener(self, listener: Callable) -> None:
+    def RemoveListener(self, listener: Callable[[any], Awaitable[None]]) -> None:
         """
         Удаляет слушателя.
         :param listener:        Колбэк-функция.
@@ -347,7 +367,7 @@ class Page(AbsPage):
             del self.listeners[ listener.__name__ ]
 
     async def AddListenerForEvent(
-        self, event: Union[str, DomainEvent], listener: Callable, *args) -> None:
+        self, event: Union[str, DomainEvent], listener: Callable[[any], Awaitable[None]], *args) -> None:
         """
         Регистирует слушателя, который будет вызываться при вызове определённых событий
             в браузере. Список таких событий можно посмотреть в разделе "Events" почти
@@ -373,7 +393,8 @@ class Page(AbsPage):
             await self.Call("Runtime.enable")
             self.runtime_enabled = True
 
-    def RemoveListenerForEvent(self, event: Union[str, DomainEvent], listener: Callable) -> None:
+    def RemoveListenerForEvent(
+            self, event: Union[str, DomainEvent], listener: Callable[[any], Awaitable[None]]) -> None:
         """
         Удаляет регистрацию слушателя для указанного события.
         :param event:           Имя метода, для которого была регистрация.
@@ -387,14 +408,15 @@ class Page(AbsPage):
             if listener in m: m.pop(listener)
 
 
-    def RemoveListenersForEvent(self, event: str) -> None:
+    def RemoveListenersForEvent(self, event: Union[str, DomainEvent]) -> None:
         """
         Удаляет регистрацию метода и слушателей вместе с ним для указанного события.
         :param event:          Имя метода, для которого была регистрация.
         :return:        None
         """
-        if event in self.listeners_for_event:
-            self.listeners_for_event.pop(event)
+        e = event if type(event) is str else event.value
+        if e in self.listeners_for_event:
+            self.listeners_for_event.pop(e)
 
     def __del__(self) -> None:
         if self.verbose: print("[<- V ->] [ DELETED ]", self.page_id)

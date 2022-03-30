@@ -1,8 +1,12 @@
 import re
 import asyncio
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Literal
 from aio_dt_protocol.Data import NodeCenter, NodeRect, StyleProp, BoxModel
-from aio_dt_protocol.exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
+from aio_dt_protocol.domains.Runtime import RemoteObject, Script, Context
+from aio_dt_protocol.exceptions import (
+    CouldNotFindNodeWithGivenID, RootIDNoLongerExists, NodeNotResolved, NodeNotDescribed,
+    StateError
+)
 
 def to_dict_attrs(a: list) -> Union[dict, None]:
     if not a: return None
@@ -13,11 +17,12 @@ class Node:
         "page_instance", "nodeId", "parentId", "backendNodeId", "nodeType", "nodeName", "localName", "nodeValue",
         "childNodeCount", "children", "attributes", "documentURL", "baseURL", "publicId", "systemId", "internalSubset",
         "xmlVersion", "name", "value", "pseudoType", "frameId", "shadowRootType", "contentDocument", "shadowRoots",
-        "templateContent", "pseudoElements", "importedDocument", "distributedNodes", "isSVG", "selector"
+        "templateContent", "pseudoElements", "importedDocument", "distributedNodes", "isSVG", "compatibilityMode",
+        "remote_object", "isolated_id"
     )
 
     def __init__(
-        self, page_instance, nodeId: int, selector: str,
+        self, page_instance, nodeId: int,
         parentId:              Optional[int] = None,
         backendNodeId:         Optional[int] = None,
         nodeType:              Optional[int] = None,
@@ -38,13 +43,14 @@ class Node:
         pseudoType:            Optional[str] = None,    # Возможные варианты: first-line, first-letter, before, after, marker, backdrop, selection, target-text, spelling-error, grammar-error, first-line-inherited, scrollbar, scrollbar-thumb, scrollbar-button, scrollbar-track, scrollbar-track-piece, scrollbar-corner, resizer, input-list-button
         frameId:               Optional[str] = None,    # доступен по дефолту в свойствах второго потомка рута  root.children[1].frameId
         shadowRootType:        Optional[str] = None,
-        contentDocument:    Optional["Node"] = None,
+        contentDocument:      Optional[dict] = None,
         shadowRoots:  Optional[List["Node"]] = None,    # Появляются так же у <input /> вместо 'children'
         templateContent:    Optional["Node"] = None,
         pseudoElements: Optional[List["Node"]] = None,
         importedDocument:    Optional["Node"] = None,
         distributedNodes: Optional[List[dict]] = None,  #
         isSVG:                Optional[bool] = None,    # является ли элемент SVG-элементом
+        compatibilityMode: Optional[Literal["QuirksMode", "LimitedQuirksMode", "NoQuirksMode"]] = None
 
     ):
         self.page_instance = page_instance  # PageEx
@@ -80,9 +86,13 @@ class Node:
         self.importedDocument = self._AddChild(importedDocument)
         self.distributedNodes = distributedNodes
         self.isSVG = isSVG
+        self.compatibilityMode = compatibilityMode
 
-        self.selector = selector
+        self.remote_object: Optional['RemoteObject'] = None
+        self.isolated_id = None                                         # идентификатор изолированного контекста
 
+    def __str__(self) -> str:
+        return f"<Node id={self.nodeId} localName={self.localName} childNodeCount={self.childNodeCount}>"
 
     def _AddChildren(self, children_list: Optional[List[dict]] = None) -> List["Node"]:
         """
@@ -98,16 +108,18 @@ class Node:
             list_nodes.append(Node(self.page_instance, **child))
         return list_nodes
 
-    def _AddChild(self, child: Union[dict, None] = None) -> Union["Node", None]:
+    def _AddChild(self, child: Union[dict, 'Node', None] = None) -> Union["Node", None]:
         if not child: return None
-        return Node(self.page_instance, **child)
+        return Node(self.page_instance, **child) if type(child) is dict else child
 
-    async def QuerySelector(self, selector: str) -> Union["Node", None]:
+    async def QuerySelector(self, selector: str, ignore_root_id_exists: bool = False) -> Union["Node", None]:
         """
         Выполняет DOM-запрос, возвращая объект найденного узла, или None.
             Эквивалент  === element.querySelector()
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-querySelector
-        :param selector:        Селектор.
+        :param selector:                    Селектор.
+        :param ignore_root_id_exists:       Игнорировать исключение при отсутствии родительского элемента.
+                                                Полезно при запросах на загружающихся страницах.
         :return:        <Node>
         """
         try:
@@ -118,16 +130,20 @@ class Node:
         except CouldNotFindNodeWithGivenID as e:
             if match := re.search(r"nodeId\': (\d+)", str(e)):
                 if match.group(1) == str(self.nodeId):
+                    if ignore_root_id_exists:
+                        return None
                     raise RootIDNoLongerExists
             raise
-        return Node(self.page_instance, node_id, selector) if node_id else None
+        return Node(self.page_instance, node_id) if node_id else None
 
-    async def QuerySelectorAll(self, selector: str) -> List["Node"]:
+    async def QuerySelectorAll(self, selector: str, ignore_root_id_exists: bool = False) -> List["Node"]:
         """
         Выполняет DOM-запрос, возвращая список объектов найденных узлов, или пустой список.
             Эквивалент  === element.querySelectorAll()
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-querySelectorAll
-        :param selector:        Селектор.
+        :param selector:                    Селектор.
+        :param ignore_root_id_exists:       Игнорировать исключение при отсутствии родительского элемента.
+                                                Полезно при запросах на загружающихся страницах.
         :return:        [ <Node>, <Node>, ... ]
         """
         nodes = []
@@ -135,10 +151,12 @@ class Node:
             for node_id in (await self.page_instance.Call("DOM.querySelectorAll", {
                         "nodeId": self.nodeId, "selector": selector
                     }))["nodeIds"]:
-                nodes.append(Node(self.page_instance, node_id, selector))
+                nodes.append(Node(self.page_instance, node_id))
         except CouldNotFindNodeWithGivenID as e:
             if match := re.search(r"nodeId\': (\d+)", str(e)):
                 if match.group(1) == str(self.nodeId):
+                    if ignore_root_id_exists:
+                        return []
                     raise RootIDNoLongerExists
             raise
         return nodes
@@ -478,3 +496,83 @@ class Node:
         center = await self.GetCenter()
         await self.page_instance.action.MouseMoveTo(center.x, center.y)
         await self.page_instance.action.ClickTo(center.x, center.y, delay)
+
+    async def Describe(self, depth: Optional[int] = None, pierce: Optional[bool] = None) -> None:
+        """
+        Переописывает себя получая больше подробностей. Не требует включения домена. Не начинает
+            отслеживать какие-либо объекты, можно использовать для автоматизации.
+        https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-describeNode
+        :param depth:               Максимальная глубина, на которой должны быть извлечены
+                                        дочерние элементы, по умолчанию равна 1. Используйте
+                                        -1 для всего поддерева или укажите целое число больше 0.
+        :param pierce:              Должны ли проходиться iframes и теневые корни при возврате
+                                        поддерева (по умолчанию false).
+        :return:            <Node>
+        """
+        args = dict(nodeId=self.nodeId)
+        if depth is not None: args.update(depth=depth)
+        if pierce is not None: args.update(pierce=pierce)
+        result = await self.page_instance.Call("DOM.describeNode", args)
+        # print("DOM.describeNode", result)
+
+        for k, v in result["node"].items():
+            if k in ["children", "shadowRoots", "pseudoElements"]:
+                setattr(self, k, self._AddChildren(v))
+            elif k in ["contentDocument", "templateContent", "importedDocument"]:
+                setattr(self, k, self._AddChild(v))
+            else:
+                setattr(self, k, v)
+
+    async def Resolve(self) -> None:
+        """ Получает ссылку на объект JavaScript для ноды. """
+        if self.backendNodeId is None:
+            raise NodeNotDescribed
+        args = dict(backendNodeId=self.contentDocument.backendNodeId)
+        result: dict = await self.page_instance.Call("DOM.resolveNode", args)
+        # print("DOM.resolveNode", result)
+        self.remote_object = RemoteObject(**result.get("object"))
+
+    async def Request(self) -> 'Node':
+        """ Запрашивает ноду по ссылке на её оригинальный JavaScript объект. """
+        if self.remote_object is None:
+            raise NodeNotResolved
+        args = dict(objectId=self.remote_object.objectId)
+        result: dict = await self.page_instance.Call("DOM.requestNode", args)
+        # print(result)
+        return Node(
+            self.page_instance, result.get("nodeId"),
+            frameId=self.frameId,
+            nodeName=self.nodeName,
+            localName=self.localName,
+            attributes=self.attributes,
+            contentDocument=self.contentDocument
+        )
+
+    async def RequestMirror(self) -> 'Node':
+        """
+        Создаёт JavaScript-объект для этой ноды и запрашивает ноду по ссылке на этот объект.
+            Таким образом можно получать ноды для изолированных DOM-элементов, вроде iframe.
+            Например:
+                frame_node = await page.QuerySelector("iframe")     # находим iframe
+                resolved_node = await frame_node.RequestMirror()    # получаем доступ к нему
+                needle_node = resolved_node.QuerySelector("#needle-selector-in-iframe")
+        """
+        await self.Describe()
+        await self.Resolve()
+        return await self.Request()
+
+    async def BuildScript(self, expression: str) -> 'Script':
+        if not self.page_instance.runtime_enabled:
+            raise StateError("Domain 'Runtime' — must be enabled. Like: "
+                             "await instance.RuntimeEnable(True)")
+        if not self.page_instance.context_manager.is_watch:
+            raise StateError("Watch for execution contexts must be enabled with domain 'Runtime'. Like: "
+                             "await instance.RuntimeEnable(True)")
+        if not self.frameId:
+            await self.Describe()
+        if not (context := self.page_instance.context_manager.GetDefaultContext(self.frameId)):
+            raise StateError("Something went wrong, or context was not obtained on creation.")
+
+        return Script(self.page_instance, expression, context)
+
+

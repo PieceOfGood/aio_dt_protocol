@@ -10,7 +10,7 @@ from os.path import expanduser
 if sys.platform == "win32": import winreg
 from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
 from aio_dt_protocol.Page import Page
-from aio_dt_protocol.Data import TargetConnectionInfo
+from aio_dt_protocol.Data import TargetConnectionInfo, TargetConnectionType
 import warnings
 
 
@@ -372,11 +372,19 @@ class Browser:
     async def GetTargetConnectionInfoList(self) -> List[TargetConnectionInfo]:
         return [TargetConnectionInfo(**i) for i in await self.GetPageList()]
 
-    async def GetTargetConnectionInfo(self, key: str = "type", value: str = "page") -> TargetConnectionInfo:
+    async def GetTargetConnectionInfo(
+            self, key: Optional[str] = "type",
+            connection_type: Optional[Union[str, TargetConnectionType]] = "page") -> TargetConnectionInfo:
+        v = connection_type if type(connection_type) is str else connection_type.value
         for page_data in await self.GetPageList():
             data = page_data[key]
-            if value in data: return TargetConnectionInfo(**page_data)
-        raise ValueError(f"No have value {value} for key {key} in active target list")
+            if v in data: return TargetConnectionInfo(**page_data)
+        raise ValueError(f"No have value {v} for key {key} in active target list")
+
+    async def GetConnectionsByType(
+            self, connection_type: Union[str, TargetConnectionType]) -> List[TargetConnectionInfo]:
+        t = connection_type if type(connection_type) is str else connection_type.value
+        return [ti for ti in await self.GetTargetConnectionInfoList() if ti.type == t]
 
     async def GetPageList(self) -> List[dict]:
         """
@@ -427,19 +435,20 @@ class Browser:
             data = page_data[key]
             if ((match_mode == "exact" and data == v)
                 or (match_mode == "contains" and data.find(v) > -1 )
-                    or (match_mode == "startswith" and data.find(v) == 0)) and counter == index:
-                page = Page(
-                    page_data["webSocketDebuggerUrl"],
-                    page_data["id"],
-                    page_data["devtoolsFrontendUrl"],
-                    callback,
-                    self.profile_path == "",
-                    self.verbose,
-                    self.browser_name
-                )
-                await page.Activate()
-                return page
-            counter += 1
+                    or (match_mode == "startswith" and data.find(v) == 0)):
+                if counter == index:
+                    page = Page(
+                        page_data["webSocketDebuggerUrl"],
+                        page_data["id"],
+                        page_data["devtoolsFrontendUrl"],
+                        callback,
+                        self.profile_path == "",
+                        self.verbose,
+                        self.browser_name
+                    )
+                    await page.Activate()
+                    return page
+                counter += 1
         return None
 
     async def GetPage(

@@ -6,6 +6,13 @@ class NullProperty(MyBaseException): pass
 
 class EvaluateError(MyBaseException): pass
 
+class NodeNotResolved(MyBaseException): pass
+
+class NodeNotDescribed(MyBaseException): pass
+
+class StateError(MyBaseException): pass
+
+
 class TargetCrashed(MyBaseException): pass
 
 class PositionOutOfBounds(MyBaseException): pass
@@ -20,6 +27,10 @@ class NoDialogIsShowing(MyBaseException): pass                          # ! пр
 
 class NoTargetWithGivenIdFound(MyBaseException): pass
 
+class NoScriptWithGivenId(MyBaseException): pass
+
+class UniqueContextIdNotFound(MyBaseException): pass
+
 
 exception_store = {
     "Target crashed": TargetCrashed,
@@ -27,5 +38,7 @@ exception_store = {
     "Could not find node with given id": CouldNotFindNodeWithGivenID,
     "Could not compute content quads": CouldNotComputeContentQuads,
     "No dialog is showing": NoDialogIsShowing,
-    "No target with given id found": NoTargetWithGivenIdFound
+    "No target with given id found": NoTargetWithGivenIdFound,
+    "No script with given id": NoScriptWithGivenId,
+    "uniqueContextId not found": UniqueContextIdNotFound,
 }

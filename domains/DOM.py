@@ -2,6 +2,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
 from aio_dt_protocol.DOMElement import Node
+from aio_dt_protocol.domains.Runtime import RemoteObject
 from aio_dt_protocol.exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
 
 class DOM(ABC):
@@ -43,7 +44,7 @@ class DOM(ABC):
         await self.Call("DOM.disable")
         self.dom_domain_enabled = False
 
-    async def GetRoot(self) -> Node:
+    async def GetRoot(self, depth: Optional[int] = None, pierce: Optional[bool] = None) -> Node:
         """
         Возвращает корневой узел документа.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getDocument
@@ -110,21 +111,37 @@ class DOM(ABC):
             'baseURL': 'url ...',
             'xmlVersion': ''
         }
+        :param depth:           Максимальная глубина, на которой должны быть извлечены
+                                    дочерние элементы, по умолчанию равна 1. Используйте
+                                    -1 для всего поддерева или укажите целое число больше 0.
+        :param pierce:          Должны ли проходиться iframes и теневые корни при возврате
+                                    поддерева (по умолчанию false).
         :return:            <Node>.
         """
-        node: dict = (await self.Call("DOM.getDocument"))["root"]
+        args = {}
+        if depth is not None: args.update(depth=depth)
+        if pierce is not None: args.update(pierce=pierce)
+        node: dict = (await self.Call("DOM.getDocument", args))["root"]
         node["selector"] = ""
         return Node(self, **node)
 
-    async def QuerySelector(self, selector: str) -> Union[Node, None]:
+    async def QuerySelector(
+            self, selector: str,
+            ignore_root_id_exists: Optional[bool] = False,
+            in_frames: Optional[bool] = False
+    ) -> Union[Node, None]:
         """
         Выполняет DOM-запрос, возвращая объект найденного узла, или None.
             Эквивалент  === document.querySelector()
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-querySelector
-        :param selector:        Селектор.
+        :param selector:                    Селектор.
+        :param ignore_root_id_exists:       Игнорировать исключение при отсутствии родительского элемента.
+                                                Полезно при запросах на загружающихся страницах.
+        :param in_frames:                   Опрашивать документ вкючая shadow-root и iframe?
         :return:                <Node>
         """
-        root_node_id = (await self.Call("DOM.getDocument"))["root"]["nodeId"]
+        args = {} if not in_frames else dict(depth=-1, pierce=True)
+        root_node_id = (await self.Call("DOM.getDocument", args))["root"]["nodeId"]
         try:
             node: dict = await self.Call("DOM.querySelector", {
                 "nodeId": root_node_id, "selector": selector
@@ -132,32 +149,41 @@ class DOM(ABC):
         except CouldNotFindNodeWithGivenID as e:
             if match := re.search(r"nodeId\': (\d+)", str(e)):
                 if match.group(1) == str(root_node_id):
+                    if ignore_root_id_exists:
+                        return None
                     raise RootIDNoLongerExists
             raise
-        node["selector"] = selector
         return Node(self, **node) if node["nodeId"] > 0 else None
 
 
-    async def QuerySelectorAll(self, selector: str) -> List[Node]:
+    async def QuerySelectorAll(
+            self, selector: str,
+            ignore_root_id_exists: Optional[bool] = False,
+            in_frames: Optional[bool] = False
+    ) -> List[Node]:
         """
         Выполняет DOM-запрос, возвращая список объектов найденных узлов, или пустой список.
             Эквивалент  === document.querySelectorAll()
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-querySelectorAll
-        :param selector:        Селектор.
-                                    поиск. Если не передан, будет использоваться корневой
-                                    элемент документа.
+        :param selector:                    Селектор.
+        :param ignore_root_id_exists:       Игнорировать исключение при отсутствии родительского элемента.
+                                                Полезно при запросах на загружающихся страницах.
+        :param in_frames:                   Опрашивать документ вкючая shadow-root и iframe?
         :return:                [ <Node>, <Node>, ... ]
         """
         nodes = []
-        root_node_id = (await self.Call("DOM.getDocument"))["root"]["nodeId"]
+        args = {} if not in_frames else dict(depth=-1, pierce=True)
+        root_node_id = (await self.Call("DOM.getDocument", args))["root"]["nodeId"]
         try:
             for node in (await self.Call("DOM.querySelectorAll", {
                 "nodeId": root_node_id, "selector": selector
             }))["nodeIds"]:
-                nodes.append(Node(self, node, selector))
+                nodes.append(Node(self, node))
         except CouldNotFindNodeWithGivenID as e:
             if match := re.search(r"nodeId\': (\d+)", str(e)):
                 if match.group(1) == str(root_node_id):
+                    if ignore_root_id_exists:
+                        return []
                     raise RootIDNoLongerExists
             raise
         return nodes
@@ -221,7 +247,7 @@ class DOM(ABC):
         """
         await self.Call("DOM.redo")
 
-    async def markUndoableState(self) -> None:
+    async def MarkUndoableState(self) -> None:
         """
         (EXPERIMENTAL)
         Отмечает последнее состояние, которое нельзя изменить.
@@ -229,6 +255,63 @@ class DOM(ABC):
         :return:
         """
         await self.Call("DOM.markUndoableState")
+
+    async def DescribeNode(
+            self, nodeId: Optional[int] = None,
+            backendNodeId: Optional[int] = None,
+            objectId: Optional[str] = None,
+            depth: Optional[int] = None,
+            pierce: Optional[bool] = None
+    ) -> Node:
+        """
+        Описывает узел с учетом его идентификатора, не требует включения домена. Не начинает отслеживать какие-либо
+            объекты, можно использовать для автоматизации.
+        https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-describeNode
+        :return:
+        """
+        if not ((nodeId != None) | (backendNodeId != None) | (objectId != None)):
+            raise ValueError("Один из nodeId, backendNodeId, или objectId — должен присутствовать!")
+        args = {}
+        if nodeId is not None: args.update(nodeId=nodeId)
+        if backendNodeId is not None: args.update(backendNodeId=backendNodeId)
+        if objectId is not None: args.update(objectId=objectId)
+        if depth is not None: args.update(depth=depth)
+        if pierce is not None: args.update(pierce=pierce)
+        result = await self.Call("DOM.describeNode", args)
+        return Node(self, **result["node"])
+
+    async def ResolveNode(
+            self, nodeId: Optional[int] = None,
+            backendNodeId: Optional[int] = None,
+            objectGroup: Optional[str] = None,
+            executionContextId: Optional[str] = None
+    ) -> RemoteObject:
+        """
+        Создаёт JavaScript-объект для указанной ноды и возвращает его описание.
+        https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-resolveNode
+        :return:
+        """
+        if not ((nodeId != None) | (backendNodeId != None)):
+            raise ValueError("Один из nodeId, или backendNodeId — должен присутствовать!")
+        args = {}
+        if nodeId is not None: args.update(nodeId=nodeId)
+        if backendNodeId is not None: args.update(backendNodeId=backendNodeId)
+        if objectGroup is not None: args.update(objectGroup=objectGroup)
+        if executionContextId is not None: args.update(executionContextId=executionContextId)
+        result: dict = await self.Call("DOM.resolveNode", args)
+        return RemoteObject(**result.get("object"))
+
+    async def RequestNode(self, objectId: str) -> Node:
+        """
+        Запрашивает, чтобы узел был отправлен вызывающей стороне с учетом ссылки на объект узла JavaScript.
+            Все узлы, формирующие путь от узла к корню, также отправляются клиенту в виде серии
+            setChildNodes-уведомлений.
+        https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-requestNode
+        :return:
+        """
+        args = {"objectId": objectId}
+        result: dict = await self.Call("DOM.requestNode", args)
+        return Node(self, result.get("nodeId"))
 
     @abstractmethod
     async def Call(

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List, Awaitable, Callable
-from aio_dt_protocol.Data import TargetInfo
+from aio_dt_protocol.Data import DomainEvent
+from dataclasses import dataclass
 
 class Target(ABC):
     """
@@ -64,7 +65,7 @@ class Target(ABC):
         """
         await self.Call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
 
-    async def GetTargetInfo(self, targetId: Optional[str] = None) -> TargetInfo:
+    async def GetTargetInfo(self, targetId: Optional[str] = None) -> 'TargetInfo':
         """
         (EXPERIMENTAL)
         Возвращает информацию о "target", или о себе, если идентификатор не передан.
@@ -83,7 +84,7 @@ class Target(ABC):
         if targetId is None: targetId = self.page_id
         return TargetInfo(**((await self.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]))
 
-    async def GetTargets(self) -> List[TargetInfo]:
+    async def GetTargets(self) -> List['TargetInfo']:
         """
         Возвращает список 'targetInfo' о доступных 'targets'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-getTargets
@@ -126,6 +127,23 @@ class Target(ABC):
         elif targetId: args.update({"targetId": targetId})
         else: raise ValueError("At least one parameter must be specified 'sessionId' or 'targetId'")
         await self.Call("Target.detachFromTarget", args)
+
+    async def SetAutoAttach(self, autoAttach: bool, waitForDebuggerOnStart: bool) -> None:
+        """
+        Определяет, следует ли автоматически присоединяться к новым целям, которые считаются связанными
+            с этой. При включении также присоединяется ко всем существующим связанным целям. При
+            выключении автоматически отсоединяется от всех присоединенных в данный момент целей. Это
+            также удаляет все цели, добавленные autoAttachRelated из списка целей, чтобы отслеживать
+            создание связанных целей.
+        https://chromedevtools.github.io/devtools-protocol/tot/Target#method-setAutoAttach
+        :param autoAttach:                  Следует ли присоединяться к связанным targets.
+        :param waitForDebuggerOnStart:      Приостанавливать ли новые targets при присоединении к ним.
+                                                Используйте Runtime.runIfWaitingForDebugger для запуска
+                                                приостановленных targets.
+        :return:
+        """
+        args = {"autoAttach": autoAttach, "waitForDebuggerOnStart": waitForDebuggerOnStart}
+        await self.Call("Target.setAutoAttach", args)
 
     async def CreateTarget(
         self,
@@ -182,30 +200,51 @@ class Target(ABC):
         await self.CloseTarget()
 
     async def SetDiscoverTargets(
-            self, discover: bool,
-            created:   Optional[Callable[[TargetInfo], Awaitable[None]]] = None,
-            changed:   Optional[Callable[[TargetInfo], Awaitable[None]]] = None,
-            destroyed: Optional[Callable[[TargetInfo], Awaitable[None]]] = None
+        self, discover: bool,
+        message:   Optional[Callable[[str, str], Awaitable[None]]] = None,
+        created:   Optional[Callable[['TargetInfo'], Awaitable[None]]] = None,
+        crashed:   Optional[Callable[[str, str, int], Awaitable[None]]] = None,
+        changed:   Optional[Callable[['TargetInfo'], Awaitable[None]]] = None,
+        destroyed: Optional[Callable[[str], Awaitable[None]]] = None
     ) -> None:
         """
         Управляет обнаружением доступных 'targets' уведомляя об их состоянии с помощью событий
             targetCreated / targetInfoChanged / targetDestroyed.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-setDiscoverTargets
         :param discover:            'True' — включает эту надстройку, 'False' — выключает.
+        :param message:             Корутина вызываемая для события 'Target.receivedMessageFromTarget'.
         :param created:             Корутина вызываемая для события 'Target.targetCreated'.
+        :param crashed:             Корутина вызываемая для события 'Target.targetCrashed'.
         :param changed:             Корутина вызываемая для события 'Target.targetInfoChanged'.
         :param destroyed:           Корутина вызываемая для события 'Target.targetDestroyed'.
         :return:
         """
+        async def message_decor(params: dict, func: Callable[[str, str], Awaitable[None]]) -> None:
+            await func(params["sessionId"], params["message"])
+
+        async def crash_decor(params: dict, func: Callable[[str, str, int], Awaitable[None]]) -> None:
+            await func(params["targetId"], params["status"], params["errorCode"])
+
         async def decorator(params: dict, func: Callable[[TargetInfo], Awaitable[None]]) -> None:
             await func(TargetInfo(**params["targetInfo"]))
 
+        async def destroy_decor(params: dict, func: Callable[[str], Awaitable[None]]) -> None:
+            await func(params["targetId"])
+
         if discover:
-            if created is not None: await self.AddListenerForEvent('Target.targetCreated', decorator, created)
-            if changed is not None: await self.AddListenerForEvent('Target.targetInfoChanged', decorator, changed)
-            if destroyed is not None: await self.AddListenerForEvent('Target.targetDestroyed', decorator, destroyed)
+            if message is not None: await self.AddListenerForEvent(TargetEvent.receivedMessageFromTarget, message_decor, message)
+            if created is not None: await self.AddListenerForEvent(TargetEvent.targetCreated, decorator, created)
+            if crashed is not None: await self.AddListenerForEvent(TargetEvent.targetCrashed, crash_decor, crashed)
+            if changed is not None: await self.AddListenerForEvent(TargetEvent.targetInfoChanged, decorator, changed)
+            if destroyed is not None: await self.AddListenerForEvent(TargetEvent.targetDestroyed, destroy_decor, destroyed)
         else:
-            for event in ['Target.targetCreated','Target.targetInfoChanged','Target.targetDestroyed']:
+            for event in [
+                'Target.receivedMessageFromTarget',
+                'Target.targetCreated',
+                'Target.targetCrashed',
+                'Target.targetInfoChanged',
+                'Target.targetDestroyed'
+            ]:
                 self.RemoveListenersForEvent(event)
         self.targets_discovered = discover
         await self.Call("Target.setDiscoverTargets", {"discover": discover})
@@ -219,9 +258,34 @@ class Target(ABC):
 
     @abstractmethod
     async def AddListenerForEvent(
-            self, event: str, listener: Callable, *args: Optional[any]) -> None:
+            self, event: Union[str, DomainEvent], listener: Callable, *args: Optional[any]) -> None:
         raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
 
     @abstractmethod
     def RemoveListenersForEvent(self, event: str) -> None:
         raise NotImplementedError("method RemoveListenersForEvent() — is not implemented")
+
+
+class TargetEvent(DomainEvent):
+    receivedMessageFromTarget = "Target.receivedMessageFromTarget"
+    targetCrashed = "Target.targetCrashed"
+    targetCreated = "Target.targetCreated"
+    targetDestroyed = "Target.targetDestroyed"
+    targetInfoChanged = "Target.targetInfoChanged"
+    attachedToTarget = "Target.attachedToTarget"                        # ! EXPERIMENTAL
+    detachedFromTarget = "Target.detachedFromTarget"                    # ! EXPERIMENTAL
+
+
+@dataclass
+class RemoteLocation:
+    host: str
+    port: int
+
+
+@dataclass
+class TargetInfo:
+    targetId: str; type: str; title: str; url: str; attached: bool
+    openerId:         Optional[str] = None
+    canAccessOpener: Optional[bool] = None
+    openerFrameId:    Optional[str] = None
+    browserContextId: Optional[str] = None

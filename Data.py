@@ -5,11 +5,9 @@ from enum import Enum
 
 class DomainEvent(Enum): pass
 
-
 class ConnectionType(Enum):
     none = "none"; cellular2g = "cellular2g"; cellular3g = "cellular3g"; cellular4g = "cellular4g"
     bluetooth = "bluetooth"; ethernet = "ethernet"; wifi = "wifi"; wimax = "wimax"; other = "other"
-
 
 @dataclass
 class Cookie:
@@ -36,6 +34,14 @@ class TargetConnectionInfo:
     id: str; title: str; type: str; url: str; webSocketDebuggerUrl: str
     faviconUrl: str = None; parentId: str = None
 
+class TargetConnectionType(Enum):
+    page = "page"
+    background_page = "background_page"
+    worker = "worker"
+    service_worker = "service_worker"
+    iframe ="iframe"
+    other = "other"
+
 @dataclass
 class ProcessInfo:
     type: str           # Тип процесса
@@ -58,14 +64,6 @@ class SystemData:
     modelName: str
     modelVersion: str
     commandLine: str
-
-@dataclass
-class TargetInfo:
-    targetId: str; type: str; title: str; url: str; attached: bool
-    openerId:         Optional[str] = None
-    canAccessOpener: Optional[bool] = None
-    openerFrameId:    Optional[str] = None
-    browserContextId: Optional[str] = None
 
 @dataclass
 class WindowBounds:

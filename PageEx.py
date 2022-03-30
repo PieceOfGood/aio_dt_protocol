@@ -142,7 +142,8 @@ class PageEx(
             "\").scrollIntoView({'behavior':'smooth', 'block': 'center'});"
         )
 
-    async def InjectJS(self, code: str):
+    async def InjectJS(self, code: str) -> any:
+        """ Выполняет JavaScript-выражение во фрейме верхнего уровня. """
         try:
             result = await self.Eval(code)
         except EvaluateError as error:
