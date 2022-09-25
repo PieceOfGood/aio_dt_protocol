@@ -84,7 +84,9 @@ class BrowserEx(Browser):
         :param background:              - (optional) Если 'True' — страница будет открыта в фоне.
         :return:                    * Инстанс страницы <PageEx>
         """
-        page_id = await (await self.GetPage()).CreateTarget(url, newWindow=newWindow, background=background)
+        while not (tmp := await self.GetPage()):
+            await sleep(.5)
+        page_id = await tmp.CreateTarget(url, newWindow=newWindow, background=background)
         if wait_for_create:
             while not(page := await self.GetPageByID(page_id)):
                 await sleep(.5)

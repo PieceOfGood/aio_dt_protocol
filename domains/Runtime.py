@@ -142,7 +142,8 @@ class Runtime(ABC):
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-enable
         :param watch_for_execution_contexts:    Регистрирует слушателей, ожидающих события создания/уничтожения
                                                     контекстов, которые можно запрашивать через
-                                                    page_instance.context_manager.GetDefaultContext(frameId: str)
+                                                    page_instance.context_manager.GetDefaultContext(frameId: str).
+                                                    Должен быть включён ПЕРЕД переходом на целевой адрес.
         :return:
         """
         if not self.runtime_enabled:
@@ -215,8 +216,15 @@ class Runtime(ABC):
             raise Exception(response["exceptionDetails"]["text"] + "\n" + json.dumps(response["exceptionDetails"]))
         return response["scriptId"]
 
-    async def BuildScript(self, expression: str, context: Optional['Context'] = None) -> 'Script':
+    async def BuildScript(self, expression: str, context: Optional['RuntimeType.ContextDescription'] = None) -> 'Script':
         return Script(self, expression, context)
+
+    async def RunIfWaitingForDebugger(self) -> None:
+        """
+        Сообщает инспектируемой странице, что можно запуститься, если она ожидает этого после
+            Target.setAutoAttach.
+        """
+        await self.Call("Runtime.runIfWaitingForDebugger")
 
     async def RunScript(
             self, scriptId: str,
@@ -313,119 +321,145 @@ class RuntimeEvent(DomainEvent):
     bindingCalled = "Runtime.bindingCalled"                       # ! EXPERIMENTAL
 
 
-@dataclass
-class PropertyPreview:
-    name: str
-    type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "accessor", "bigint"]
-    valuePreview: Optional['ObjectPreview']
-    value: Optional[str] = None
-    _valuePreview: Optional['ObjectPreview'] = field(init=False, repr=False, default=None)
-    subtype: Literal[
-        "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
-        "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"] = None
+class RuntimeType:
 
-    @property
-    def valuePreview(self) -> 'ObjectPreview':
-        return self._valuePreview
+    @dataclass
+    class PropertyPreview:
+        name: str
+        type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "accessor", "bigint"]
+        valuePreview: Optional['RuntimeType.ObjectPreview']
+        value: Optional[str] = None
+        _valuePreview: Optional['RuntimeType.ObjectPreview'] = field(init=False, repr=False, default=None)
+        subtype: Literal[
+            "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
+            "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"] = None
 
-    @valuePreview.setter
-    def valuePreview(self, data: dict) -> None:
-        self._valuePreview = ObjectPreview(**data) if not isinstance(data, property) else None
+        @property
+        def valuePreview(self) -> 'RuntimeType.ObjectPreview':
+            return self._valuePreview
 
-
-@dataclass
-class EntryPreview:
-    _value: 'ObjectPreview'
-    _key: Optional['ObjectPreview']
-
-    @property
-    def key(self) -> 'ObjectPreview':
-        return self._key
-
-    @key.setter
-    def key(self, data: dict) -> None:
-        self._key = ObjectPreview(**data)
-
-    @property
-    def value(self) -> 'ObjectPreview':
-        return self._value
-
-    @value.setter
-    def value(self, data: dict) -> None:
-        self._value = ObjectPreview(**data)
+        @valuePreview.setter
+        def valuePreview(self, data: dict) -> None:
+            self._valuePreview = RuntimeType.ObjectPreview(**data) if not isinstance(data, property) else None
 
 
-@dataclass
-class CustomPreview:
-    header: str
-    bodyGetterId: Optional[str] = None
+    @dataclass
+    class EntryPreview:
+        _value: 'RuntimeType.ObjectPreview'
+        _key: Optional['RuntimeType.ObjectPreview']
+
+        @property
+        def key(self) -> 'RuntimeType.ObjectPreview':
+            return self._key
+
+        @key.setter
+        def key(self, data: dict) -> None:
+            self._key = RuntimeType.ObjectPreview(**data)
+
+        @property
+        def value(self) -> 'RuntimeType.ObjectPreview':
+            return self._value
+
+        @value.setter
+        def value(self, data: dict) -> None:
+            self._value = RuntimeType.ObjectPreview(**data)
 
 
-@dataclass
-class ObjectPreview:
-    type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "bigint"]
-    overflow: bool
-    properties: List['PropertyPreview']
-    entries: List['EntryPreview']
-    subtype: Optional[Literal[
-        "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
-        "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"]] = None
-    description: Optional[str] = None
-    _entries: List['EntryPreview'] = field(init=False, repr=False, default=None)
-
-    @property
-    def properties(self) -> List['PropertyPreview']:
-        return self._properties
-
-    @properties.setter
-    def properties(self, data: List[dict]) -> None:
-        self._properties = [PropertyPreview(**item) for item in data]
-
-    @property
-    def entries(self) -> List['EntryPreview']:
-        return self._entries
-
-    @entries.setter
-    def entries(self, data: List[dict]) -> None:
-        self._entries = [EntryPreview(**item) for item in data] if not isinstance(data, property) else None
+    @dataclass
+    class CustomPreview:
+        header: str
+        bodyGetterId: Optional[str] = None
 
 
-@dataclass
-class RemoteObject:
-    """
-    Зеркальный объект, ссылающийся на исходный объект JavaScript.
-    # https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#type-RemoteObject
-    """
-    type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "bigint"]
-    preview: Optional['ObjectPreview']
-    customPreview: Optional['CustomPreview']
-    subtype: Optional[Literal[
-        "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
-        "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"]] = None
-    className: Optional[str] = None
-    value: Optional[any] = None
-    unserializableValue: Optional[str] = None   # ? Примитивное значение, которое не может быть преобразовано в строку
-                                                # ?     JSON, не имеет value, но получает это свойство.
-    description: Optional[str] = None
-    objectId: Optional[str] = None
-    _preview: Optional['ObjectPreview'] = field(init=False, repr=False, default=None)
-    _customPreview: Optional['CustomPreview'] = field(init=False, repr=False, default=None)
+    @dataclass
+    class ObjectPreview:
+        type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "bigint"]
+        overflow: bool
+        properties: List['RuntimeType.PropertyPreview']
+        entries: List['RuntimeType.EntryPreview']
+        subtype: Optional[Literal[
+            "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
+            "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"]] = None
+        description: Optional[str] = None
+        _entries: List['RuntimeType.EntryPreview'] = field(init=False, repr=False, default=None)
 
-    @property
-    def preview(self) -> 'ObjectPreview':
-        return self._preview
+        @property
+        def properties(self) -> List['RuntimeType.PropertyPreview']:
+            return self._properties
 
-    @preview.setter
-    def preview(self, data: dict) -> None:
-        self._vpreview = ObjectPreview(**data) if not isinstance(data, property) else None
+        @properties.setter
+        def properties(self, data: List[dict]) -> None:
+            self._properties = [RuntimeType.PropertyPreview(**item) for item in data]
 
-    @property
-    def customPreview(self) -> 'CustomPreview':
-        return self._customPreview
+        @property
+        def entries(self) -> List['RuntimeType.EntryPreview']:
+            return self._entries
 
-    @customPreview.setter
-    def customPreview(self, data: dict) -> None:
-        self._customPreview = CustomPreview(**data) if not isinstance(data, property) else None
+        @entries.setter
+        def entries(self, data: List[dict]) -> None:
+            self._entries = [RuntimeType.EntryPreview(**item) for item in data] if not isinstance(data, property) else None
+
+
+    @dataclass
+    class RemoteObject:
+        """
+        Зеркальный объект, ссылающийся на исходный объект JavaScript.
+        # https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#type-RemoteObject
+        """
+        type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "bigint"]
+        preview: Optional['RuntimeType.ObjectPreview']
+        customPreview: Optional['RuntimeType.CustomPreview']
+        subtype: Optional[Literal[
+            "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
+            "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"]] = None
+        className: Optional[str] = None
+        value: Optional[any] = None
+        unserializableValue: Optional[str] = None   # ? Примитивное значение, которое не может быть преобразовано в строку
+                                                    # ?     JSON, не имеет value, но получает это свойство.
+        description: Optional[str] = None
+        objectId: Optional[str] = None
+        _preview: Optional['RuntimeType.ObjectPreview'] = field(init=False, repr=False, default=None)
+        _customPreview: Optional['RuntimeType.CustomPreview'] = field(init=False, repr=False, default=None)
+
+        @property
+        def preview(self) -> 'RuntimeType.ObjectPreview':
+            return self._preview
+
+        @preview.setter
+        def preview(self, data: dict) -> None:
+            self._vpreview = RuntimeType.ObjectPreview(**data) if not isinstance(data, property) else None
+
+        @property
+        def customPreview(self) -> 'RuntimeType.CustomPreview':
+            return self._customPreview
+
+        @customPreview.setter
+        def customPreview(self, data: dict) -> None:
+            self._customPreview = RuntimeType.CustomPreview(**data) if not isinstance(data, property) else None
+
+
+    @dataclass
+    class AuxData:
+        isDefault: bool
+        type: str
+        frameId: str
+
+
+    @dataclass
+    class ContextDescription:
+        id: int
+        origin: str     # url
+        name: str
+        uniqueId: str
+        auxData: 'RuntimeType.AuxData'
+
+        @property
+        def auxData(self) -> 'RuntimeType.AuxData':
+            return self._auxData
+
+        @auxData.setter
+        def auxData(self, data: dict) -> None:
+            self._auxData = RuntimeType.AuxData(**data)
 
 
 class Script:
@@ -433,12 +467,15 @@ class Script:
     Упаковывает вызываемое в контексте указанного фрейма выражение. Если контекст не указан, в его качестве
         будет выбран фрейм верхнего уровня. Выражение можно заменить при вызове.
     """
-    def __init__(self, page_instance, expression: str, context: Optional[Union['Context', str]] = None):
+    def __init__(
+            self, page_instance, expression: str,
+            context: Optional[Union['RuntimeType.ContextDescription', str]] = None):
         self.page_instance = page_instance
         self.expression = expression
         self.unique_context_id = context if type(context) is str else context.uniqueId if context is not None else None
 
-    async def Call(self, expression: Optional[str] = None, returnByValue: Optional[bool] = None) -> 'RemoteObject':
+    async def Call(
+            self, expression: Optional[str] = None, returnByValue: Optional[bool] = None) -> 'RuntimeType.RemoteObject':
         if expression:
             self.expression = expression
         args = {"expression": self.expression}
@@ -447,50 +484,27 @@ class Script:
         if self.unique_context_id is not None:
             args.update(uniqueContextId=self.unique_context_id)
         result: dict = await self.page_instance.Call("Runtime.evaluate", args)
-        return RemoteObject(**result.get("result"))
-
-
-@dataclass
-class AuxData:
-    isDefault: bool
-    type: str
-    frameId: str
-
-
-@dataclass
-class Context:
-    id: int
-    origin: str     # url
-    name: str
-    uniqueId: str
-    auxData: AuxData
-
-    @property
-    def auxData(self) -> 'AuxData':
-        return self._auxData
-
-    @auxData.setter
-    def auxData(self, data: dict) -> None:
-        self._auxData = AuxData(**data)
+        return RuntimeType.RemoteObject(**result.get("result"))
 
 
 class ContextManager:
-    contexts: List['Context'] = []
+    contexts: List['RuntimeType.ContextDescription'] = []
     is_watch: bool = False
 
     async def on_create(self, data: dict) -> None:
-        self.contexts.append(Context(**data.get("context")))
+        self.contexts.append(RuntimeType.ContextDescription(**data.get("context")))
 
     async def on_destroy(self, data: dict) -> None:
         context_id: int = data.get("executionContextId")
-        i = -1
+        ii = -1
         for i, ctx in enumerate(self.contexts):
             if ctx.id == context_id:
+                ii = i
                 break
 
-        if i > -1: self.contexts.pop(i)
+        if ii > -1: self.contexts.pop(ii)
 
-    def GetDefaultContext(self, frameId: str) -> Union['Context', None]:
+    def GetDefaultContext(self, frameId: str) -> Union['RuntimeType.ContextDescription', None]:
         for ctx in self.contexts:
             if ctx.auxData.frameId == frameId and ctx.auxData.isDefault:
                 return ctx

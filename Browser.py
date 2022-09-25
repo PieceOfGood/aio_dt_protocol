@@ -9,9 +9,12 @@ import re, os, sys, signal, subprocess, getpass
 from os.path import expanduser
 if sys.platform == "win32": import winreg
 from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
+from collections.abc import Sequence
 from aio_dt_protocol.Page import Page
 from aio_dt_protocol.Data import TargetConnectionInfo, TargetConnectionType
+from aio_dt_protocol.exceptions import FlagArgumentContainError
 import warnings
+from enum import Enum
 
 
 class Browser:
@@ -80,17 +83,12 @@ class Browser:
             browser_pid:  Optional[int] = 0,
             app:         Optional[bool] = False,
             browser_exe:  Optional[str] = "chrome",
+            proxy_address:Optional[str] = "http://127.0.0.1",
             proxy_port:   Optional[Union[str, int]] = "",
             verbose:     Optional[bool] = False,
             position: Optional[Tuple[int, int]] = None,
             sizes:    Optional[Tuple[int, int]] = None,
             prevent_restore: Optional[bool] = False,
-            f_no_first_run:  Optional[bool] = True,
-            f_default_check: Optional[bool] = True,
-            f_browser_test:  Optional[bool] = False,
-            f_incognito:     Optional[bool] = False,
-            f_kiosk:         Optional[bool] = False,
-            f_disable_webgl: Optional[bool] = False,
 
     ) -> None:
         """
@@ -164,27 +162,6 @@ class Browser:
                                     Не имеет смысла для Headless.
 
         :param prevent_restore: Предотвращать восстановление предыдущей сессии после крашей.
-
-        :param f_no_first_run:  По умолчанию True == добавляет к флагам запуска, отключающий
-                                    процедуру ознакомиления с браузером.
-
-        :param f_default_check: По умолчанию True == добавляет к флагам запуска, отключающий
-                                    проверку "браузера по умолчанию". Полезно при тестах, чтобы
-                                    UI браузера не перегружался ненужным функционалом.
-
-        :param f_browser_test:  По умолчанию False == добавляет к флагам запуска, признак
-                                    тестирования, что в конечном итоге, должно положительно
-                                    сказываться на стабильности некоторых тестов(например,
-                                    мониторинг нехватки памяти)
-
-        :param f_incognito:     По умолчанию False == добавляет к флагам запуска, incognito,
-                                    запускающий браузет в соответствующем режиме.
-
-        :param f_kiosk:         По умолчанию False == добавляет к флагам запуска, kiosk,
-                                    запускающий браузет в соответствующем режиме.
-
-        :param f_disable_webgl: По умолчанию False == добавляет к флагам запуска, правило,
-                                    отключающее использование webgl в браузере.
         """
         if sys.platform not in ("win32", "linux"): raise OSError(f"Platform '{sys.platform}' — not supported")
         self.dev_tool_profiles = dev_tool_profiles if profile_path else False
@@ -262,6 +239,7 @@ class Browser:
         if int(debug_port) <= 0:
             raise ValueError(f"Значение 'debug_port' => '{debug_port}' — должно быть положителным целым числом!")
         self.debug_port = str(debug_port)
+        self.proxy_addres = proxy_address
         self.proxy_port = str(proxy_port)
         self.verbose = verbose
 
@@ -299,13 +277,6 @@ class Browser:
         )
 
         self.is_headless_mode = False
-
-        self.f_no_first_run  = f_no_first_run
-        self.f_default_check = f_default_check
-        self.f_browser_test  = f_browser_test
-        self.f_incognito     = f_incognito
-        self.f_kiosk         = f_kiosk
-        self.f_disable_webgl = f_disable_webgl
         self.browser_pid = browser_pid if browser_pid > 0 else self._RunBrowser(_url_, flags, position, sizes)
 
     def _RunBrowser(self, url: str, flags: list, position: Optional[Tuple[int, int]] = None,
@@ -316,45 +287,48 @@ class Browser:
         :param flags:           Флаги
         :return:                ProcessID запущенного браузера
         """
-
-        run_args = [
-            self.browser_path,
-            f"--remote-debugging-port={self.debug_port}", "--disable-breakpad", "--no-recovery-component",
-            "--disable-gpu-shader-disk-cache", "--disable-sync-preferences",
-            "--log-file=null", "--force-dark-mode", "--enable-features=WebUIDarkMode",
-            "--disk-cache-dir=null", "--disk-cache-size=1000000", "--no-service-autorun"
-        ]
+        flag_box = FlagBuilder()
+        flag_box.set(
+            (CMDFlags.Common.remote_debugging_port, [self.debug_port]),
+            (CMDFlags.Common.no_first_run, []),
+            (CMDFlags.Common.no_default_browser_check, []),
+            (CMDFlags.Test.log_file, ["null"]),
+            (CMDFlags.Background.disable_breakpad, []),
+            (CMDFlags.Background.no_recovery_component, []),
+            (CMDFlags.Background.disable_sync, []),
+            (CMDFlags.Background.disable_domain_reliability, []),
+            (CMDFlags.Background.no_service_autorun, []),
+            (CMDFlags.Performance.disable_gpu_shader_disk_cache, []),
+            (CMDFlags.Performance.disk_cache_dir, ["null"]),
+            (CMDFlags.Render.enable_features_WebUIDarkMode, []),
+            (CMDFlags.Render.force_dark_mode, []),
+        )
+        run_args = [ self.browser_path ]
+        flag_box.custom(url)
 
         # ! Default mode
         if self.profile_path:
-            run_args.append(f"--user-data-dir={self.profile_path}")
+            flag_box.add(CMDFlags.Common.user_data_dir, self.profile_path)
             if position is not None:
-                run_args.append("--window-position={},{}".format(*position))
+                flag_box.add(CMDFlags.Screen.window_position, *position)
             if sizes is not None:
-                run_args.append("--window-size={},{}".format(*sizes))
+                flag_box.add(CMDFlags.Screen.window_size, *sizes)
 
         # ! Headless mode
         else:
-            run_args += ["--disable-gpu", "--headless"]
+            flag_box.add(CMDFlags.Headless.headless)
             self.is_headless_mode = True
 
-        if self.f_no_first_run:  run_args.append("--no-first-run")
-        if self.f_default_check: run_args.append("--no-default-browser-check")
-        if self.f_browser_test:  run_args.append("--browser-test")
-        if self.f_incognito:     run_args.append("--incognito")
-        if self.f_kiosk:         run_args.append("--kiosk")
-        if self.f_disable_webgl: run_args.append("--disable-webgl")
-
         if self.proxy_port:
-            run_args.append("--proxy-server=http://127.0.0.1:" + self.proxy_port)
+            flag_box.add(CMDFlags.Other.proxy_server, self.proxy_addres + ":" + self.proxy_port)
             if self.verbose:
-                print(f"[<- V ->] | --- Запуск браузера на порту '{self.debug_port}' с проксификацией " +
+                print(f"[<- V ->] | --- Запуск браузера на порту '{self.debug_port}' с прокси " +
                       f"на локальном хосте, через порт '{self.proxy_port}' --- |")
         else:
             if self.verbose:
                 print(f"[<- V ->] | --- Запуск браузера на порту '{self.debug_port}' --- |")
 
-        run_args.append(url)
+        run_args += flag_box.flags()
 
         if flags is not None:
             run_args += flags
@@ -530,6 +504,276 @@ class Browser:
         )
 
 
+class FlagBuilder:
+
+    def __init__(self):
+        self._flags: set = set()
+
+    def add(self, flag: "CMDFlag", *args: Optional[Union[str, int, float]], separator: str = ",") -> None:
+        """
+        Принимает один флаг, его аргументы и разделитель аргументов.
+        """
+        f = flag.value
+        if f[-1] == "=":
+            if not args:
+                raise FlagArgumentContainError(f"Для флага {flag.name} ожидается аргумент, или список аргументов.")
+            for arg in args:
+                f += str(arg) + separator
+            f = f[:-1]
+        self._flags.add(f)
+
+    def set(self, *flags: Sequence["CMDFlag", Sequence[Union[str, int, float]]], separator: str = ",") -> None:
+        """
+        Принимает произвольную последовательность флагов, из последовательностей, содержащих сам флаг и
+            его аргументы, а так же разделитель аргументов:
+                object.set(
+                    (CMDFlags.Background.disable_breakpad, []),
+                    (CMDFlags.Background.no_recovery_component, []),
+                    separator=" "
+                )
+        """
+        for flag in flags:
+            cmd_flag, args = flag
+            self.add(cmd_flag, *args, separator=separator)
+
+    def custom(self, flag: str) -> None:
+        """
+        Принимает строку в качестве флага.
+            object.custom("--mute-audio")
+        """
+        self._flags.add(flag)
+
+    def flags(self) -> list[str]:
+        return list(self._flags)
+
+
+class CMDFlag(Enum): pass
+
+class CMDFlags:
+    """https://github.com/GoogleChrome/chrome-launcher/blob/master/docs/chrome-flags-for-tools.md"""
+
+    class Common(CMDFlag):
+        # ? Commonly unwanted browser features
+        # ! Порт подключения
+        remote_debugging_port = "--remote-debugging-port="
+        # ! Отключает обнаружение фишинга на стороне клиента.
+        disable_client_side_phishing_detection = "--disable-client-side-phishing-detection"
+        # ! Отключить все расширения Chrome.
+        disable_extensions = "--disable-extensions"
+        # ! Отключить некоторые встроенные расширения, на которые не влияет --disable-extensions.
+        disable_component_extensions_with_background_pages = "--disable-component-extensions-with-background-pages"
+        # ! Отключить установку приложений по умолчанию.
+        disable_default_apps = "--disable-default-apps"
+        # ! Беззвучный режим.
+        mute_audio = "--mute-audio"
+        # ! Отключить проверку браузера по умолчанию, не предлагать установить ее как таковую
+        no_default_browser_check = "--no-default-browser-check"
+        # ! Пропустить мастера первого запуска.
+        no_first_run = "--no-first-run"
+        # ! Используйте поддельное устройство для Media Stream, чтобы заменить камеру и микрофон.
+        use_fake_device_for_media_stream = "--use-fake-device-for-media-stream"
+        # ! Использовать файл для фальшивого захвата видео (.y4m или .mjpeg).--use-fake-device-for-media-stream
+        # !     Принимает путь к файлу.
+        use_file_for_fake_video_capture = "--use-file-for-fake-video-capture="  # * $
+        # ! Отключает WebGL
+        disable_webgl = "--disable-webgl"
+        # ! Запускает браузер в режиме "Инкогнито"
+        incognito = "--incognito"
+        # ! Принимает путь к каталогу, где будет позиционирован весь кеш браузера, включая профили и прочее.
+        user_data_dir = "--user-data-dir="      # * $
+
+    class Performance(CMDFlag):
+        # ? Performance & web platform behavior
+        # ! Следующие два флага применяются вместе, отключая применение одного и того же происхождения (не рекомендуется).
+        disable_web_security = "--disable-web-security"
+        allow_running_insecure_content = "--allow-running-insecure-content"
+        # --------------------------------
+        # ! Отключить автоплей видео.
+        autoplay_policy_user_gesture_required = "--autoplay-policy=user-gesture-required"
+        # ! Отключить регулировку таймеров на фоновых страницах/вкладках.
+        disable_background_timer_throttling = "--disable-background-timer-throttling"
+        # ! Отключите фоновую визуализацию для закрытых окон. Сделано для тестов, чтобы избежать недетерминированного
+        # !     поведения.
+        disable_backgrounding_occluded_windows = "--disable-backgrounding-occluded-windows"
+        # ! Отключает потоковую передачу сценариев V8.
+        disable_features_ScriptStreaming = "--disable-features=ScriptStreaming"
+        # ! Подавляет диалоги зависания монитора в процессах визуализации. Это может позволить обработчикам медленной
+        # !     выгрузки на странице предотвратить закрытие вкладки, но в этом случае можно использовать диспетчер задач
+        # !     для завершения вызывающего нарушение процесса.
+        disable_hang_monitor = "--disable-hang-monitor"
+        # ! Некоторые функции javascript можно использовать для заполнения процесса браузера IPC. По умолчанию защита
+        # !     включена, чтобы ограничить количество отправляемых IPC до 10 в секунду на кадр. Этот флаг отключает его.
+        disable_ipc_flooding_protection = "--disable-ipc-flooding-protection"
+        # ! отключает веб-уведомления и API-интерфейсы Push.
+        disable_notifications = "--disable-notifications"
+        # ! отключить блокировку всплывающих окон.
+        disable_popup_blocking = "--disable-popup-blocking"
+        # ! перезагрузка страницы, полученной с помощью POST, обычно выводит пользователю запрос.
+        disable_prompt_on_repost = "--disable-prompt-on-repost"
+        # ! отключает вкладки, не находящиеся на переднем плане, от получения более низкого приоритета процесса. Это (само
+        # !     по себе) не влияет на таймеры или поведение рисования.
+        disable_renderer_backgrounding = "--disable-renderer-backgrounding"
+        # ! https://stackoverflow.com/questions/59462637/list-of-js-flags-that-can-be-used-for-chrome-on-windows
+        js_flags = "--js-flags="                # * $
+        # ! Отключает шейдеры GPU в кеше на диске.
+        disable_gpu_shader_disk_cache = "--disable-gpu-shader-disk-cache"
+        # ! Принимает путь расположения кэша на диске, отличный от UserDatadir. Отключить: '--disk-cache-dir=null'
+        disk_cache_dir = "--disk-cache-dir="    # * $
+        # ! Задает максимальное дисковое пространство, используемое дисковым кешем, в байтах.
+        disk_cache_size = "--disk-cache-size="  # * $
+
+    class Test(CMDFlag):
+        # ? Test & debugging flags
+        # ! Сообщает, выполняются ли в коде тесты браузера (это изменяет URL-адрес запуска, используемый оболочкой
+        # !     содержимого, а также отключает функции, которые могут сделать тесты ненадежными [например, мониторинг
+        # !     нехватки памяти]).
+        browser_test = "--browser-test"
+        # ! Избегает сообщений типа «Новый принтер в вашей сети».
+        disable_device_discovery_notifications = "--disable-device-discovery-notifications"
+        # ! Отключает несколько вещей, которые не подходят для автоматизации:
+        # !     * отключает всплывающие уведомления о запущенных разработках/распакованных расширениях
+        # !     * отключает пользовательский интерфейс сохранения пароля (который охватывает вариант использования
+        # !         удаленного --disable-save-password-bubble флага)
+        # !     * отключает анимацию информационной панели
+        # !     * отключает автоперезагрузку при сетевых ошибках
+        # !     * означает, что запрос проверки браузера по умолчанию не отображается
+        # !     * избегает отображения этих 3 информационных панелей: ShowBadFlagsPrompt, GoogleApiKeysInfoBarDelegate,
+        # !         ObsoleteSystemInfoBarDelegate
+        # !     * добавляет эту информационную панель:
+        # !         https://user-images.githubusercontent.com/39191/30349667-92a7a086-97c8-11e7-86b2-1365e3d407e3.png
+        enable_automation = "--enable-automation"
+        # ! Включает ведения журнала. Больше подходит для процесса серверного типа.
+        enable_logging_stderr = "--enable-logging=stderr"
+        # ! 0 — означает INFO и выше
+        log_level = "--log-level="              # * $
+        # ! Переопределяет дефолтное имя файла лога. Чтобы отключить: '--log-file=null'
+        log_file = "--log-file="                # * $
+        # ! Избегает потенциальной нестабильности при использовании Gnome Keyring или кошелька KDE.
+        password_store_basic = "--password-store=basic"
+        # ! Более безопасно, чем использование протокола через веб-сокет
+        remote_debugging_pipe = "--remote-debugging-pipe"
+        # ! Информационная панель не отображается, когда расширение Chrome подключается к странице с помощью
+        # !     chrome.debuggerpage. Требуется для прикрепления к фоновым страницам расширения.
+        silent_debugger_extension_api = "--silent-debugger-extension-api"
+        # ! Похож на флаг --enable-automation
+        # !     * позволяет избежать создания заглушек приложений в ~/Applications на Mac.
+        # !     * делает коды выхода немного более правильными
+        # !     * списки переходов для навигации в Windows не обновляются
+        # !     * не запускается какой-либо хром StartPageService
+        # !     * отключает инициализацию службы chromecast
+        # !     * расширения компонентов с фоновыми страницами не включаются во время тестов, потому что они создают много
+        # !         фонового поведения, которое может мешать
+        # !     * при выходе из браузера он отключает дополнительные проверки, которые могут остановить этот процесс выхода.
+        # !         (например, несохраненные изменения формы или необработанные уведомления профиля..)
+        test_type = "--test-type"
+
+    class Background(CMDFlag):
+        # ? Background updates, networking, reporting
+        # ! Отключить различные фоновые сетевые службы, включая обновление расширений, службу безопасного просмотра,
+        # !     детектор обновлений, перевод, UMA.
+        disable_background_networking = "--disable-background-networking"
+        # ! Отключает сбор аварийных дампов (отчеты уже отключены в Chromium)
+        disable_breakpad = "--disable-breakpad"
+        # ! Не обновлять «компоненты» браузера, перечисленные в chrome://components/
+        disable_component_update = "--disable-component-update"
+        # ! Отключает мониторинг надежности домена, который отслеживает, возникают ли у браузера проблемы с доступом к
+        # !     сайтам, принадлежащим Google, и загружает отчеты в Google.
+        disable_domain_reliability = "--disable-domain-reliability"
+        # ! Отключает синхронизацию с учетной записью Google.
+        disable_sync = "--disable-sync"
+        # ! Используется для включения отчетов о сбоях Breakpad в среде отладки, где отчеты о сбоях обычно скомпилированы,
+        # !     но отключены.
+        enable_crash_reporter_for_testing = "--enable-crash-reporter-for-testing"
+        # ! Отключить отправку отчетов в UMA, но разрешить сбор.
+        metrics_recording_only = "--metrics-recording-only"
+        # ! Предотвращает загрузку и выполнение компонентов восстановления.
+        no_recovery_component = "--no-recovery-component"
+        # ! Запрещает процессам-сервисам добавлять себя в автозапуск. Это не удаляет существующие регистрации
+        # !    автозапуска, а просто предотвращает регистрацию новых служб.
+        no_service_autorun = "--no-service-autorun"
+
+    class Render(CMDFlag):
+        # ? Rendering & GPU
+        # ! экспериментальный мета-флаг. Устанавливает приведенные ниже 7 флагов, переводящие браузер в режим, в котором
+        # !     рендеринг (радиус границы и т. д.) является детерминированным, а начальные кадры должны выдаваться по
+        # !     протоколу DevTools.
+        deterministic_mode = "--deterministic-mode"
+
+        run_all_compositor_stages_before_draw = "--run-all-compositor-stages-before-draw"
+        disable_new_content_rendering_timeout = "--disable-new-content-rendering-timeout"
+        enable_begin_frame_control = "--enable-begin-frame-control"
+        disable_threaded_animation = "--disable-threaded-animation"
+        disable_threaded_scrolling = "--disable-threaded-scrolling"
+        disable_checker_imaging = "--disable-checker-imaging"
+        disable_image_animation_resync = "--disable-image-animation-resync"
+        # -------------
+        # ! не откладывать отрисовку коммитов (обычно используется, чтобы избежать мигания нестилизованного содержимого).
+        disable_features_PaintHolding = "--disable-features=PaintHolding"
+        disable_partial_raster = "--disable-partial-raster"
+        # ! Не используйте оптимизацию высокопроизводительного ЦП, обнаруженную во время выполнения, в Skia.
+        disable_skia_runtime_opts = "--disable-skia-runtime-opts"
+        # ! Экономит немного памяти, перемещая процесс графического процессора в поток процесса браузера.
+        in_process_gpu = "--in-process-gpu"
+        # ! выберите, какую реализацию GL должен использовать процесс GPU. Возможные варианты: desktop — любой рабочий стол
+        # !     OpenGL, установленный пользователем (по умолчанию для Linux и Mac). egl — любой EGL / GLES2, который
+        # !     пользователь установил (по умолчанию для Windows - фактически ANGLE). swiftshader — Программный рендерер
+        # !     SwiftShader.
+        use_gl = "--use-gl="    # * $
+        # + DARK_MODE -- требует двух следующих флагов
+        # ! Включает тёмный режим в браузере.
+        enable_features_WebUIDarkMode = "--enable-features=WebUIDarkMode"
+        # ! Принуждает использовать темный режим в пользовательском интерфейсе для платформ, которые его поддерживают.
+        force_dark_mode = "--force-dark-mode"
+
+
+
+    class Screen(CMDFlag):
+        # ? Window & screen management
+        # ! Запускает браузер в режиме KIOSK
+        kiosk = "--kiosk"
+        # ! Запрещает браузеру resize и убирает некоторые его элементы.
+        force_app_mode = "--force-app-mode"
+        # ! Все всплывающие окна и вызовы window.open завершатся ошибкой.
+        block_new_web_contents = "--block-new-web-contents"
+        # ! Заставить все мониторы обрабатываться так, как если бы они имели указанный цветовой профиль.
+        force_color_profile_SRGB = "--force-color-profile=srgb"
+        # ! Переопределяет коэффициент масштабирования устройства для пользовательского интерфейса браузера и содержимого.
+        # !     int or float
+        force_device_scale_factor = "--force-device-scale-factor="
+        # ! Каждая ссылка запускается в новом окне.
+        new_window = '--new-window'
+        # ! Принимает X и Y позицию верхнего левого угла, окна браузера.
+        window_position="--window-position="            # * $
+        # ! Принимает ширину и высоту окна браузера.
+        window_size = "--window-size="                  # * $
+
+    class Process(CMDFlag):
+        # ? Process management
+        # ! Отключает OOPIF. https://www.chromium.org/Home/chromium-security/site-isolation
+        disable_features_site_per_process = "--disable-features=site-per-process"
+        # ! Запускает визуализатор и плагины в том же процессе, что и браузер.
+        single_process = "--single-process"
+
+    class Headless(CMDFlag):
+        # ? Headless
+        # ! Headless
+        headless = "--headless"
+        # ! Часто используется в сценариях Lambda, Cloud Functions.
+        disable_dev_shm_usage = "--disable-dev-shm-usage"
+        # ! Запуск без песочницы. НЕ РЕКОМЕНДУЕТСЯ!!!
+        no_sandbox = "--no-sandbox"
+        # ! С 2021 года не требуется.
+        disable_gpu = "--disable-gpu"
+
+    class Other(CMDFlag):
+        """ https://niek.github.io/chrome-features/ """
+        # ? Принимают любое кол-во аргументов
+        enable_features = "--enable-features="      # * $
+        disable_features = "--disable-features="    # * $
+        # ! Принимает адрес и порт прокси:
+        # !     http://192.168.0.1:2233
+        proxy_server = "--proxy-server="            # * $
+
 def get_request(url: str) -> str:
     with urllib.request.urlopen(url) as response:
         return response.read().decode('utf-8')
@@ -589,7 +833,22 @@ async def test():
 
 if __name__ == '__main__':
 
-    asyncio.run(test())
+    # asyncio.run(test())
+
+    bld = FlagBuilder()
+
+    # bld.add(CMDFlags.Background.disable_sync)
+    # bld.add(CMDFlags.Background.metrics_recording_only)
+    # bld.add(CMDFlags.Test.log_level, 0)
+
+    bld.set(
+        (CMDFlags.Background.disable_sync, []),
+        (CMDFlags.Background.metrics_recording_only, []),
+        (CMDFlags.Background.metrics_recording_only, []),
+        (CMDFlags.Test.log_level, [0])
+    )
+
+    print(bld.flags())
 
 
 

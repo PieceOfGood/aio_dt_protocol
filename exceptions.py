@@ -12,6 +12,8 @@ class NodeNotDescribed(MyBaseException): pass
 
 class StateError(MyBaseException): pass
 
+class FlagArgumentContainError(MyBaseException): pass
+
 
 class TargetCrashed(MyBaseException): pass
 
@@ -31,6 +33,10 @@ class NoScriptWithGivenId(MyBaseException): pass
 
 class UniqueContextIdNotFound(MyBaseException): pass
 
+class AnotherLocaleOverrideIsAlreadyInEffect(MyBaseException): pass     # ! при установке той же локали
+
+class FontFamiliesCanOnlyBeSetOnce(MyBaseException): pass               # ! при установке тех же шрифтов
+
 
 exception_store = {
     "Target crashed": TargetCrashed,
@@ -41,4 +47,6 @@ exception_store = {
     "No target with given id found": NoTargetWithGivenIdFound,
     "No script with given id": NoScriptWithGivenId,
     "uniqueContextId not found": UniqueContextIdNotFound,
+    "Another locale override is already in effect": AnotherLocaleOverrideIsAlreadyInEffect,
+    "Font families can only be set once": FontFamiliesCanOnlyBeSetOnce
 }

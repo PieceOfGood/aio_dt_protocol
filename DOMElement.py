@@ -2,7 +2,7 @@ import re
 import asyncio
 from typing import List, Dict, Optional, Union, Literal
 from aio_dt_protocol.Data import NodeCenter, NodeRect, StyleProp, BoxModel
-from aio_dt_protocol.domains.Runtime import RemoteObject, Script, Context
+from aio_dt_protocol.domains.Runtime import RuntimeType, Script
 from aio_dt_protocol.exceptions import (
     CouldNotFindNodeWithGivenID, RootIDNoLongerExists, NodeNotResolved, NodeNotDescribed,
     StateError
@@ -530,7 +530,7 @@ class Node:
         args = dict(backendNodeId=self.contentDocument.backendNodeId)
         result: dict = await self.page_instance.Call("DOM.resolveNode", args)
         # print("DOM.resolveNode", result)
-        self.remote_object = RemoteObject(**result.get("object"))
+        self.remote_object = RuntimeType.RemoteObject(**result.get("object"))
 
     async def Request(self) -> 'Node':
         """ Запрашивает ноду по ссылке на её оригинальный JavaScript объект. """

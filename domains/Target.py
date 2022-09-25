@@ -65,7 +65,7 @@ class Target(ABC):
         """
         await self.Call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
 
-    async def GetTargetInfo(self, targetId: Optional[str] = None) -> 'TargetInfo':
+    async def GetTargetInfo(self, targetId: Optional[str] = None) -> 'TargetType.TargetInfo':
         """
         (EXPERIMENTAL)
         Возвращает информацию о "target", или о себе, если идентификатор не передан.
@@ -82,16 +82,16 @@ class Target(ABC):
                                     }
         """
         if targetId is None: targetId = self.page_id
-        return TargetInfo(**((await self.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]))
+        return TargetType.TargetInfo(**((await self.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]))
 
-    async def GetTargets(self) -> List['TargetInfo']:
+    async def GetTargets(self) -> List['TargetType.TargetInfo']:
         """
         Возвращает список 'targetInfo' о доступных 'targets'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-getTargets
         :return:                [ targetInfo, targetInfo, ... ]
         """
         result = (await self.Call("Target.getTargets"))["targetInfos"]
-        return [TargetInfo(**info) for i, info in enumerate(result)]
+        return [TargetType.TargetInfo(**info) for i, info in enumerate(result)]
 
     async def AttachToBrowserTarget(self) -> str:
         """
@@ -128,9 +128,10 @@ class Target(ABC):
         else: raise ValueError("At least one parameter must be specified 'sessionId' or 'targetId'")
         await self.Call("Target.detachFromTarget", args)
 
-    async def SetAutoAttach(self, autoAttach: bool, waitForDebuggerOnStart: bool) -> None:
+    async def SetAutoAttach(
+            self, autoAttach: bool, waitForDebuggerOnStart: bool, flatten: Optional[bool] = None) -> None:
         """
-        Определяет, следует ли автоматически присоединяться к новым целям, которые считаются связанными
+        Определяет, следует ли автоматически присоединяться к новым target, которые считаются связанными
             с этой. При включении также присоединяется ко всем существующим связанным целям. При
             выключении автоматически отсоединяется от всех присоединенных в данный момент целей. Это
             также удаляет все цели, добавленные autoAttachRelated из списка целей, чтобы отслеживать
@@ -143,6 +144,7 @@ class Target(ABC):
         :return:
         """
         args = {"autoAttach": autoAttach, "waitForDebuggerOnStart": waitForDebuggerOnStart}
+        if flatten is not None: args.update(flatten=flatten)
         await self.Call("Target.setAutoAttach", args)
 
     async def CreateTarget(
@@ -202,9 +204,9 @@ class Target(ABC):
     async def SetDiscoverTargets(
         self, discover: bool,
         message:   Optional[Callable[[str, str], Awaitable[None]]] = None,
-        created:   Optional[Callable[['TargetInfo'], Awaitable[None]]] = None,
+        created:   Optional[Callable[['TargetType.TargetInfo'], Awaitable[None]]] = None,
         crashed:   Optional[Callable[[str, str, int], Awaitable[None]]] = None,
-        changed:   Optional[Callable[['TargetInfo'], Awaitable[None]]] = None,
+        changed:   Optional[Callable[['TargetType.TargetInfo'], Awaitable[None]]] = None,
         destroyed: Optional[Callable[[str], Awaitable[None]]] = None
     ) -> None:
         """
@@ -225,8 +227,8 @@ class Target(ABC):
         async def crash_decor(params: dict, func: Callable[[str, str, int], Awaitable[None]]) -> None:
             await func(params["targetId"], params["status"], params["errorCode"])
 
-        async def decorator(params: dict, func: Callable[[TargetInfo], Awaitable[None]]) -> None:
-            await func(TargetInfo(**params["targetInfo"]))
+        async def decorator(params: dict, func: Callable[['TargetType.TargetInfo'], Awaitable[None]]) -> None:
+            await func(TargetType.TargetInfo(**params["targetInfo"]))
 
         async def destroy_decor(params: dict, func: Callable[[str], Awaitable[None]]) -> None:
             await func(params["targetId"])
@@ -276,16 +278,17 @@ class TargetEvent(DomainEvent):
     detachedFromTarget = "Target.detachedFromTarget"                    # ! EXPERIMENTAL
 
 
-@dataclass
-class RemoteLocation:
-    host: str
-    port: int
+class TargetType:
+
+    @dataclass
+    class RemoteLocation:
+        host: str; port: int
 
 
-@dataclass
-class TargetInfo:
-    targetId: str; type: str; title: str; url: str; attached: bool
-    openerId:         Optional[str] = None
-    canAccessOpener: Optional[bool] = None
-    openerFrameId:    Optional[str] = None
-    browserContextId: Optional[str] = None
+    @dataclass
+    class TargetInfo:
+        targetId: str; type: str; title: str; url: str; attached: bool
+        openerId:         Optional[str] = None
+        canAccessOpener: Optional[bool] = None
+        openerFrameId:    Optional[str] = None
+        browserContextId: Optional[str] = None

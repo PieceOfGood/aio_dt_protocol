@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
 from aio_dt_protocol.Data import Cookie, ConnectionType
+from dataclasses import dataclass, field
+
 
 class Network(ABC):
     """
@@ -275,7 +277,7 @@ class Network(ABC):
         url:      Optional[str] = None,
         options: Optional[dict] = None,
         frameId:  Optional[str] = None
-    ) -> dict:
+    ) -> "NetworkType.LoadNetworkResourcePageResult":
         """
         Выбирает ресурс и возвращает контент.
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-loadNetworkResource
@@ -288,7 +290,8 @@ class Network(ABC):
         if options is None: options = {"disableCache": False, "includeCredentials": True}
         if frameId is None: frameId = self.page_id
         args = { "url": url, "options": options, "frameId": frameId }
-        return (await self.Call("Network.loadNetworkResource", args))["resource"]
+        resource = (await self.Call("Network.loadNetworkResource", args))["resource"]
+        return NetworkType.LoadNetworkResourcePageResult(**resource)
 
     @abstractmethod
     async def GetUrl(self) -> str:
@@ -300,3 +303,67 @@ class Network(ABC):
         params:            Optional[dict] = None,
         wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+
+class NetworkType:
+
+    @dataclass
+    class LoadNetworkResourcePageResult:
+        success: bool
+        netError: Optional[int] = None
+        netErrorName: Optional[str] = None
+        httpStatusCode: Optional[int] = None
+        stream: Optional[str] = None                # ! IO.StreamHandle
+        headers: Optional[dict] = None
+
+
+    @dataclass
+    class Request:
+        url: str
+        method: str
+        headers: dict
+        initialPriority: str                        # ! Allowed Values: VeryLow, Low, Medium, High, VeryHigh
+        referrerPolicy: str                         # ! Allowed Values: unsafe-url, no-referrer-when-downgrade,
+                                                    # !     no-referrer, origin, origin-when-cross-origin, same-origin,
+                                                    # !     strict-origin, strict-origin-when-cross-origin
+        trustTokenParams: Optional["NetworkType.TrustTokenParams"]
+        postDataEntries: Optional[list["NetworkType.PostDataEntry"]]
+        urlFragment: Optional[str] = None
+        postData: Optional[str] = None
+        hasPostData: Optional[bool] = None          # ! true if postData is present
+        _postDataEntries: Optional[list["NetworkType.PostDataEntry"]] = field(init=False, repr=False, default=None)
+        mixedContentType: Optional[str] = None      # ! Allowed Values: blockable, optionally-blockable, none
+        isLinkPreload: Optional[bool] = None
+        _trustTokenParams: Optional["NetworkType.TrustTokenParams"] = field(init=False, repr=False, default=None)
+        isSameSite: Optional[bool] = None
+
+        @property
+        def postDataEntries(self) -> list["NetworkType.PostDataEntry"]:
+            return self._postDataEntries
+
+        @postDataEntries.setter
+        def postDataEntries(self, data: list[dict[str, Union[str, None]]]) -> None:
+            if not isinstance(data, property):
+                self._postDataEntries = [NetworkType.PostDataEntry(**item) for item in data]
+            else:
+                self._postDataEntries = None
+
+        @property
+        def trustTokenParams(self) -> "NetworkType.TrustTokenParams":
+            return self._trustTokenParams
+
+        @trustTokenParams.setter
+        def trustTokenParams(self, data: dict) -> None:
+            self._trustTokenParams = NetworkType.TrustTokenParams(**data) if not isinstance(data, property) else None
+
+
+    @dataclass
+    class PostDataEntry:
+        bytes: Optional[str] = None
+
+
+    @dataclass
+    class TrustTokenParams:
+        type: str                                   # ! Allowed Values: Issuance, Redemption, Signing
+        refreshPolicy: str                          # ! Allowed Values: UseCached, Refresh
+        issuers: Optional[list[str]] = None

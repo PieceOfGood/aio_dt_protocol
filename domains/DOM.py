@@ -2,8 +2,9 @@ import re
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
 from aio_dt_protocol.DOMElement import Node
-from aio_dt_protocol.domains.Runtime import RemoteObject
+from aio_dt_protocol.domains.Runtime import RuntimeType
 from aio_dt_protocol.exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
+from aio_dt_protocol.Data import DomainEvent
 
 class DOM(ABC):
     """
@@ -122,7 +123,6 @@ class DOM(ABC):
         if depth is not None: args.update(depth=depth)
         if pierce is not None: args.update(pierce=pierce)
         node: dict = (await self.Call("DOM.getDocument", args))["root"]
-        node["selector"] = ""
         return Node(self, **node)
 
     async def QuerySelector(
@@ -285,7 +285,7 @@ class DOM(ABC):
             backendNodeId: Optional[int] = None,
             objectGroup: Optional[str] = None,
             executionContextId: Optional[str] = None
-    ) -> RemoteObject:
+    ) -> RuntimeType.RemoteObject:
         """
         Создаёт JavaScript-объект для указанной ноды и возвращает его описание.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-resolveNode
@@ -299,7 +299,7 @@ class DOM(ABC):
         if objectGroup is not None: args.update(objectGroup=objectGroup)
         if executionContextId is not None: args.update(executionContextId=executionContextId)
         result: dict = await self.Call("DOM.resolveNode", args)
-        return RemoteObject(**result.get("object"))
+        return RuntimeType.RemoteObject(**result.get("object"))
 
     async def RequestNode(self, objectId: str) -> Node:
         """
@@ -319,3 +319,20 @@ class DOM(ABC):
             params: Optional[dict] = None,
             wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+
+class DOMEvent(DomainEvent):
+    attributeModified = "DOM.attributeModified"
+    attributeRemoved = "DOM.attributeRemoved"
+    characterDataModified = "DOM.characterDataModified"
+    childNodeCountUpdated = "DOM.childNodeCountUpdated"
+    childNodeInserted = "DOM.childNodeInserted"
+    childNodeRemoved = "DOM.childNodeRemoved"
+    documentUpdated = "DOM.documentUpdated"
+    setChildNodes = "DOM.setChildNodes"
+    distributedNodesUpdated = "DOM.distributedNodesUpdated"     # ! EXPERIMENTAL
+    inlineStyleInvalidated = "DOM.inlineStyleInvalidated"       # ! EXPERIMENTAL
+    pseudoElementAdded = "DOM.pseudoElementAdded"               # ! EXPERIMENTAL
+    pseudoElementRemoved = "DOM.pseudoElementRemoved"           # ! EXPERIMENTAL
+    shadowRootPopped = "DOM.shadowRootPopped"                   # ! EXPERIMENTAL
+    shadowRootPushed = "DOM.shadowRootPushed"                   # ! EXPERIMENTAL

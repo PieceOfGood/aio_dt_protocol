@@ -297,7 +297,7 @@ class Page(AbsPage):
         self.ws_session = await websockets.client.connect(self.ws_url, ping_interval=None)
         self.connected = True
         self.receiver = asyncio.create_task(self._Recv())
-        if self.callback is not None and not self.runtime_enabled:
+        if self.callback is not None:
             await self.Call("Runtime.enable")
             self.runtime_enabled = True
 
