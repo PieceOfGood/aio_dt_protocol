@@ -1,8 +1,8 @@
 import time
 import asyncio
 import random
-from typing import Tuple, List, Optional
-from aio_dt_protocol.Data import WINDOWS_KEY_SET, WindowBounds, TouchPoint
+from typing import Tuple, List, Optional, Literal
+from aio_dt_protocol.Data import WINDOWS_KEY_SET, WindowBounds, TouchPoint, KeyModifiers, KeyEvents
 
 
 class Actions:
@@ -195,7 +195,7 @@ class Actions:
     async def SynthesizePinchGesture(
             self, x: float, y: float, scaleFactor: float,
                 relativeSpeed: Optional[int] = None,
-            gestureSourceType: Optional[str] = None
+            gestureSourceType: Optional[Literal["touch", "mouse"]] = None
     ) -> None:
         """
         (EXPERIMENTAL)
@@ -226,7 +226,7 @@ class Actions:
                     yOverscroll: Optional[float] = None,
                     preventFling: Optional[bool] = None,
                             speed: Optional[int] = None,
-                gestureSourceType: Optional[str] = None,
+                gestureSourceType: Optional[Literal["touch", "mouse"]] = None,
                       repeatCount: Optional[int] = None,
                     repeatDelayMs: Optional[int] = None,
             interactionMarkerName: Optional[str] = None
@@ -281,7 +281,7 @@ class Actions:
             self, x: float, y: float,
             duration:          Optional[int] = None,
             tapCount:          Optional[int] = None,
-            gestureSourceType: Optional[str] = None
+            gestureSourceType: Optional[Literal["touch", "mouse"]] = None
     ) -> None:
         """
         (EXPERIMENTAL)
@@ -329,30 +329,32 @@ class Actions:
 
     async def SwipeTo(
         self,
-        direction:      Optional[str] = "up",
-        x:            Optional[float] = None,
-        y:            Optional[float] = None,
+        direction: Literal["up", "down", "left", "right"],
+        x:            Optional[float] = 0,
+        y:            Optional[float] = 0,
         distance:     Optional[float] = None,
         speed:        Optional[float] = None,
         overscroll:   Optional[float] = None,
         repeat_count:   Optional[int] = None,
-        repeat_delay: Optional[float] = None
+        repeat_delay: Optional[float] = None,
+        gestureSourceType: Optional[Literal["touch", "mouse"]] = "mouse"
     ) -> None:
         """
         Скроллит вьюпорт жестом "touch" на всю его длину/высоту.
             Возвращает управление только после выполнения жеста!
-        :param direction:       (optional) Направление. Может быть следующим:
-                                    up — пальцем вверх(прокрутка вниз)
-                                    down — пальцем вниз(прокрутка вверх)
-                                    left — пальцем влево(прокрутка вправо)
-                                    right — пальцем вправо(прокрутка влево)
-        :param x:               (optional) X-координата начальной точки.
-        :param y:               (optional) Y-координата начальной точки.
-        :param distance:        (optional) Дистанция движения.
-        :param speed:           (optional) Скорость движения(по умолчанию = 800).
-        :param overscroll:      (optional) Дополнительная дистанция в пикселях.
-        :param repeat_count:    (optional) Кол-во повторений сделанного жеста.
-        :param repeat_delay:    (optional) Задержка между повторениями.
+        :param direction:           (optional) Направление. Может быть следующим:
+                                        up — пальцем вверх(прокрутка вниз)
+                                        down — пальцем вниз(прокрутка вверх)
+                                        left — пальцем влево(прокрутка вправо)
+                                        right — пальцем вправо(прокрутка влево)
+        :param x:                   (optional) X-координата начальной точки.
+        :param y:                   (optional) Y-координата начальной точки.
+        :param distance:            (optional) Дистанция движения.
+        :param speed:               (optional) Скорость движения(по умолчанию = 800).
+        :param overscroll:          (optional) Дополнительная дистанция в пикселях.
+        :param repeat_count:        (optional) Кол-во повторений сделанного жеста.
+        :param repeat_delay:        (optional) Задержка между повторениями.
+        :param gestureSourceType:   (optional) Задержка между повторениями.
         :return:
         """
         if direction not in ["up", "down", "left", "right"]:
@@ -375,7 +377,7 @@ class Actions:
 
         args = {
             "x": x, "y": y, "speed": speed, "repeatCount": repeat_count,
-            "repeatDelayMs": repeat_delay, "gestureSourceType": "touch",
+            "repeatDelayMs": repeat_delay, "gestureSourceType": gestureSourceType,
             "xDistance": distance * sign if direction in ["left", "right"] else None,
             "yDistance": distance * sign if direction in ["up", "down"] else None,
             "xOverscroll": overscroll * -sign if direction in ["left", "right"] else None,
@@ -388,6 +390,7 @@ class Actions:
         Эмулирует клик мыши по координатам.
         :param x:               x - координата
         :param y:               y - координата
+        :param delay:           задержка перед отпусканием
         :return:
         """
         await self.DispatchMouseEvent("mousePressed", x, y, button="left")
@@ -454,68 +457,40 @@ class Actions:
             await self.SendChar(letter)
             if interval is not None: await asyncio.sleep(random.uniform(interval[0], interval[1]))
 
-    async def PressKeySet(self, key: str, modifiers: Optional[int] = 0) -> None:
-        """
-        Посылает нажатие клавиши с клавишами-модификаторами, если указаны.
-            Внимание! Курсор должен быть установлен в эдит-боксе!
-        https://keycode.info/
-        :param key:                     Строковое представление клавиши(например 's', 'backspace' он же 'back')
-        :param modifiers:               (optional) Удерживаемая клавиша/клавиши модификатор.
-                                            Alt=1, Ctrl=2, Meta/Command=4, Shift=8. Если нужно послать
-                                            Alt+Ctrl+Shift — складывается 1 + 2 + 8
-        :return:
-        """
-        upper_key = key.upper()
-        if upper_key not in WINDOWS_KEY_SET:
-            raise KeyError(f"Клавиши '{key}' — не существует в раскладке Windows")
+    async def SendKeyEvent(self, event: dict, *modifiers: Optional[KeyModifiers]) -> None:
+        args = {}
+        if modifiers:
+            s = 0
+            for m in modifiers: s += m.value
+            args.update({"modifiers": s})
 
-        args = {
-            "modifiers": modifiers,
-            "windowsVirtualKeyCode": WINDOWS_KEY_SET[upper_key],
-            "nativeVirtualKeyCode": WINDOWS_KEY_SET[upper_key]
-        }
-        await self.DispatchKeyEvent("keyDown", **args)
-        await self.DispatchKeyEvent("keyUp", **args)
-
-    async def SendKeyEvent(self, event: dict, modifiers: Optional[int] = 0) -> None:
-        args = { "modifiers": modifiers }
         args.update(event)
         await self.DispatchKeyEvent("keyDown", **args)
         await self.DispatchKeyEvent("keyUp", **args)
 
     async def ControlA(self) -> None:
         """ Выделить весь текст(Ctrl+A). """
-        await self.PressKeySet("a", 2)
+        await self.SendKeyEvent(KeyEvents.keyA, KeyModifiers.ctrl)
 
-    async def BackspaceText(self, count: Optional[int] = 1, modify: Optional[int] = 0) -> None:
+    async def BackspaceText(
+            self, count: Optional[int] = 1, modifier: Optional[KeyModifiers] = KeyModifiers.none) -> None:
         """
         Удаляет текст в текстовом поле с позиции курсора по направлению в лево, или полностью очистить,
             эмулируя нажатие клавиши 'Backspace'.
             Внимание! Курсор должен быть установлен в эдит-боксе!
         :param count:                   (optional) Количество нажатий. Не имеет воздействия при полной очистке.
-        :param modify:                  (optional) 0 - удалить символ, 1 - слово, включая стоящие перед ним пробелы,
-                                            2 — полностью очистить эдит-бокс.
+        :param modifier:                (optional) none - удалить один символ, alt - слово, включая стоящие перед
+                                            ним пробелы, ctrl — полностью очистить эдит-бокс.
         :return:
         """
 
-        if modify < 2:
-            for i in range(count):
-                await self.PressKeySet("back", 0 if modify == 0 else 2)
-                # if count > 1: await asyncio.sleep(.1)
-        elif modify == 2:
+        if modifier.name == "ctrl":
             await self.ControlA()
-            await self.PressKeySet("back")
+            await self.SendKeyEvent(KeyEvents.backspace)
+            return
 
-    async def CloseBrowser(self) -> bool:
-        """
-        Изящно завершает работу браузера.
-        https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-close
-        :return:        Закрылся/был закрыт
-        """
-        if self.page_instance.connected:
-            await self.page_instance.Call("Browser.close")
-            return True
-        return False
+        for i in range(count):
+            await self.SendKeyEvent(KeyEvents.backspace, modifier.value)
 
     async def SetWindowBounds(self, bounds: WindowBounds, windowId: Optional[int] = None) -> None:
         """

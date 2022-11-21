@@ -1,5 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Callable, Awaitable
+from aio_dt_protocol.Data import DomainEvent
+from aio_dt_protocol.domains.Network import NetworkType
+from dataclasses import dataclass, field
+
 
 class Fetch(ABC):
     """
@@ -24,9 +28,10 @@ class Fetch(ABC):
 
     async def FetchEnable(
         self,
-        patterns:     Optional[List[dict]] = None,
+        patterns: Optional[List["FetchType.RequestPattern"]] = None,
         handleAuthRequests: Optional[bool] = False,
-        fetch_onResponse:   Optional[bool] = False
+        on_pause: Optional[Callable[['FetchType.EventRequestPaused'], Awaitable[None]]] = None,
+        on_auth:  Optional[Callable[['FetchType.EventAuthRequired'], Awaitable[None]]] = None,
     ) -> None:
         """
         Включает выдачу событий requestPaused. Запрос будет приостановлен до тех пор,
@@ -42,13 +47,25 @@ class Fetch(ABC):
         :param handleAuthRequests:  (optional) Если True - события authRequired будут
                                         выдаваться и запросы будут приостановлены в
                                         ожидании вызова continueWithAuth.
-        :param fetch_onResponse:    (optional) Если True - добавляет в шаблон остлеживание
-                                        этапа запроса с перехватом в состоянии "ответ".
+        :param on_pause:            (optional) Корутина, которая будет получать все события "requestPaused".
+        :param on_auth:             (optional) Корутина, которая будет получать все события "authRequired".
         :return:
         """
-        args = {}; patterns = patterns if patterns is not None else []
-        if fetch_onResponse: patterns.append({"requestStage": "Response"})
-        if patterns: args.update({"patterns": patterns})
+        async def on_pause_decorator(
+                params: dict, func: Callable[["FetchType.EventRequestPaused"], Awaitable[None]]) -> None:
+            await func(FetchType.EventRequestPaused(**params))
+
+        async def on_auth_decorator(
+                params: dict, func: Callable[["FetchType.EventAuthRequired"], Awaitable[None]]) -> None:
+            await func(FetchType.EventAuthRequired(**params))
+
+        if on_pause is not None: await self.AddListenerForEvent(FetchEvent.requestPaused, on_pause_decorator, on_pause)
+        if on_auth is not None: await self.AddListenerForEvent(FetchEvent.authRequired, on_auth_decorator, on_auth)
+
+        args = {}
+        patterns = patterns if patterns is not None else []
+        if patterns:
+            args.update({"patterns": [p.dict() for p in patterns]})
         if handleAuthRequests: args.update({"handleAuthRequests": handleAuthRequests})
         await self.Call("Fetch.enable", args)
         self.fetch_domain_enabled = True
@@ -217,3 +234,118 @@ class Fetch(ABC):
         params: Optional[dict] = None,
         wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+    @abstractmethod
+    async def AddListenerForEvent(
+            self, event: Union[str, DomainEvent], listener: Callable, *args: Optional[any]) -> None:
+        raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
+
+    @abstractmethod
+    def RemoveListenersForEvent(self, event: str) -> None:
+        raise NotImplementedError("method RemoveListenersForEvent() — is not implemented")
+
+
+class FetchEvent(DomainEvent):
+    authRequired = "Fetch.authRequired"
+    requestPaused = "Fetch.requestPaused"
+
+
+class FetchType:
+
+    @dataclass
+    class EventRequestPaused:
+        requestId: str
+        frameId: str
+        resourceType: str                               # ! Allowed Values: Document, Stylesheet, Image, Media, Font,
+                                                        # !     Script, TextTrack, XHR, Fetch, EventSource, WebSocket,
+                                                        # !     Manifest, SignedExchange, Ping, CSPViolationReport,
+                                                        # !     Preflight, Other
+        request: NetworkType.Request
+        responseHeaders: Optional[list["FetchType.HeaderEntry"]]
+        responseErrorReason: Optional[str] = None       # ! Allowed Values: Failed, Aborted, TimedOut, AccessDenied,
+                                                        # !     ConnectionClosed, ConnectionReset, ConnectionRefused,
+                                                        # !     ConnectionAborted, ConnectionFailed, NameNotResolved,
+                                                        # !     InternetDisconnected, AddressUnreachable,
+                                                        # !     BlockedByClient, BlockedByResponse
+        responseStatusCode: Optional[int] = None
+        responseStatusText: Optional[str] = None
+        networkId: Optional[str] = None                 # ! id of request
+        _request: NetworkType.Request = field(init=False, repr=False, default=None)
+        _responseHeaders: Optional[list["FetchType.HeaderEntry"]] = field(init=False, repr=False, default=None)
+
+        @property
+        def request(self) -> NetworkType.Request:
+            return self._request
+
+        @request.setter
+        def request(self, data: dict) -> None:
+            self._request = NetworkType.Request(**data)
+
+        @property
+        def responseHeaders(self) -> Optional[list["FetchType.HeaderEntry"]]:
+            return self._responseHeaders
+
+        @responseHeaders.setter
+        def responseHeaders(self, data: list[dict[str, str]]) -> None:
+            if not isinstance(data, property):
+                self._responseHeaders = [FetchType.HeaderEntry(**item) for item in data]
+            else:
+                self._responseHeaders = None
+
+
+    @dataclass
+    class EventAuthRequired:
+        requestId: str
+        request: NetworkType.Request
+        frameId: str
+        resourceType: str                               # ! Allowed Values: Document, Stylesheet, Image, Media, Font,
+                                                        # !     Script, TextTrack, XHR, Fetch, EventSource, WebSocket,
+                                                        # !     Manifest, SignedExchange, Ping, CSPViolationReport,
+                                                        # !     Preflight, Other
+        authChallenge: "FetchType.AuthChallenge"
+        _authChallenge: "FetchType.AuthChallenge" = field(init=False, repr=False, default=None)
+
+        @property
+        def authChallenge(self) -> "FetchType.AuthChallenge":
+            return self._authChallenge
+
+        @authChallenge.setter
+        def authChallenge(self, data: dict) -> None:
+            self._authChallenge = FetchType.AuthChallenge(**data)
+
+
+    @dataclass
+    class AuthChallenge:
+        origin: str
+        scheme: str
+        realm: str                                      # ! May be empty.
+        source: Optional[str] = None
+
+
+    @dataclass
+    class HeaderEntry:
+        name: str
+        value: str
+
+
+    @dataclass
+    class RequestPattern:
+        urlPattern: str = "*"                           # ? Подстановочные знаки ( '*'-> ноль или более, '?'-> ровно
+                                                        # ?     один) допускаются. Экранирующий символ — обратная
+                                                        # ?     косая черта(\).
+        resourceType: Optional[str] = None              # ? Если установлено, будут перехватываться только соответствующие
+                                                        # ?     указанным типам.
+                                                        # ! Allowed Values: Document, Stylesheet, Image, Media, Font,
+                                                        # !     Script, TextTrack, XHR, Fetch, EventSource, WebSocket,
+                                                        # !     Manifest, SignedExchange, Ping, CSPViolationReport,
+                                                        # !     Preflight, Other
+        requestStage: Optional[str] = None              # ? Стадия перехвата запроса. Запрос будет перехвачен до того,
+                                                        # ?     как запрос будет отправлен. Ответ будет перехвачен после
+                                                        # ?     получения ответа (но до получения тела ответа).
+                                                        # ! Allowed Values: Request, Response
+
+        def dict(self) -> dict:
+            result = {}
+            for k, v in self.__dict__.items():
+                if v: result[k] = v
+            return result

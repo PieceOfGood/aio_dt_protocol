@@ -1,7 +1,9 @@
 import asyncio
 from urllib.parse import quote
 from abc import ABC, abstractmethod
-from typing import Optional, Union, Callable
+from typing import Optional, Union, Callable, List, Literal
+from aio_dt_protocol.Data import DomainEvent
+from dataclasses import dataclass, field
 
 
 class Page(ABC):
@@ -63,10 +65,38 @@ class Page(ABC):
         if frame_id == self.page_id:
             self.loading_state = state
 
+    async def CreateIsolatedWorld(
+            self, frameId: str, worldName: Optional[str] = None, grantUniversalAccess: Optional[bool] = None) -> int:
+        """
+        Создаёт изолированный мир для указанного фрейма.
+        https://chromedevtools.github.io/devtools-protocol/1-3/Page/#method-createIsolatedWorld
+        :param frameId:                 Идентификатор фрейма, в котором должен быть создан изолированный мир.
+        :param worldName:               Необязательное имя, о котором сообщается в контексте выполнения.
+        :param grantUniversalAccess:    Должен ли быть предоставлен универсальный доступ к изолированному миру.
+                                            Это мощная опция, используйте ее с осторожностью.
+        :return:            Runtime.ExecutionContextId
+        """
+        args = dict(frameId=frameId)
+        if worldName is not None: args.update(worldName=worldName)
+        if grantUniversalAccess is not None: args.update(grantUniversalAccess=grantUniversalAccess)
+        result: dict = await self.Call("Page.createIsolatedWorld", args)
+        return result.get("executionContextId")
+
+    async def GetFrameTree(self) -> 'FrameTree':
+        """
+        Возвращает структуру присутствующих на странице фреймов. !!! Справедливо только в рамках одного домена.
+        https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-getFrameTree
+        """
+        result = await self.Call("Page.getFrameTree")
+        # print("Page.getFrameTree", result)
+        return FrameTree(**result.get("frameTree"))
+
+    # async def GetFrameFor
+
     async def HandleJavaScriptDialog(self, accept: bool, promptText: Optional[str] = "") -> None:
         """
-        Принимает или закрывает диалоговое окно, инициированное JavaScript (предупреждение, подтверждение,
-            приглашение или onbeforeunload).
+        Подтверждает или закрывает диалоговое окно, инициированное JavaScript (alert, confirm,
+            prompt или для onbeforeunload).
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-handleJavaScriptDialog
         :param accept:          'True' — принять, 'False' — отклонить диалог.
         :param promptText:      (optional) Текст для ввода в диалоговом окне, прежде чем принять.
@@ -95,13 +125,19 @@ class Page(ABC):
         :return:
         """
         b_name_len = len(self.browser_name)
+        is_url = (
+            "http" == url[:4] or
+            "chrome" == url[:6] or
+            self.browser_name == url[:b_name_len] or
+            url == "about:blank"
+        )
         if self.page_domain_enabled: self.loading_state = "do_navigate"
         _url_ = ("data:text/html," + quote(url)
              # передать разметку как data-url, если начало этой строки
              # не содержит признаков url-адреса или передать "как есть",
-             if type(url) is str and "http" != url[:4] and self.browser_name != url[:b_name_len] and url != "about:blank" else url
+             if type(url) is str and not is_url else url
                  # раз это строка содержащая url, или переход на пустую страницу
-                 if type(url) is str and "http" == url[:4] or self.browser_name == url[:b_name_len] or url == "about:blank" else
+                 if type(url) is str and is_url else
                      # иначе декодировать и установить её как Base64
                      "data:text/html;Base64," + url.decode()
              )
@@ -170,7 +206,7 @@ class Page(ABC):
         """
         Удаляет данный скрипт из списка запускаемых при загрузке фрейма.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-removeScriptToEvaluateOnNewDocument
-        :param identifier:      Иденификатор сценария.
+        :param identifier:      Идентификатор сценария.
         :return:
         """
         await self.Call("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
@@ -179,10 +215,10 @@ class Page(ABC):
         """
         Устанавливает полученную разметку как HTML-код документа.
             frameId — можно найти среди параметров события 'Runtime.executionContextCreated',
-            а так же у конрневого элемента документа root.children[1].frameId
+            а так же у корневого элемента документа root.children[1].frameId
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-setDocumentContent
         :param html:            HTML-разметка.
-        :param frameId:         Иденификатор фрейма, которому предназначается html.
+        :param frameId:         Идентификатор фрейма, которому предназначается html.
         :return:
         """
         if frameId is None: frameId = self.page_id
@@ -368,7 +404,7 @@ class Page(ABC):
         if wait_for_load:
             await self.WaitForLoad()
 
-    async def GetNavigationHistory(self) -> None:
+    async def GetNavigationHistory(self) -> dict:
         """
         Возвращает историю навигации для текущей страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-getNavigationHistory
@@ -420,7 +456,7 @@ class Page(ABC):
 
     @abstractmethod
     async def AddListenerForEvent(
-            self, event: str, listener: Callable, *args: Optional[any]) -> None:
+            self, event: Union[str, DomainEvent], listener: Callable, *args: Optional[any]) -> None:
         raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
 
     @abstractmethod
@@ -445,3 +481,110 @@ class Page(ABC):
             params: Optional[dict] = None,
             wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+
+class PageEvent(DomainEvent):
+    domContentEventFired = "Page.domContentEventFired"
+    fileChooserOpened = "Page.fileChooserOpened"
+    frameAttached = "Page.frameAttached"
+    frameDetached = "Page.frameDetached"
+    frameNavigated = "Page.frameNavigated"
+    interstitialHidden = "Page.interstitialHidden"
+    interstitialShown = "Page.interstitialShown"
+    javascriptDialogClosed = "Page.javascriptDialogClosed"
+    javascriptDialogOpening = "Page.javascriptDialogOpening"
+    lifecycleEvent = "Page.lifecycleEvent"
+    loadEventFired = "Page.loadEventFired"
+    windowOpen = "Page.windowOpen"
+    frameClearedScheduledNavigation = "Page.frameClearedScheduledNavigation"    # DEPRECATED
+    frameScheduledNavigation = "Page.frameScheduledNavigation"                  # DEPRECATED
+    backForwardCacheNotUsed = "Page.backForwardCacheNotUsed"                    # ! EXPERIMENTAL
+    compilationCacheProduced = "Page.compilationCacheProduced"                  # ! EXPERIMENTAL
+    documentOpened = "Page.documentOpened"                                      # ! EXPERIMENTAL
+    frameRequestedNavigation = "Page.frameRequestedNavigation"                  # ! EXPERIMENTAL
+    frameResized = "Page.frameResized"                                          # ! EXPERIMENTAL
+    frameStartedLoading = "Page.frameStartedLoading"                            # ! EXPERIMENTAL
+    frameStoppedLoading = "Page.frameStoppedLoading"                            # ! EXPERIMENTAL
+    navigatedWithinDocument = "Page.navigatedWithinDocument"                    # ! EXPERIMENTAL
+    screencastFrame = "Page.screencastFrame"                                    # ! EXPERIMENTAL
+    screencastVisibilityChanged = "Page.screencastVisibilityChanged"            # ! EXPERIMENTAL
+    downloadProgress = "Page.downloadProgress"                                  # * EXPERIMENTAL DEPRECATED
+    downloadWillBegin = "Page.downloadWillBegin"                                # * EXPERIMENTAL DEPRECATED
+
+
+@dataclass
+class AdFrameStatus:
+    """ Указывает, был ли frame идентифицирован как реклама и почему. """
+    adFrameType: Literal["none", "child", "root"]
+    explanations: Optional[List[Literal["ParentIsAd", "CreatedByAdScript", "MatchedBlockingRule"]]] = None
+
+
+@dataclass
+class Frame:
+    """ Информация о фрейме на странице """
+    id: str
+    loaderId: str                               # ? Network.LoaderId
+    url: str
+    domainAndRegistry: str
+    securityOrigin: str
+    mimeType: str
+    secureContextType: Literal["Secure", "SecureLocalhost", "InsecureScheme", "InsecureAncestor"]
+    crossOriginIsolatedContextType: Literal["Isolated", "NotIsolated", "NotIsolatedFeatureDisabled"]
+    gatedAPIFeatures: List[Literal[
+        "SharedArrayBuffers", "SharedArrayBuffersTransferAllowed", "PerformanceMeasureMemory", "PerformanceProfile"
+    ]]
+    adFrameStatus: Optional['AdFrameStatus']
+    parentId: Optional[str] = None
+    name: Optional[str] = None
+    urlFragment: Optional[str] = None
+    unreachableUrl: Optional[str] = None
+    _adFrameStatus: Optional['AdFrameStatus'] = field(init=False, repr=False, default=None)
+
+    @property
+    def adFrameStatus(self) -> Union['AdFrameStatus', None]:
+        return self._adFrameStatus
+
+    @adFrameStatus.setter
+    def adFrameStatus(self, data: dict) -> None:
+        self._adFrameStatus = AdFrameStatus(**data) if not isinstance(data, property) else None
+
+
+@dataclass
+class FrameTree:
+    """ Информация об иерархии фреймов """
+    frame: 'Frame'
+    childFrames: Optional[List['FrameTree']]
+    _childFrames: Optional[List['FrameTree']] = field(init=False, repr=False, default=None)
+
+    @property
+    def frame(self) -> 'Frame':
+        return self._frame
+
+    @frame.setter
+    def frame(self, data: dict) -> None:
+        self._frame = Frame(**data)
+
+    @property
+    def childFrames(self) -> Union[List['FrameTree'], None]:
+        return self._childFrames
+
+    @childFrames.setter
+    def childFrames(self, data: List[dict]) -> None:
+        if not isinstance(data, property):
+            self._childFrames = [FrameTree(**frame_data) for frame_data in data]
+        else:
+            self._childFrames = None
+
+    def GetFrameByUrl(self, value: str) -> Union['Frame', None]:
+        def search(tree: 'FrameTree', value: str) -> Union['Frame', None]:
+            print("tree.frame.url", tree.frame.url)
+            if value in tree.frame.url:
+                return tree.frame
+            else:
+                if tree.childFrames:
+                    for child in tree.childFrames:
+                        if result := search(child, value):
+                            return result
+            return None
+        return search(self, value)
+

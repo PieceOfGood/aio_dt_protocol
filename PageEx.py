@@ -1,3 +1,7 @@
+try:
+    import ujson as json
+except ModuleNotFoundError:
+    import json
 
 from aio_dt_protocol.Page import Page
 from aio_dt_protocol.Actions import Actions
@@ -5,10 +9,10 @@ from aio_dt_protocol.DOMElement import Node
 from aio_dt_protocol.Data import ViewportRect, WindowRect
 
 import asyncio
-import json, base64
+import base64, re
 from typing import Optional, Union
 
-from aio_dt_protocol.exceptions import EvaluateError, JavaScriptError
+from aio_dt_protocol.exceptions import EvaluateError, JavaScriptError, NullProperty
 
 from aio_dt_protocol.domains.BackgroundService import BackgroundService as BackgroundServiceDomain
 from aio_dt_protocol.domains.Browser import Browser as BrowserDomain
@@ -72,6 +76,11 @@ class PageEx(
                                                 #   включены уведомления домена Page. Может иметь значения:
                                                 # |  started; navigated; stopped; do_navigate; do_reload |
 
+    def __eq__(self, other: "PageEx") -> bool:
+        return self.page_id == other.page_id
+
+    def __hash__(self) -> int:
+        return hash(self.page_id)
 
     # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
     #
@@ -133,11 +142,20 @@ class PageEx(
             "\").scrollIntoView({'behavior':'smooth', 'block': 'center'});"
         )
 
-    async def InjectJS(self, code: str):
+    async def InjectJS(self, code: str) -> any:
+        """ Выполняет JavaScript-выражение во фрейме верхнего уровня. """
         try:
             result = await self.Eval(code)
         except EvaluateError as error:
-            raise JavaScriptError(f"JavaScriptError: InjectJS() Exception with injected code: '{code}'\nDescription:\n{error}")
+            error = str(error)
+            if "of null" in error:
+                if match := re.match(r"[\w\s:]+['|\"]([^'\"]+)", error):
+                    prop = match.group(1)
+                else:
+                    prop = "unmatched error: " + error
+                raise NullProperty(f"InjectJS() Exception with injected code:\n'{code}'\nNull property:\n{prop}")
+
+            raise JavaScriptError(f"JavaScriptError: InjectJS() Exception with injected code:\n'{code}'\nDescription:\n{error}")
 
         return result.get('value')
 
