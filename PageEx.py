@@ -172,7 +172,7 @@ class PageEx(
         :return:
         """
         if not self.fetch_domain_enabled:
-            await self.FetchEnable(fetch_onResponse=True)
+            await self.FetchEnable()
         key = uniq_key if uniq_key else url
         await self.AddListenerForEvent("Fetch.requestPaused", catch_headers_for_url, self, url, self.storage, key)
 
