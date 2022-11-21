@@ -211,10 +211,10 @@ class Page(AbsPage):
 
             # Достаточно вызвать в контексте страницы следующее:
             # console.info(JSON.stringify({
-            #     funcName: "testFunc",
+            #     func_name: "test_func",
             #     args: [1, "test"]
             # }))
-            # и если среди зарегистрированных слушателей есть с именем "testFunc",
+            # и если среди зарегистрированных слушателей есть с именем "test_func",
             #   то он немедленно получит распакованный список args[ ... ], вместе
             #   с переданными ему аргументами, если таковые имеются.
             method: str = data_msg.get("method")
@@ -233,7 +233,7 @@ class Page(AbsPage):
                         print("[<- V ->] | ValueError", e)
                         print("[<- V ->] | Msg from browser", str_value)
                 else:
-                    if listener := self.listeners.get( value.get("funcName") ):
+                    if listener := self.listeners.get( value.get("func_name") ):
                         asyncio.create_task(
                             listener["function"](                               # корутина
                                 *(value["args"] if "args" in value else []),    # её список аргументов вызова
