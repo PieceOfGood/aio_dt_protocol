@@ -206,7 +206,7 @@ class Page(ABC):
         """
         Удаляет данный скрипт из списка запускаемых при загрузке фрейма.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-removeScriptToEvaluateOnNewDocument
-        :param identifier:      Иденификатор сценария.
+        :param identifier:      Идентификатор сценария.
         :return:
         """
         await self.Call("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
@@ -215,10 +215,10 @@ class Page(ABC):
         """
         Устанавливает полученную разметку как HTML-код документа.
             frameId — можно найти среди параметров события 'Runtime.executionContextCreated',
-            а так же у конрневого элемента документа root.children[1].frameId
+            а так же у корневого элемента документа root.children[1].frameId
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-setDocumentContent
         :param html:            HTML-разметка.
-        :param frameId:         Иденификатор фрейма, которому предназначается html.
+        :param frameId:         Идентификатор фрейма, которому предназначается html.
         :return:
         """
         if frameId is None: frameId = self.page_id
@@ -404,7 +404,7 @@ class Page(ABC):
         if wait_for_load:
             await self.WaitForLoad()
 
-    async def GetNavigationHistory(self) -> None:
+    async def GetNavigationHistory(self) -> dict:
         """
         Возвращает историю навигации для текущей страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-getNavigationHistory

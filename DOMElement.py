@@ -207,7 +207,7 @@ class Node:
         """
         Фокусируется на элементе.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-focus
-        :return:            Была ли фокуссировака успешной
+        :return:            Была ли фокусировка успешной
         """
         try:
             await self.page_instance.Call("DOM.focus", {"nodeId": self.nodeId})
@@ -442,7 +442,7 @@ class Node:
     ) -> List["Node"]:
         """
         Находит узлы с заданным вычисленным стилем в поддереве текущего узла.
-        https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-collectClassNamesFromSubtree
+        https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-getNodesForSubtreeByStyle
         :param computedStyles:  Список вычисляемых CSS-свойств, соответствие которым будет проверяться.
                                     Например, найти все узлы, ширина которых = 50px, а высота = 15px
                                     [{'name': 'width', 'value': '50px'}, {'name': 'height', 'value': '15px'}]
@@ -570,7 +570,8 @@ class Node:
                              "await instance.RuntimeEnable(True)")
         if not self.frameId:
             await self.Describe()
-        if not (context := self.page_instance.context_manager.GetDefaultContext(self.frameId)):
+        if not (context := self.page_instance.context_manager.GetDefaultContext(
+                self.frameId or self.page_instance.page_id)):
             raise StateError("Something went wrong, or context was not obtained on creation.")
 
         return Script(self.page_instance, expression, context)

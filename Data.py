@@ -1,5 +1,5 @@
 from typing import Optional, List
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import Enum
 
 
@@ -435,3 +435,15 @@ WINDOWS_KEY_SET = {
     'PA1': 253,         #PA1 key
     'OEM_CLEAR': 254,   #
 }
+
+if __name__ == '__main__':
+    s = ""
+    for field in KeyEvents.__dict__:
+        if "__" in field: continue
+        key: dict = getattr(KeyEvents, field)
+        # print(field, key)
+
+        s += f"""    pub {field}: KeyEvent,\n"""
+        # s += f"""    {field}: KeyEvent{{ code: "{key['code']}", text: "{key['text']}", key_identifier: "{key['keyIdentifier']}", key: "{key['key']}", windows_virtual_key_code: {key['windowsVirtualKeyCode']}, native_virtual_key_code: {key['nativeVirtualKeyCode']} }},\n"""
+
+    print(s)

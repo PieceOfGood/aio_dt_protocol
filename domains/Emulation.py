@@ -72,7 +72,7 @@ class Emulation(ABC):
     async def SetDefaultBackgroundColorOverride(self, color: dict) -> None:
         """
         Устанавливает или очищает переопределение цвета фона фрейма по умолчанию. Это переопределение
-            используется, если содержимое не указывает его.
+            используется, если в содержимом оно не указано.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setDefaultBackgroundColorOverride
         :param color:            (optional) RGBA цвета фона по умолчанию. Если не указано, любое
                                     существующее переопределение будет очищено. Словарь вида:

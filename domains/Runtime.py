@@ -83,7 +83,7 @@ class Runtime(ABC):
                                             просмотр генерироваться для результата.
         :param userGesture:             (optional) Должно ли выполнение рассматриваться как
                                             инициированное пользователем в пользовательском интерфейсе.
-        :param awaitPromise:            (optional) Решено ли выполнение awaitдля полученного значения
+        :param awaitPromise:            (optional) Решено ли выполнение await для полученного значения
                                             и возврата после ожидаемого обещания.
         :param executionContextId:      (optional) Определяет контекст выполнения, в котором будет
                                             использоваться глобальный объект для вызова функции.
@@ -152,6 +152,7 @@ class Runtime(ABC):
 
         if watch_for_execution_contexts and not self.context_manager.is_watch:
             await self.AddListenerForEvent(RuntimeEvent.executionContextCreated, self.context_manager.on_create)
+            await self.AddListenerForEvent(RuntimeEvent.executionContextsCleared, self.context_manager.on_clear)
             await self.AddListenerForEvent(RuntimeEvent.executionContextDestroyed, self.context_manager.on_destroy)
             self.context_manager.is_watch = True
 
@@ -167,6 +168,7 @@ class Runtime(ABC):
 
         if self.context_manager.is_watch:
             self.RemoveListenerForEvent(RuntimeEvent.executionContextCreated, self.context_manager.on_create)
+            self.RemoveListenerForEvent(RuntimeEvent.executionContextsCleared, self.context_manager.on_clear)
             self.RemoveListenerForEvent(RuntimeEvent.executionContextDestroyed, self.context_manager.on_destroy)
             self.context_manager.is_watch = False
 
@@ -273,7 +275,7 @@ class Runtime(ABC):
             raise Exception(response["result"]["description"] + "\n" + json.dumps(response["exceptionDetails"]))
         return response["result"]
 
-    async def AddBinding(self, name: str, executionContextId: Optional[int] = None) -> None:
+    async def AddBinding(self, name: str, executionContextName: Optional[int] = None) -> None:
         """
         (EXPERIMENTAL)
         Если executeContextId пуст, добавляет привязку с заданным именем к глобальным объектам всех
@@ -284,12 +286,12 @@ class Runtime(ABC):
             вызов функции привязки создает уведомление Runtime.bindingCalled.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-addBinding
         :param name:                    Имя привязки.
-        :param executionContextId:      (optional) Идентификатор контекста исполнения.
+        :param executionContextName:      (optional) Идентификатор контекста исполнения.
         :return:
         """
         args = {"name": name}
-        if executionContextId is not None:
-            args.update({"executionContextId": executionContextId})
+        if executionContextName is not None:
+            args.update({"executionContextName": executionContextName})
 
         await self.Call("Runtime.addBinding", args)
 
@@ -494,6 +496,9 @@ class ContextManager:
     async def on_create(self, data: dict) -> None:
         self.contexts.append(RuntimeType.ContextDescription(**data.get("context")))
 
+    async def on_clear(self, data: dict) -> None:
+        self.contexts = []
+
     async def on_destroy(self, data: dict) -> None:
         context_id: int = data.get("executionContextId")
         ii = -1
@@ -506,6 +511,8 @@ class ContextManager:
 
     def GetDefaultContext(self, frameId: str) -> Union['RuntimeType.ContextDescription', None]:
         for ctx in self.contexts:
+            print("frameId", frameId)
+            print("Runtime context", ctx, len(self.contexts))
             if ctx.auxData.frameId == frameId and ctx.auxData.isDefault:
                 return ctx
         return None
