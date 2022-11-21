@@ -135,7 +135,7 @@ class PageEx(
     async def SelectInputContentBy(self, css: str) -> None:
         await self.InjectJS(f"let _i_ = document.querySelector('{css}'); _i_.focus(); _i_.select();")
 
-    async def ScrollIntoViewJS(self, selector: str):
+    async def ScrollIntoViewJS(self, selector: str) -> None:
         await self.InjectJS(
             "document.querySelector(\"" +
             selector +
