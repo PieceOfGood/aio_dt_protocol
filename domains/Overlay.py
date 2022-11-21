@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union
+from aio_dt_protocol.Data import DomainEvent
 
 class Overlay(ABC):
     """
@@ -54,3 +55,9 @@ class Overlay(ABC):
             params: Optional[dict] = None,
             wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+class OverlayEvent(DomainEvent):
+    inspectModeCanceled = "Overlay.inspectModeCanceled"
+    inspectNodeRequested = "Overlay.inspectNodeRequested"
+    nodeHighlightRequested = "Overlay.nodeHighlightRequested"
+    screenshotRequested = "Overlay.screenshotRequested"

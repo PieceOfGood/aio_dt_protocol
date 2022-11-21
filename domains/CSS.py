@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Callable, List
+from aio_dt_protocol.Data import DomainEvent
 
 class CSS(ABC):
     """
@@ -138,3 +139,10 @@ class CSS(ABC):
             params: Optional[dict] = None,
             wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+class CSSEvent(DomainEvent):
+    fontsUpdated = "CSS.fontsUpdated"
+    mediaQueryResultChanged = "CSS.mediaQueryResultChanged"
+    styleSheetAdded = "CSS.styleSheetAdded"
+    styleSheetChanged = "CSS.styleSheetChanged"
+    styleSheetRemoved = "CSS.styleSheetRemoved"

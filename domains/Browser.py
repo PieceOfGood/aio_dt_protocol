@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Dict, List
 from aio_dt_protocol.Data import WindowBounds, WindowInfo
+from aio_dt_protocol.Data import DomainEvent
 
 class Browser(ABC):
     """
@@ -213,3 +214,7 @@ class Browser(ABC):
             params: Optional[dict] = None,
             wait_for_response: Optional[bool] = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+
+class BrowserEvent(DomainEvent):
+    downloadProgress = "Browser.downloadProgress"
+    downloadWillBegin = "Browser.downloadWillBegin"

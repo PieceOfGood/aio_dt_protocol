@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Union, List
 from aio_dt_protocol.Data import Cookie, ConnectionType
 from dataclasses import dataclass, field
+from aio_dt_protocol.Data import DomainEvent
 
 
 class Network(ABC):
@@ -367,3 +368,35 @@ class NetworkType:
         type: str                                   # ! Allowed Values: Issuance, Redemption, Signing
         refreshPolicy: str                          # ! Allowed Values: UseCached, Refresh
         issuers: Optional[list[str]] = None
+
+class NetworkEvent(DomainEvent):
+    dataReceived = "Network.dataReceived"
+    eventSourceMessageReceived = "Network.eventSourceMessageReceived"
+    loadingFailed = "Network.loadingFailed"
+    loadingFinished = "Network.loadingFinished"
+    requestServedFromCache = "Network.requestServedFromCache"
+    requestWillBeSent = "Network.requestWillBeSent"
+    responseReceived = "Network.responseReceived"
+    webSocketClosed = "Network.webSocketClosed"
+    webSocketCreated = "Network.webSocketCreated"
+    webSocketFrameError = "Network.webSocketFrameError"
+    webSocketFrameReceived = "Network.webSocketFrameReceived"
+    webSocketFrameSent = "Network.webSocketFrameSent"
+    webSocketHandshakeResponseReceived = "Network.webSocketHandshakeResponseReceived"
+    webSocketWillSendHandshakeRequest = "Network.webSocketWillSendHandshakeRequest"
+    webTransportClosed = "Network.webTransportClosed"
+    webTransportConnectionEstablished = "Network.webTransportConnectionEstablished"
+    webTransportCreated = "Network.webTransportCreated"
+    reportingApiEndpointsChangedForOrigin = "Network.reportingApiEndpointsChangedForOrigin"
+    reportingApiReportAdded = "Network.reportingApiReportAdded"
+    reportingApiReportUpdated = "Network.reportingApiReportUpdated"
+    requestWillBeSentExtraInfo = "Network.requestWillBeSentExtraInfo"
+    resourceChangedPriority = "Network.resourceChangedPriority"
+    responseReceivedExtraInfo = "Network.responseReceivedExtraInfo"
+    signedExchangeReceived = "Network.signedExchangeReceived"
+    subresourceWebBundleInnerResponseError = "Network.subresourceWebBundleInnerResponseError"
+    subresourceWebBundleInnerResponseParsed = "Network.subresourceWebBundleInnerResponseParsed"
+    subresourceWebBundleMetadataError = "Network.subresourceWebBundleMetadataError"
+    subresourceWebBundleMetadataReceived = "Network.subresourceWebBundleMetadataReceived"
+    trustTokenOperationDone = "Network.trustTokenOperationDone"
+    requestIntercepted = "Network.requestIntercepted"
