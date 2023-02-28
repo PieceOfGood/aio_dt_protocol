@@ -17,7 +17,7 @@ class AbsPage(ABC):
     __slots__ = (
         "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
         "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_event",
-        "runtime_enabled", "context_manager", "_connected", "_page_id", "_verbose", "_browser_name", "_is_headless_mode"
+        "runtime_enabled", "on_close_event", "context_manager", "_connected", "_page_id", "_verbose", "_browser_name", "_is_headless_mode"
     )
 
     def __init__(
@@ -48,6 +48,7 @@ class AbsPage(ABC):
         self.listeners         = {}
         self.listeners_for_event = {}
         self.runtime_enabled     = False
+        self.on_close_event = asyncio.Event()
 
 
 class Page(AbsPage):
@@ -197,6 +198,7 @@ class Page(AbsPage):
 
             if ("method" in data_msg and data_msg["method"] == "Inspector.detached"
                     and data_msg["params"]["reason"] == "target_closed"):
+                self.on_close_event.set()
                 await self.Detach()
                 return
 
@@ -281,6 +283,9 @@ class Page(AbsPage):
 
     def RemoveOnDetach(self) -> None:
         self.on_detach_listener = []
+
+    async def WaitForClose(self) -> None:
+        await self.on_close_event.wait()
 
     def SetOnDetach(self, function: Callable[[any], Awaitable[None]], *args, **kvargs) -> bool:
         """

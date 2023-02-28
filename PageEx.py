@@ -41,11 +41,11 @@ class PageEx(
     """
     __slots__ = (
         "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
-        "responses", "connected", "ws_session", "receiver", "listeners", "listeners_for_method", "runtime_enabled",
-        "storage", "action", "_root", "style_sheets", "loading_state", "observing_started", "recording_started",
-        "dom_domain_enabled", "targets_discovered", "log_domain_enabled", "network_domain_enabled",
-        "console_domain_enabled", "page_domain_enabled", "fetch_domain_enabled", "css_domain_enabled",
-        "overlay_domain_enabled"
+        "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_method",
+        "runtime_enabled", "on_close_event", "storage", "action", "_root", "style_sheets", "loading_state",
+        "observing_started", "recording_started", "dom_domain_enabled", "targets_discovered", "log_domain_enabled",
+        "network_domain_enabled", "console_domain_enabled", "page_domain_enabled", "fetch_domain_enabled",
+        "css_domain_enabled", "overlay_domain_enabled"
     )
 
     def __init__(self, *args):

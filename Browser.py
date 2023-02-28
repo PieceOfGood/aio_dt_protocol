@@ -213,6 +213,9 @@ class Browser:
         elif "netbox" in browser_exe:
             self.browser_name = "chrome"
             browser_exe = "netboxbrowser" if sys.platform == "win32" else "netbox-browser"
+        elif "edge" in browser_exe:
+            self.browser_name = "edge"
+            browser_exe = "msedge"
 
         # ? Константы URL соответствующих вкладок
         self.NEW_TAB:       str = self.browser_name + "://newtab/"          # дефолтная вкладка
@@ -780,6 +783,8 @@ def get_request(url: str) -> str:
 
 
 def registry_read_key(exe="chrome") -> str:
+    """ Возвращает путь до EXE.
+    """
     reg_path = f"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\{exe}.exe"
     key, path = re.findall(r"(^[^\\/]+)[\\/](.*)", reg_path)[0]
     connect_to = eval(f"winreg.{key}")
