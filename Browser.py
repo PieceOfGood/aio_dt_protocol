@@ -215,7 +215,7 @@ class Browser:
             browser_exe = "netboxbrowser" if sys.platform == "win32" else "netbox-browser"
         elif "edge" in browser_exe:
             self.browser_name = "edge"
-            browser_exe = "msedge"
+            browser_exe = "msedge" if sys.platform == "win32" else "msedge" # !?
 
         # ? Константы URL соответствующих вкладок
         self.NEW_TAB:       str = self.browser_name + "://newtab/"          # дефолтная вкладка
