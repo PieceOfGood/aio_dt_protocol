@@ -6,7 +6,7 @@ except ModuleNotFoundError:
 from aio_dt_protocol.Page import Page
 from aio_dt_protocol.Actions import Actions
 from aio_dt_protocol.DOMElement import Node
-from aio_dt_protocol.Data import ViewportRect, WindowRect
+from aio_dt_protocol.Data import ViewportRect, WindowRect, GeoInfo
 
 import asyncio
 import base64, re
@@ -42,7 +42,7 @@ class PageEx(
     __slots__ = (
         "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
         "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_method",
-        "runtime_enabled", "on_close_event", "storage", "action", "_root", "style_sheets", "loading_state",
+        "runtime_enabled", "on_close_event", "channels", "storage", "action", "_root", "style_sheets", "loading_state",
         "observing_started", "recording_started", "dom_domain_enabled", "targets_discovered", "log_domain_enabled",
         "network_domain_enabled", "console_domain_enabled", "page_domain_enabled", "fetch_domain_enabled",
         "css_domain_enabled", "overlay_domain_enabled"
@@ -158,6 +158,43 @@ class PageEx(
             raise JavaScriptError(f"JavaScriptError: InjectJS() Exception with injected code:\n'{code}'\nDescription:\n{error}")
 
         return result.get('value')
+
+    async def GetGeoInfo(self) -> GeoInfo:
+        """
+        Возвращает информацию о Вашем местоположении, вычисленному по IP.
+        """
+        async_fn_js = """\
+        async function get_geo_info() {
+            const resp = await fetch('https://time.gologin.com/');
+            return await resp.json();
+        }
+        get_geo_info().then(result)
+        """
+
+        promise = """\
+        fetch('https://time.gologin.com/')
+            .then(res => res.json())
+            .then(result)
+        """
+
+        result: dict = await self.EvalPromise(promise)
+        result.update(
+            geo=dict(
+                latitude=float(result["ll"][0]),
+                longitude=float(result["ll"][1]),
+                accuracy=float(result["accuracy"])
+            ),
+            languages=result["languages"].split(","),
+            state_province=result.get("stateProv"),
+            proxy_type=(pt:=result.get("proxyType"))
+        )
+        del result["ll"]
+        del result["accuracy"]
+        del result["stateProv"]
+        if pt:
+            del result["proxyType"]
+        return GeoInfo(**result)
+
 
     async def CatchMetaForUrl(self, url: str, uniq_key: Optional[str] = None) -> None:
         """

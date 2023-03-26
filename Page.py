@@ -2,6 +2,7 @@ try:
     import ujson as json
 except ModuleNotFoundError:
     import json
+import re
 import asyncio
 import websockets.client
 
@@ -9,15 +10,17 @@ from aio_dt_protocol.exceptions import EvaluateError, exception_store
 
 from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
-from typing import Callable, Awaitable, Optional, Union, Tuple, List
+from typing import Callable, Awaitable, Optional, Union, Tuple, List, Dict, Any
 from abc import ABC
-from aio_dt_protocol.Data import DomainEvent
+from aio_dt_protocol.Data import DomainEvent, Sender, Receiver, Queue
+
 
 class AbsPage(ABC):
     __slots__ = (
         "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
         "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_event",
-        "runtime_enabled", "on_close_event", "context_manager", "_connected", "_page_id", "_verbose", "_browser_name", "_is_headless_mode"
+        "runtime_enabled", "on_close_event", "channels", "context_manager", "_connected", "_page_id", "_verbose",
+        "_browser_name", "_is_headless_mode"
     )
 
     def __init__(
@@ -49,6 +52,7 @@ class AbsPage(ABC):
         self.listeners_for_event = {}
         self.runtime_enabled     = False
         self.on_close_event = asyncio.Event()
+        self.channels: Dict[str, Sender] = {}
 
 
 class Page(AbsPage):
@@ -219,29 +223,37 @@ class Page(AbsPage):
             # и если среди зарегистрированных слушателей есть с именем "test_func",
             #   то он немедленно получит распакованный список args[ ... ], вместе
             #   с переданными ему аргументами, если таковые имеются.
-            method: str = data_msg.get("method")
-            if (    # =============================================================
-                    self.listeners
-                            and
-                    method == "Runtime.consoleAPICalled"
-                            and
-                    data_msg["params"].get("type") == "info"
-            ):      # =============================================================
-                str_value = data_msg["params"]["args"][0].get("value")
-                try:
-                    value = json.loads(str_value)
-                except ValueError as e:
-                    if self.verbose:
-                        print("[<- V ->] | ValueError", e)
-                        print("[<- V ->] | Msg from browser", str_value)
-                else:
-                    if listener := self.listeners.get( value.get("func_name") ):
-                        asyncio.create_task(
-                            listener["function"](                               # корутина
-                                *(value["args"] if "args" in value else []),    # её список аргументов вызова
-                                *listener["args"]                               # список bind-агрументов
+            if (method := data_msg.get("method")) == "Runtime.consoleAPICalled":
+                # ? Был вызван домен "info"
+                if data_msg["params"].get("type") == "info":
+
+                    str_value = data_msg["params"]["args"][0].get("value")
+                    try:
+                        value: dict = json.loads(str_value)
+                    except ValueError as e:
+                        if self.verbose:
+                            print("[<- V ->] | ValueError", e)
+                            print("[<- V ->] | Msg from browser", str_value)
+                        raise
+
+                    # ? Есть ожидающие слушатели
+                    if self.listeners:
+
+                        # ? Если есть ожидающая корутина
+                        if listener := self.listeners.get( value.get("func_name") ):
+                            asyncio.create_task(
+                                listener["function"](                               # корутина
+                                    *(value["args"] if "args" in value else []),    # её список аргументов вызова
+                                    *listener["args"]                               # список bind-агрументов
+                                )
                             )
-                        )
+
+                    # ? Или каналы
+                    elif self.channels:
+                        # ? и выполненный промис
+                        if channel_id := value.get("channel_id"):
+                            sender = self.channels.pop(channel_id)
+                            await sender.send(value.get("result"))
 
             # По этой же схеме будут вызваны все слушатели для обработки
             #   определённого метода, вызванного в контексте страницы,
@@ -263,6 +275,38 @@ class Page(AbsPage):
                         )
                     )
 
+    async def EvalPromise(self, script: str) -> Any:
+        """ Выполняет асинхронный код на странице и возвращает результат.
+        !!! ВАЖНО !!! Выполняемый код должен быть выполнен как Promise. То есть
+        его нельзя вызывать через await.
+        При этом Вы можете описывать его в теле асинхронных функций, но вызывать
+        его можно только как Promise, вызвав его следующим образом:
+            async function call() {
+                return await callableCode()
+            }
+            call().then(result)
+        '.then(result)' - должны быть последними символами любого такого промиса.
+        Пример можно посмотреть у: self.GetGeoInfo()
+        :param script: - код, который будет выполняться на странице.
+        """
+        script = script.strip()
+        if not re.search(r".*?.then\(result\);?$", script):
+            raise ValueError("The script must end with the following line: \".then(result)\"")
+
+        channel_id = str(hash(script))
+        result = "".join([
+            ".then(result => console.info(JSON.stringify({channel_id: '",
+            channel_id, "', result: result})))"
+        ])
+        script = re.sub(r".then\(result\);?$", result, script)
+
+        que = Queue()
+        self.channels[channel_id] = Sender(que)
+        await self.Eval(script)
+        return await Receiver(que).recv()
+
+    async def WaitForClose(self) -> None:
+        await self.on_close_event.wait()
 
     async def Detach(self) -> None:
         """
@@ -283,9 +327,6 @@ class Page(AbsPage):
 
     def RemoveOnDetach(self) -> None:
         self.on_detach_listener = []
-
-    async def WaitForClose(self) -> None:
-        await self.on_close_event.wait()
 
     def SetOnDetach(self, function: Callable[[any], Awaitable[None]], *args, **kvargs) -> bool:
         """

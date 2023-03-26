@@ -140,19 +140,19 @@ class BrowserEx(Browser):
                 pages.append(await self.GetPageByID(target_info.targetId))
         return pages
 
-    async def WaitFirstTab(self, timeout: float = 20.0) -> PageEx:
+    async def WaitFirstTab(self, timeout: float = 20.0, callback: Callable = None) -> PageEx:
         """
         Вызывает исключение 'asyncio.exceptions.TimeoutError' по истечении таймаута, или возвращает инстанс.
         """
-        return await wait_for(self.GetFirstTab(), timeout)
+        return await wait_for(self.GetFirstTab(callback), timeout)
 
-    async def GetFirstTab(self) -> PageEx:
+    async def GetFirstTab(self, callback: Callable = None) -> PageEx:
         """
         Безусловно дожидается соединения со страницей.
         """
         while True:
             try:
-                while (page := await self.GetPage()) is None:
+                while (page := await self.GetPage(callback=callback)) is None:
                     await sleep(.5)
                 return page
             except URLError: await sleep(1)

@@ -1,6 +1,36 @@
-from typing import Optional, List
-from dataclasses import dataclass, fields
+from typing import Optional, List, TypeVar
+from dataclasses import dataclass
 from enum import Enum
+from asyncio import Queue
+
+
+
+T = TypeVar("T")
+
+
+@dataclass
+class GeoInfo:
+    ip: str
+    timezone: str
+    geo: dict[str, float]
+    country: str
+    languages: list[str]
+    city: str
+    state_province: str
+    proxy_type: str
+
+
+class __Base:
+    def __init__(self, que: Queue) -> None:
+        self.que = que
+
+class Sender(__Base):
+    async def send(self, data: T) -> None:
+        await self.que.put(data)
+
+class Receiver(__Base):
+    async def recv(self) -> T:
+        return await self.que.get()
 
 
 class DomainEvent(Enum): pass
