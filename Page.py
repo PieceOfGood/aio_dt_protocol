@@ -12,7 +12,7 @@ from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
 from typing import Callable, Awaitable, Optional, Union, Tuple, List, Dict, Any
 from abc import ABC
-from aio_dt_protocol.Data import DomainEvent, Sender, Receiver, Queue
+from aio_dt_protocol.Data import DomainEvent, Sender, Receiver, Queue, T
 
 
 class AbsPage(ABC):
@@ -52,7 +52,7 @@ class AbsPage(ABC):
         self.listeners_for_event = {}
         self.runtime_enabled     = False
         self.on_close_event = asyncio.Event()
-        self.channels: Dict[str, Sender] = {}
+        self.channels: Dict[str, Sender[Any]] = {}
 
 
 class Page(AbsPage):
@@ -275,7 +275,7 @@ class Page(AbsPage):
                         )
                     )
 
-    async def EvalPromise(self, script: str) -> Any:
+    async def EvalPromise(self, script: str) -> T:
         """ Выполняет асинхронный код на странице и возвращает результат.
         !!! ВАЖНО !!! Выполняемый код должен быть выполнен как Promise. То есть
         его нельзя вызывать через await.
@@ -301,9 +301,9 @@ class Page(AbsPage):
         script = re.sub(r".then\(result\);?$", result, script)
 
         que = Queue()
-        self.channels[channel_id] = Sender(que)
+        self.channels[channel_id] = Sender[T](que)
         await self.Eval(script)
-        return await Receiver(que).recv()
+        return await Receiver[T](que).recv()
 
     async def WaitForClose(self) -> None:
         await self.on_close_event.wait()

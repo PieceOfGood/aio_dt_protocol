@@ -587,4 +587,3 @@ class FrameTree:
                             return result
             return None
         return search(self, value)
-

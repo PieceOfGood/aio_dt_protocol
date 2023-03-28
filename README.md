@@ -10,27 +10,26 @@ https://github.com/aaugustin/websockets
 https://github.com/ultrajson/ultrajson
 
 ### Примеры:
+
 ```python
 import asyncio
-from aio_dt_protocol.BrowserEx import BrowserEx as Chrome
-from aio_dt_protocol.Browser import Browser
+from aio_dt_protocol import BrowserEx as Browser
+from aio_dt_protocol import find_instances
 from aio_dt_protocol.Data import KeyEvents
-
 
 DEBUG_PORT: int = 9222
 BROWSER_NAME: str = "chrome"
 
 
 async def main() -> None:
-    
     # ? Если на указанном порту есть запущенный браузер, происходит подключение.
-    if browser_instances := Browser.FindInstances(DEBUG_PORT, BROWSER_NAME):
-        browser = Chrome(debug_port=DEBUG_PORT, browser_pid=browser_instances[DEBUG_PORT])
+    if browser_instances := find_instances(DEBUG_PORT, BROWSER_NAME):
+        browser = Browser(debug_port=DEBUG_PORT, browser_pid=browser_instances[DEBUG_PORT])
         msg = f"[- CONNECT TO EXIST BROWSER ON {DEBUG_PORT} PORT -]"
 
     # ? Иначе, запуск нового браузера.
     else:
-        browser = Chrome(
+        browser = Browser(
             debug_port=DEBUG_PORT, browser_exe=BROWSER_NAME
         )
         msg = f"[- LAUNCH NEW BROWSER ON {DEBUG_PORT} PORT -]"
@@ -55,7 +54,7 @@ async def main() -> None:
     await asyncio.sleep(1)
 
     submit_button_selector = "div:not([jsname])>center>[type=submit]:not([jsaction])"
-    
+
     submit_button = await page.QuerySelector(submit_button_selector)
     await submit_button.Click()
 
@@ -67,15 +66,15 @@ async def main() -> None:
 
     print("[- WAIT FOR CLOSE PAGE ... -]")
     # ? Пока соединение существует, цикл выполняется.
-    while page.connected:
-        await asyncio.sleep(1)
+    await page.WaitForClose()
     print("[- DONE -]")
 
+
 if __name__ == '__main__':
-    asyncio.run( main() )
+    asyncio.run(main())
 ```
 
-На страницу можно легко зарегистрировать слушателей, которые будут вызываться на стороне клиентского(Python) кода. Для этого необходимо выполнить в браузере JavaScript, передав в `console.info()` JSON-строку из JavaScript-объекта с двумя обязательными полями `func_name` и `args`. Например:
+На страницу можно легко зарегистрировать слушателей, которые будут вызываться на стороне клиентского(Python) кода. Для этого необходимо выполнить в браузере JavaScript, передав в `console.info()` JSON-строку из JavaScript-объекта с двумя обязательными полями `func_name` - имя вызываемой python-функции и `args` - список аргументов, которые будут ей переданы. Например:
 
 ```python
     html = """

@@ -1,8 +1,7 @@
-from typing import Optional, List, TypeVar
+from typing import Optional, List, TypeVar, Generic
 from dataclasses import dataclass
 from enum import Enum
 from asyncio import Queue
-
 
 
 T = TypeVar("T")
@@ -20,24 +19,28 @@ class GeoInfo:
     proxy_type: str
 
 
-class __Base:
-    def __init__(self, que: Queue) -> None:
+class __Base(Generic[T]):
+    def __init__(self, que: Queue[T]) -> None:
         self.que = que
 
-class Sender(__Base):
+
+class Sender(__Base[T]):
     async def send(self, data: T) -> None:
         await self.que.put(data)
 
-class Receiver(__Base):
+
+class Receiver(__Base[T]):
     async def recv(self) -> T:
         return await self.que.get()
 
 
 class DomainEvent(Enum): pass
 
+
 class ConnectionType(Enum):
     none = "none"; cellular2g = "cellular2g"; cellular3g = "cellular3g"; cellular4g = "cellular4g"
     bluetooth = "bluetooth"; ethernet = "ethernet"; wifi = "wifi"; wimax = "wimax"; other = "other"
+
 
 @dataclass
 class Cookie:
@@ -58,11 +61,13 @@ class Cookie:
     partitionKey: Optional[str] = None
     partitionKeyOpaque: Optional[bool] = None
 
+
 @dataclass
 class TargetConnectionInfo:
     description: str; devtoolsFrontendUrl: str
     id: str; title: str; type: str; url: str; webSocketDebuggerUrl: str
     faviconUrl: str = None; parentId: str = None
+
 
 class TargetConnectionType(Enum):
     page = "page"
@@ -72,11 +77,13 @@ class TargetConnectionType(Enum):
     iframe ="iframe"
     other = "other"
 
+
 @dataclass
 class ProcessInfo:
     type: str           # Тип процесса
     id: int             # Идентификатор процесса
     cpuTime: float      # Совокупное использование ЦП в секундах для всех потоков процесса с момента его запуска.
+
 
 @dataclass
 class GPUInfo:
@@ -88,12 +95,14 @@ class GPUInfo:
     auxAttributes: Optional[dict] = None
     featureStatus: Optional[dict] = None
 
+
 @dataclass
 class SystemData:
     gpu: GPUInfo
     modelName: str
     modelVersion: str
     commandLine: str
+
 
 @dataclass
 class WindowBounds:
@@ -109,10 +118,12 @@ class WindowBounds:
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None}
 
+
 @dataclass
 class WindowInfo:
     windowId: int
     bounds: WindowBounds
+
 
 @dataclass
 class TouchPoint:
@@ -142,41 +153,50 @@ class TouchPoint:
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None}
 
+
 @dataclass
 class StyleProp:
     """ Описывает имя и значение стиля """
     name: str; value: str
 
+
 @dataclass
 class NodeCenter: x: int; y: int
+
 
 @dataclass
 class NodeRect:
     """ Пространственное положение и размеры узла """
     x: int; y: int; width: int; height: int; left: int; right: int; top: int; bottom: int
 
+
 @dataclass
 class ViewportRect:
     """ Ширина и высота вьюпорта """
     width: int; height: int
+
 
 @dataclass
 class WindowRect:
     """ Ширина и высота окна браузера(outer - свойства) """
     width: int; height: int
 
+
 @dataclass
 class ShapeOutsideInfo:
     bounds: list; shape: list; marginShape: list
+
 
 @dataclass
 class BoxModel:
     content: list; padding: list; border: list; margin: list; width: int; height: int
     shapeOutside: Optional[ShapeOutsideInfo] = None
 
+
 class KeyModifiers(Enum):
     """ Клавиши-модификаторы """
     none = 0; alt = 1; ctrl = 2; meta = command = 4; shift = 8
+
 
 @dataclass
 class KeyEvents:

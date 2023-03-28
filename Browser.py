@@ -20,7 +20,7 @@ from enum import Enum
 class Browser:
 
     @staticmethod
-    def FindInstances(for_port: Optional[int] = None, browser: Optional[str] = "chrome") -> Dict[int, int]:
+    def FindInstances(for_port: Optional[int] = None, browser: str = "chrome") -> Dict[int, int]:
         """
         Используется для обнаружения уже запущенных инстансов браузера в режиме отладки.
         Более быстрая альтернатива для win32 систем FindInstances() есть в aio_dt_utils.Utils,
