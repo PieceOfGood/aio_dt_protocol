@@ -2,24 +2,25 @@ try:
     import ujson as json
 except ModuleNotFoundError:
     import json
-import re
 import asyncio
 import websockets.client
 
-from aio_dt_protocol.exceptions import EvaluateError, exception_store
+from .exceptions import EvaluateError, get_cdtp_error, highlight_eval_error, PromiseEvaluateError, \
+    highlight_promise_error
+from .utils import log
 
 from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
-from typing import Callable, Awaitable, Optional, Union, Tuple, List, Dict, Any
+from typing import Callable, Awaitable, Optional, Union, Tuple, List, Dict
 from abc import ABC
-from aio_dt_protocol.Data import DomainEvent, Sender, Receiver, Queue, T
+from .Data import DomainEvent, Sender, Receiver, T, CommonCallback
 
 
 class AbsPage(ABC):
     __slots__ = (
         "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
         "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_event",
-        "runtime_enabled", "on_close_event", "channels", "context_manager", "_connected", "_page_id", "_verbose",
+        "runtime_enabled", "on_close_event", "context_manager", "_connected", "_page_id", "_verbose",
         "_browser_name", "_is_headless_mode"
     )
 
@@ -28,7 +29,7 @@ class AbsPage(ABC):
         ws_url:           str,
         page_id:          str,
         frontend_url:     str,
-        callback:         callable,
+        callback:         CommonCallback,
         is_headless_mode: bool,
         verbose:          bool,
         browser_name:     str
@@ -43,7 +44,6 @@ class AbsPage(ABC):
         self.browser_name      = browser_name
 
         self.id                = 0
-        self.responses         = {}
         self.connected         = False
         self.ws_session        = None
         self.receiver          = None
@@ -52,7 +52,7 @@ class AbsPage(ABC):
         self.listeners_for_event = {}
         self.runtime_enabled     = False
         self.on_close_event = asyncio.Event()
-        self.channels: Dict[str, Sender[Any]] = {}
+        self.responses: Dict[int, Optional[Sender[dict]]] = {}
 
 
 class Page(AbsPage):
@@ -75,7 +75,7 @@ class Page(AbsPage):
         ws_url:           str,
         page_id:          str,
         frontend_url:     str,
-        callback:         callable,
+        callback:         CommonCallback,
         is_headless_mode: bool,
         verbose:          bool,
         browser_name:     str
@@ -124,9 +124,9 @@ class Page(AbsPage):
 
     async def Call(
         self, domain_and_method: str,
-        params:            Optional[dict] = None,
-        wait_for_response: Optional[bool] = True
-    ) -> Union[dict, None]:
+        params:  Optional[dict] = None,
+        wait_for_response: bool = True
+    ) -> Optional[dict]:
         self.id += 1
         _id = self.id
         data = {
@@ -135,23 +135,22 @@ class Page(AbsPage):
             "method": domain_and_method
         }
 
-        if wait_for_response:
+        if not wait_for_response:
             self.responses[_id] = None
+            await self._Send(json.dumps(data))
+            return
+
+        que = asyncio.Queue()
+        sender, receiver = Sender[dict](que), Receiver[dict](que)
+        self.responses[_id] = sender
 
         await self._Send(json.dumps(data))
 
-        if not wait_for_response:
-            return
-
-        while not self.responses[ _id ]:
-            await asyncio.sleep(.01)
-
-        response = self.responses.pop( _id )
+        response = await receiver.recv()
         if "error" in response:
 
-            for title, ex in exception_store.items():
-                if title in response['error']['message']:
-                    raise ex(f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'")
+            if ex := get_cdtp_error(response['error']['message']):
+                raise ex(f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'")
 
             raise Exception(
                 "Browser detect error:\n" +
@@ -164,12 +163,12 @@ class Page(AbsPage):
 
     async def Eval(
         self, expression: str,
-        objectGroup:            Optional[str] = "console",
-        includeCommandLineAPI: Optional[bool] = True,
-        silent:                Optional[bool] = False,
-        returnByValue:         Optional[bool] = False,
-        userGesture:           Optional[bool] = True,
-        awaitPromise:          Optional[bool] = False
+        objectGroup:            str = "console",
+        includeCommandLineAPI: bool = True,
+        silent:                bool = False,
+        returnByValue:         bool = False,
+        userGesture:           bool = True,
+        awaitPromise:          bool = False
     ) -> dict:
         response = await self.Call(
             "Runtime.evaluate", {
@@ -183,7 +182,9 @@ class Page(AbsPage):
             }
         )
         if "exceptionDetails" in response:
-            raise EvaluateError(response["result"]["description"])
+            raise EvaluateError(
+                highlight_eval_error(response["result"]["description"], expression)
+            )
         return response["result"]
 
     async def _Send(self, data: str) -> None:
@@ -196,7 +197,7 @@ class Page(AbsPage):
                 data_msg: dict = json.loads(await self.ws_session.recv())
             # ! Браузер разорвал соединение
             except ConnectionClosedError as e:
-                if self.verbose: print(f"[<- V ->] | ConnectionClosedError '{e}'")
+                if self.verbose: log(f"ConnectionClosedError {e!r}")
                 await self.Detach()
                 return
 
@@ -207,8 +208,8 @@ class Page(AbsPage):
                 return
 
             # Ожидающие ответов вызовы API получают ответ по id входящих сообщений.
-            if (data_id := data_msg.get("id")) and data_id in self.responses:
-                self.responses[data_id] = data_msg
+            if sender := self.responses.pop(data_msg.get("id"), None):
+                await sender.send(data_msg)
 
             # Если коллбэк функция была определена, она будет получать все
             #   уведомления из инстанса страницы.
@@ -232,8 +233,8 @@ class Page(AbsPage):
                         value: dict = json.loads(str_value)
                     except ValueError as e:
                         if self.verbose:
-                            print("[<- V ->] | ValueError", e)
-                            print("[<- V ->] | Msg from browser", str_value)
+                            log(f"ValueError {e!r}")
+                            log(f"Msg from browser {str_value!r}")
                         raise
 
                     # ? Есть ожидающие слушатели
@@ -247,13 +248,6 @@ class Page(AbsPage):
                                     *listener["args"]                               # список bind-агрументов
                                 )
                             )
-
-                    # ? Или каналы
-                    elif self.channels:
-                        # ? и выполненный промис
-                        if channel_id := value.get("channel_id"):
-                            sender = self.channels.pop(channel_id)
-                            await sender.send(value.get("result"))
 
             # По этой же схеме будут вызваны все слушатели для обработки
             #   определённого метода, вызванного в контексте страницы,
@@ -275,37 +269,27 @@ class Page(AbsPage):
                         )
                     )
 
-    async def EvalPromise(self, script: str) -> T:
+    async def EvalPromise(self, script: str) -> dict:
         """ Выполняет асинхронный код на странице и возвращает результат.
-        !!! ВАЖНО !!! Выполняемый код должен быть выполнен как Promise. То есть
-        его нельзя вызывать через await.
-        При этом Вы можете описывать его в теле асинхронных функций, но вызывать
-        его можно только как Promise, вызвав его следующим образом:
-            async function call() {
-                return await callableCode()
-            }
-            call().then(result)
-        '.then(result)' - должны быть последними символами любого такого промиса.
-        Пример можно посмотреть у: self.GetGeoInfo()
-        :param script: - код, который будет выполняться на странице.
+        !!! ВАЖНО !!! Выполняемый код не может возвращать какие-либо JS
+        типы, поэтому должен возвращать JSON-сериализованный набор данных.
         """
-        script = script.strip()
-        if not re.search(r".*?.then\(result\);?$", script):
-            raise ValueError("The script must end with the following line: \".then(result)\"")
-
-        channel_id = str(hash(script))
-        result = "".join([
-            ".then(result => console.info(JSON.stringify({channel_id: '",
-            channel_id, "', result: result})))"
-        ])
-        script = re.sub(r".then\(result\);?$", result, script)
-
-        que = Queue()
-        self.channels[channel_id] = Sender[T](que)
-        await self.Eval(script)
-        return await Receiver[T](que).recv()
+        result = await self.Eval(script)
+        args = dict(
+            promiseObjectId=result["objectId"],
+            returnByValue=False,
+            generatePreview=False
+        )
+        response = await self.Call("Runtime.awaitPromise", args)
+        if "exceptionDetails" in response:
+            raise PromiseEvaluateError(
+                highlight_promise_error(response["result"]["description"]) +
+                "\n" + json.dumps(response["exceptionDetails"])
+            )
+        return json.loads(response["result"]["value"])
 
     async def WaitForClose(self) -> None:
+        """ Дожидается, пока не будет потеряно соединение со страницей. """
         await self.on_close_event.wait()
 
     async def Detach(self) -> None:
@@ -318,7 +302,7 @@ class Page(AbsPage):
             return
 
         self.receiver.cancel()
-        if self.verbose: print("[<- V ->] [ DETACH ]", self.page_id)
+        if self.verbose: log(f"[ DETACH ] {self.page_id}")
         self.connected = False
 
         if self.on_detach_listener:
@@ -334,7 +318,7 @@ class Page(AbsPage):
             при разрыве соединения со страницей.
         """
         if not iscoroutinefunction(function):
-            raise TypeError("OnDetach-listener must be a async callable function!")
+            raise TypeError("OnDetach-listener must be a async callable object!")
         if not self.connected: return False
         self.on_detach_listener = [function, args, kvargs]
         return True
@@ -347,7 +331,7 @@ class Page(AbsPage):
             await self.Call("Runtime.enable")
             self.runtime_enabled = True
 
-    async def AddListener(self, listener: Callable[[any], Awaitable[None]], *args: Optional[any]) -> None:
+    async def AddListener(self, listener: Callable[[any], Awaitable[None]], *args: any) -> None:
         """
         Добавляет 'слушателя', который будет ожидать свой вызов по имени функции.
             Вызов слушателей из контекста страницы осуществляется за счёт
@@ -465,4 +449,4 @@ class Page(AbsPage):
             self.listeners_for_event.pop(e)
 
     def __del__(self) -> None:
-        if self.verbose: print("[<- V ->] [ DELETED ]", self.page_id)
+        if self.verbose: log(f"[ DELETED ] {self.page_id}")

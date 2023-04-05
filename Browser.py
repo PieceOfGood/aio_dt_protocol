@@ -3,18 +3,18 @@ try:
 except ModuleNotFoundError:
     import json
 import asyncio
-import urllib.request
-from urllib.parse import quote
-import re, os, sys, signal, subprocess, getpass
-from os.path import expanduser
-if sys.platform == "win32": import winreg
-from typing import Callable, List, Dict, Union, Optional, Awaitable, Tuple
-from collections.abc import Sequence
-from aio_dt_protocol.Page import Page
-from aio_dt_protocol.Data import TargetConnectionInfo, TargetConnectionType
-from aio_dt_protocol.exceptions import FlagArgumentContainError
 import warnings
+import re, os, sys, signal, subprocess, getpass
+from urllib.parse import quote
+from os.path import expanduser
+from inspect import iscoroutinefunction
+from typing import List, Dict, Union, Optional, Tuple
+from collections.abc import Sequence
 from enum import Enum
+from .Page import Page
+from .Data import TargetConnectionInfo, TargetConnectionType, CommonCallback
+from .exceptions import FlagArgumentContainError
+from .utils import get_request, registry_read_key, log
 
 
 class Browser:
@@ -74,21 +74,21 @@ class Browser:
 
     def __init__(
             self,
-            profile_path: Optional[str] = "testProfile",
-            dev_tool_profiles:      Optional[bool] = False,
-            url: Optional[Union[str, bytes, None]] = None,
+            profile_path: str = "testProfile",
+            dev_tool_profiles:      bool = False,
+            url: Optional[Union[str, bytes]] = None,
             flags:  Optional[List[str]] = None,
-            browser_path: Optional[str] = "",
-            debug_port:   Optional[Union[str, int]] = 9222,
-            browser_pid:  Optional[int] = 0,
-            app:         Optional[bool] = False,
-            browser_exe:  Optional[str] = "chrome",
-            proxy_address:Optional[str] = "http://127.0.0.1",
-            proxy_port:   Optional[Union[str, int]] = "",
-            verbose:     Optional[bool] = False,
+            browser_path: str = "",
+            debug_port:   Union[str, int] = 9222,
+            browser_pid:  int = 0,
+            app:         bool = False,
+            browser_exe:  str = "chrome",
+            proxy_address:str = "http://127.0.0.1",
+            proxy_port:   Union[str, int] = "",
+            verbose:     bool = False,
             position: Optional[Tuple[int, int]] = None,
             sizes:    Optional[Tuple[int, int]] = None,
-            prevent_restore: Optional[bool] = False,
+            prevent_restore: bool = False,
 
     ) -> None:
         """
@@ -196,10 +196,10 @@ class Browser:
                         with open(preferences_path, "w") as f: f.write(result)
                 # ? Только для чтения
                 # os.chmod(preferences_path, READ_ONLY)
-                if verbose: print("Файл настроек — изменён и сохранён")
+                if verbose: log("Файл настроек — изменён и сохранён")
             else:
                 # os.chmod(preferences_path, READ_WRITE)
-                if verbose: print("Файл настроек — только для чтения")
+                if verbose: log("Файл настроек — только для чтения")
 
         if browser_exe == "chrome":
             self.browser_name = "chrome"
@@ -210,9 +210,6 @@ class Browser:
         elif browser_exe == "chromium":
             self.browser_name = "chrome"
             browser_exe = "chrome" if sys.platform == "win32" else "chromium-browser"
-        elif "netbox" in browser_exe:
-            self.browser_name = "chrome"
-            browser_exe = "netboxbrowser" if sys.platform == "win32" else "netbox-browser"
         elif "edge" in browser_exe:
             self.browser_name = "edge"
             browser_exe = "msedge" if sys.platform == "win32" else "msedge" # !?
@@ -226,12 +223,10 @@ class Browser:
         self.DOWNLOADS:     str = self.browser_name + "://downloads/"       # загрузки
         self.WALLET:        str = self.browser_name + "://wallet/"          # кошельки (brave only)
         self.EXTENSIONS:    str = self.browser_name + "://extensions/"      # расширения
+        self.FLAGS:         str = self.browser_name + "://flags/"           # экспериментальные технологии
 
         if sys.platform == "win32":
-            if "netbox" in browser_exe:
-                browser_path = os.getenv("SystemDrive") + fr"\Users\{getpass.getuser()}\AppData\Local\NetboxBrowser\Application\netboxbrowser.exe"
-            else:
-                browser_path = browser_path if browser_path else registry_read_key(browser_exe)
+            browser_path = browser_path if browser_path else registry_read_key(browser_exe)
         else:   #  ! sys.platform == "linux"
             browser_path = browser_path if browser_path else os.popen("which " + browser_exe).read().strip()
 
@@ -322,14 +317,15 @@ class Browser:
             flag_box.add(CMDFlags.Headless.headless)
             self.is_headless_mode = True
 
+
         if self.proxy_port:
             flag_box.add(CMDFlags.Other.proxy_server, self.proxy_addres + ":" + self.proxy_port)
             if self.verbose:
-                print(f"[<- V ->] | --- Запуск браузера на порту '{self.debug_port}' с прокси " +
-                      f"на локальном хосте, через порт '{self.proxy_port}' --- |")
+                log(f"Run browser {self.browser_name!r} on port: {self.debug_port} with proxy " +
+                      f"on http://127.0.0.1:{self.proxy_port}")
         else:
             if self.verbose:
-                print(f"[<- V ->] | --- Запуск браузера на порту '{self.debug_port}' --- |")
+                log(f"Run browser {self.browser_name!r} on port: {self.debug_port}")
 
         run_args += flag_box.flags()
 
@@ -350,8 +346,8 @@ class Browser:
         return [TargetConnectionInfo(**i) for i in await self.GetPageList()]
 
     async def GetTargetConnectionInfo(
-            self, key: Optional[str] = "type",
-            connection_type: Optional[Union[str, TargetConnectionType]] = "page") -> TargetConnectionInfo:
+            self, key: str = "type",
+            connection_type: Union[str, TargetConnectionType] = "page") -> TargetConnectionInfo:
         v = connection_type if type(connection_type) is str else connection_type.value
         for page_data in await self.GetPageList():
             data = page_data[key]
@@ -379,13 +375,15 @@ class Browser:
                 }, { ... } ]
         """
         result = await self._Get(f"http://127.0.0.1:{self.debug_port}/json/list")
-        if self.verbose: print("[<- V ->] GetPageList() => " + result)
+        if self.verbose: log("GetPageList() => " + result)
         return json.loads(result)
 
     async def GetPageBy(
-            self, key: Union[str, int], value: Union[str, int],
-            match_mode: Optional[str] = "exact", index: Optional[int] = 0,
-            callback: Optional[Callable[[dict], Awaitable[None]]] = None
+            self, key: Union[str, int],
+            value: Union[str, int],
+            match_mode: str = "exact",
+            index: int = 0,
+            callback: CommonCallback = None
     ) -> Union[Page, None]:
         """
         Организует выбор нужного инстанса из процессов браузера по следующим критериям:
@@ -403,10 +401,13 @@ class Browser:
                                         всех событий страницы в виде словаря. Если передан,
                                         включает уведомления домена "Runtime" для общения
                                         со страницей.
-                                            https://chromedevtools.github.io/devtools-protocol/tot/Console#method-enable
 
         :return:        <Page> - инстанс страницы с подключением по WebSocket или None, если не найдено
         """
+
+        if callback is not None and not iscoroutinefunction(callback):
+            raise TypeError("Argument 'callback' must be a coroutine")
+
         counter = 0; v = value.lower()
         for page_data in await self.GetPageList():
             data = page_data[key]
@@ -430,13 +431,13 @@ class Browser:
 
     async def GetPage(
             self,
-            index: Optional[int] = 0, page_type: Optional[str] = "page",
-            callback: Optional[Callable[[dict], Awaitable[None]]] = None
-    ) -> 'Page':
+            index: int = 0, page_type: str = "page",
+            callback: CommonCallback = None
+    ) -> "Page":
         """
         Получает страницу браузера по индексу. По умолчанию, первую.
         :param index:       - Желаемый индекс страницы начиная с нуля.
-        :param page_type:   - Тип 'page' | 'background_page' | 'service_worker' | ???
+        :param page_type:   - Тип "Page" | 'background_page' | 'service_worker' | ???
         :param callback:    - Корутина, которой будет передаваться контекст абсолютно
                                 всех событий страницы в виде словаря.
         :return:        <Page>
@@ -445,8 +446,8 @@ class Browser:
 
     async def GetPageByID(
             self, page_id: str,
-            callback: Optional[Callable[[dict], Awaitable[None]]] = None
-    ) -> 'Page':
+            callback: CommonCallback = None
+    ) -> "Page":
         """
         Получает страницу браузера по уникальному идентификатору.
         :param page_id:     - Желаемый идентификатор страницы. Метод GetPageList()
@@ -462,9 +463,10 @@ class Browser:
 
     async def GetPageByTitle(
             self, value: str,
-            match_mode: Optional[str] = "startswith", index: Optional[int] = 0,
-            callback: Optional[Callable[[dict], Awaitable[None]]] = None
-    ) -> 'Page':
+            match_mode: str = "startswith",
+            index: int = 0,
+            callback: CommonCallback = None
+    ) -> "Page":
         """
         Получает страницу браузера по заголовку. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -482,9 +484,10 @@ class Browser:
 
     async def GetPageByURL(
             self, value: str,
-            match_mode: Optional[str] = "startswith", index: Optional[int] = 0,
-            callback: Optional[Callable[[dict], Awaitable[None]]] = None
-    ) -> 'Page':
+            match_mode: str = "startswith",
+            index: int = 0,
+            callback: CommonCallback = None
+    ) -> "Page":
         """
         Получает страницу браузера по её URL. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -512,7 +515,7 @@ class FlagBuilder:
     def __init__(self):
         self._flags: set = set()
 
-    def add(self, flag: "CMDFlag", *args: Optional[Union[str, int, float]], separator: str = ",") -> None:
+    def add(self, flag: "CMDFlag", *args: Union[str, int, float], separator: str = ",") -> None:
         """
         Принимает один флаг, его аргументы и разделитель аргументов.
         """
@@ -776,84 +779,3 @@ class CMDFlags:
         # ! Принимает адрес и порт прокси:
         # !     http://192.168.0.1:2233
         proxy_server = "--proxy-server="            # * $
-
-def get_request(url: str) -> str:
-    with urllib.request.urlopen(url) as response:
-        return response.read().decode('utf-8')
-
-
-def registry_read_key(exe="chrome") -> str:
-    """ Возвращает путь до EXE.
-    """
-    reg_path = f"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\{exe}.exe"
-    key, path = re.findall(r"(^[^\\/]+)[\\/](.*)", reg_path)[0]
-    connect_to = eval(f"winreg.{key}")
-    try: h_key = winreg.OpenKey( winreg.ConnectRegistry(None, connect_to), path )
-    except FileNotFoundError: return ""
-    result = winreg.QueryValue(h_key, None)
-    winreg.CloseKey(h_key)
-    return result
-
-
-async def test():
-    async def printer(data: dict):
-        print(data)
-    js = """
-        document.querySelector('body').addEventListener('click', (e) => { console.log(`Click at ${e.clientX}x ${e.clientY}y`) });
-    """
-    state = 0
-    data_url = "<h1>Hello world!</h1>"
-    chrome_instances = Browser.FindInstances()
-    if chrome_instances:
-        port, pid = [(k, v) for k, v in chrome_instances.items()][0]
-        c_rdp = Browser(debug_port=port, browser_pid=pid)
-        state = 1
-    else:
-        c_rdp = Browser(url=data_url, app=True, flags=["--window-position=400,100", "--window-size=1000,1000"])
-
-    print(await c_rdp.GetPageList())
-    print("pid =", c_rdp.browser_pid)
-
-    page = await c_rdp.GetPage(callback=printer)
-    print("\n", page.ws_url, "\n")
-
-    await asyncio.sleep(5)
-
-    if state:
-        await page.Call("Page.navigate", {"url": "https://google.com/"})
-    else:
-        await page.Call("Page.navigate", {"url": "https://www.python.org/"})
-
-    await asyncio.sleep(5)
-
-    result = await page.Eval(js)
-    print("Eval() =>", result)
-
-    # await page.Detach()
-
-    while page.connected:
-        await asyncio.sleep(1)
-
-    print("Page disconnected")
-
-if __name__ == '__main__':
-
-    # asyncio.run(test())
-
-    bld = FlagBuilder()
-
-    # bld.add(CMDFlags.Background.disable_sync)
-    # bld.add(CMDFlags.Background.metrics_recording_only)
-    # bld.add(CMDFlags.Test.log_level, 0)
-
-    bld.set(
-        (CMDFlags.Background.disable_sync, []),
-        (CMDFlags.Background.metrics_recording_only, []),
-        (CMDFlags.Background.metrics_recording_only, []),
-        (CMDFlags.Test.log_level, [0])
-    )
-
-    print(bld.flags())
-
-
-

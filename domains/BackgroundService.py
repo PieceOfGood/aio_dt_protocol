@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union
-from aio_dt_protocol.Data import DomainEvent
+from ..Data import DomainEvent
 
 class BackgroundService(ABC):
     """
@@ -74,7 +74,7 @@ class BackgroundService(ABC):
     async def Call(
             self, domain_and_method: str,
             params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+            wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 class BackgroundServiceEvent(DomainEvent):

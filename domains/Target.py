@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List, Awaitable, Callable
-from aio_dt_protocol.Data import DomainEvent
+from ..Data import DomainEvent
 from dataclasses import dataclass
 
 class Target(ABC):
@@ -114,7 +114,7 @@ class Target(ABC):
         if flatten is not None: args.update({"flatten": flatten})
         return (await self.Call("Target.attachToTarget", args))["sessionId"]
 
-    async def DetachFromTarget(self, sessionId: Optional[str] = "", targetId: Optional[str] = "") -> None:
+    async def DetachFromTarget(self, sessionId: str = "", targetId: str = "") -> None:
         """
         Отключается от сессии переданного 'sessionId'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-detachFromTarget
@@ -149,13 +149,13 @@ class Target(ABC):
 
     async def CreateTarget(
         self,
-        url: Optional[str]                      = "about:blank",
-        width: Optional[int]                    = None,
-        height: Optional[int]                   = None,
-        browserContextId: Optional[str]         = None,
-        enableBeginFrameControl: Optional[bool] = False,
-        newWindow: Optional[bool]               = False,
-        background: Optional[bool]              = False
+        url: str                        = "about:blank",
+        width: Optional[int]            = None,
+        height: Optional[int]           = None,
+        browserContextId: Optional[str] = None,
+        enableBeginFrameControl: bool   = False,
+        newWindow: bool                 = False,
+        background: bool                = False
     ) -> str:
         """
         Создаёт новую страницу и возвращает её идентификатор. Чтобы затем управлять новой
@@ -255,12 +255,12 @@ class Target(ABC):
     async def Call(
         self, domain_and_method: str,
         params: Optional[dict]            = None,
-        wait_for_response: Optional[bool] = True
+        wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
     @abstractmethod
     async def AddListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable, *args: Optional[any]) -> None:
+            self, event: Union[str, DomainEvent], listener: Callable, *args: any) -> None:
         raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
 
     @abstractmethod

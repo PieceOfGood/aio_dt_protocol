@@ -2,7 +2,7 @@ import time
 import asyncio
 import random
 from typing import Tuple, List, Optional, Literal
-from aio_dt_protocol.Data import WINDOWS_KEY_SET, WindowBounds, TouchPoint, KeyModifiers, KeyEvents
+from .Data import WINDOWS_KEY_SET, WindowBounds, TouchPoint, KeyModifiers, KeyEvents
 
 
 class Actions:
@@ -16,19 +16,19 @@ class Actions:
 
     async def DispatchKeyEvent(
         self, type_: str,
-        modifiers:             Optional[int] = 0,
+        modifiers:             int = 0,
         timestamp:             Optional[int] = None,
-        text:                  Optional[str] = "",
-        unmodifiedText:        Optional[str] = "",
-        keyIdentifier:         Optional[str] = "",
-        code:                  Optional[str] = "",
-        key:                   Optional[str] = "",
-        windowsVirtualKeyCode: Optional[int] = 0,
-        nativeVirtualKeyCode:  Optional[int] = 0,
-        autoRepeat:           Optional[bool] = False,
-        isKeypad:             Optional[bool] = True,
-        isSystemKey:          Optional[bool] = False,
-        location:              Optional[int] = 0,
+        text:                  str = "",
+        unmodifiedText:        str = "",
+        keyIdentifier:         str = "",
+        code:                  str = "",
+        key:                   str = "",
+        windowsVirtualKeyCode: int = 0,
+        nativeVirtualKeyCode:  int = 0,
+        autoRepeat:           bool = False,
+        isKeypad:             bool = True,
+        isSystemKey:          bool = False,
+        location:              int = 0,
         commands:             Optional[list] = None
     ) -> None:
         """
@@ -81,19 +81,19 @@ class Actions:
 
     async def DispatchMouseEvent(
         self, type_: str, x: float, y: float,
-        modifiers:            Optional[int] = 0,
+        modifiers:            int = 0,
         timestamp:            Optional[int] = None,
-        button:               Optional[str] = "none",
-        buttons:              Optional[int] = 0,
-        clickCount:           Optional[int] = 1,
-        force:              Optional[float] = 0,
-        tangentialPressure: Optional[float] = 0,
-        tiltX:                Optional[int] = 0,
-        tiltY:                Optional[int] = 0,
-        twist:                Optional[int] = 0,
-        deltaX:             Optional[float] = 0,
-        deltaY:             Optional[float] = 0,
-        pointerType:          Optional[str] = "mouse"
+        button:               str = "none",
+        buttons:              int = 0,
+        clickCount:           int = 1,
+        force:              float = 0,
+        tangentialPressure: float = 0,
+        tiltX:                int = 0,
+        tiltY:                int = 0,
+        twist:                int = 0,
+        deltaX:             float = 0,
+        deltaY:             float = 0,
+        pointerType:          str = "mouse"
     ) -> None:
         """
         Отправляет событие мышки на страницу.
@@ -151,7 +151,7 @@ class Actions:
     async def DispatchTouchEvent(
         self, type_: str,
         touchPoints: Optional[List[TouchPoint]] = None,
-        modifiers:                Optional[int] = 0,
+        modifiers:                int = 0,
         timestamp:                Optional[int] = None
     ) -> None:
         """
@@ -330,14 +330,14 @@ class Actions:
     async def SwipeTo(
         self,
         direction: Literal["up", "down", "left", "right"],
-        x:            Optional[float] = 0,
-        y:            Optional[float] = 0,
+        x:            float = 0,
+        y:            float = 0,
         distance:     Optional[float] = None,
         speed:        Optional[float] = None,
         overscroll:   Optional[float] = None,
         repeat_count:   Optional[int] = None,
         repeat_delay: Optional[float] = None,
-        gestureSourceType: Optional[Literal["touch", "mouse"]] = "mouse"
+        gestureSourceType: Literal["touch", "mouse"] = "mouse"
     ) -> None:
         """
         Скроллит вьюпорт жестом "touch" на всю его длину/высоту.
@@ -411,7 +411,7 @@ class Actions:
         """
         await self.DispatchMouseEvent("mouseWheel", x, y, button="middle", deltaX=deltaX, deltaY=deltaY)
 
-    async def WheelTo(self, direction: Optional[str] = "down") -> None:
+    async def WheelTo(self, direction: str = "down") -> None:
         sign = -1 if direction in ["up", "left"] else 1
         rect = await self.page_instance.GetViewportRect()
         x = 10 if direction == "right" else rect.width - 10 if direction == "left" else rect.height / 2
@@ -457,7 +457,7 @@ class Actions:
             await self.SendChar(letter)
             if interval is not None: await asyncio.sleep(random.uniform(interval[0], interval[1]))
 
-    async def SendKeyEvent(self, event: dict, *modifiers: Optional[KeyModifiers]) -> None:
+    async def SendKeyEvent(self, event: dict, *modifiers: KeyModifiers) -> None:
         args = {}
         if modifiers:
             s = 0
@@ -473,7 +473,7 @@ class Actions:
         await self.SendKeyEvent(KeyEvents.keyA, KeyModifiers.ctrl)
 
     async def BackspaceText(
-            self, count: Optional[int] = 1, modifier: Optional[KeyModifiers] = KeyModifiers.none) -> None:
+            self, count: int = 1, modifier: KeyModifiers = KeyModifiers.none) -> None:
         """
         Удаляет текст в текстовом поле с позиции курсора по направлению в лево, или полностью очистить,
             эмулируя нажатие клавиши 'Backspace'.

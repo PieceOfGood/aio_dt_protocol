@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
-from aio_dt_protocol.Data import Cookie, ConnectionType
 from dataclasses import dataclass, field
-from aio_dt_protocol.Data import DomainEvent
+from ..Data import Cookie, ConnectionType, DomainEvent
 
 
 class Network(ABC):
@@ -62,9 +61,9 @@ class Network(ABC):
 
     async def EmulateNetworkConditions(
         self, latency: int,
-        downloadThroughput: Optional[int] = -1,
-        uploadThroughput:   Optional[int] = -1,
-        offline:           Optional[bool] = False,
+        downloadThroughput: int = -1,
+        uploadThroughput:   int = -1,
+        offline:           bool = False,
         connectionType: Optional[ConnectionType] = None
     ) -> None:
         """
@@ -118,7 +117,7 @@ class Network(ABC):
             await self.NetworkEnable()
         await self.Call("Network.setBlockedURLs", {"urls": urls})
 
-    async def SetCacheDisabled(self, cacheDisabled: Optional[bool] = True) -> None:
+    async def SetCacheDisabled(self, cacheDisabled: bool = True) -> None:
         """
         Включает игнорирование кеша для каждого запроса. Если 'true', кеш не будет использоваться.
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-setCacheDisabled
@@ -156,9 +155,9 @@ class Network(ABC):
 
     async def DeleteCookies(
             self, name: str,
-            url:    Optional[str] = "",
-            domain: Optional[str] = "",
-            path:   Optional[str] = ""
+            url:    str = "",
+            domain: str = "",
+            path:   str = ""
     ) -> None:
         """
         Удаляет файлы cookie браузера с соответствующими именами и URL-адресами или парой домен / путь.
@@ -178,14 +177,14 @@ class Network(ABC):
 
     async def SetCookie(
             self, name: str, value: str,
-            url:       Optional[str] = "",
-            domain:    Optional[str] = "",
-            path:      Optional[str] = "",
+            url:       str = "",
+            domain:    str = "",
+            path:      str = "",
             secure:   Optional[bool] = None,
             httpOnly: Optional[bool] = None,
-            sameSite:  Optional[str] = "",
-            expires:   Optional[int] = -1,
-            priority:  Optional[str] = ""
+            sameSite:  str = "",
+            expires:   int = -1,
+            priority:  str = ""
     ) -> bool:
         """
         Устанавливает cookie с указанными данными cookie. Если они существуют, то будут перезаписаны.
@@ -302,7 +301,7 @@ class Network(ABC):
     async def Call(
         self, domain_and_method: str,
         params:            Optional[dict] = None,
-        wait_for_response: Optional[bool] = True
+        wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 

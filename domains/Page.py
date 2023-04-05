@@ -2,7 +2,7 @@ import asyncio
 from urllib.parse import quote
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Callable, List, Literal
-from aio_dt_protocol.Data import DomainEvent
+from ..Data import DomainEvent
 from dataclasses import dataclass, field
 
 
@@ -93,7 +93,7 @@ class Page(ABC):
 
     # async def GetFrameFor
 
-    async def HandleJavaScriptDialog(self, accept: bool, promptText: Optional[str] = "") -> None:
+    async def HandleJavaScriptDialog(self, accept: bool, promptText: str = "") -> None:
         """
         Подтверждает или закрывает диалоговое окно, инициированное JavaScript (alert, confirm,
             prompt или для onbeforeunload).
@@ -109,9 +109,9 @@ class Page(ABC):
 
     async def Navigate(
             self,
-            url:  Optional[Union[str, bytes]] = "about:blank",
-            wait_for_load:     Optional[bool] = True,
-            wait_for_complete: Optional[bool] = False
+            url:  Union[str, bytes] = "about:blank",
+            wait_for_load:     bool = True,
+            wait_for_complete: bool = False
     ) -> None:
         """
         Переходит на адрес указанного 'url'.
@@ -148,9 +148,9 @@ class Page(ABC):
 
     async def WaitForLoad(
         self,
-        desired_state:         Optional[str] = "complete",
-        interval:            Optional[float] = .1,
-        ignore_loading_state: Optional[bool] = False
+        desired_state:         str = "complete",
+        interval:            float = .1,
+        ignore_loading_state: bool = False
     ) -> None:
         """
         Дожидается указанного состояния загрузки документа.
@@ -172,9 +172,9 @@ class Page(ABC):
 
     async def WaitNavigate(
             self,
-            url: Optional[Union[str, bytes]] = "about:blank",
-            wait_for_load: Optional[bool]    = True,
-            timeout: Optional[float]         = 10.0
+            url: Union[str, bytes] = "about:blank",
+            wait_for_load: bool    = True,
+            timeout: float         = 10.0
     ) -> bool:
         """
         Дожидается совершения перехода на адрес за указанный интервал времени возвращая True, или False,
@@ -271,10 +271,10 @@ class Page(ABC):
 
     async def CaptureScreenshot(
         self,
-        format_: Optional[str] = "",
-        quality: Optional[int] = -1,
+        format_: str = "",
+        quality: int = -1,
         clip: Optional[dict] = None,
-        fromSurface: Optional[bool] = True
+        fromSurface: bool = True
     ) -> str:
         """
         Сделать скриншот. Возвращает кодированное base64 представление скриншота.
@@ -380,9 +380,9 @@ class Page(ABC):
 
     async def Reload(
         self,
-        ignoreCache: Optional[bool] = False,
-        scriptToEvaluateOnLoad: Optional[str] = "",
-        wait_for_load: Optional[bool] = True
+        ignoreCache: bool = False,
+        scriptToEvaluateOnLoad: str = "",
+        wait_for_load: bool = True
     ) -> None:
         """
         Перезагружает страницу инстанса, при необходимости игнорируя кеш.
@@ -456,7 +456,7 @@ class Page(ABC):
 
     @abstractmethod
     async def AddListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable, *args: Optional[any]) -> None:
+            self, event: Union[str, DomainEvent], listener: Callable, *args: any) -> None:
         raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
 
     @abstractmethod
@@ -466,12 +466,12 @@ class Page(ABC):
     @abstractmethod
     async def Eval(
             self, expression: str,
-            objectGroup:            Optional[str] = "console",
-            includeCommandLineAPI: Optional[bool] = True,
-            silent:                Optional[bool] = False,
-            returnByValue:         Optional[bool] = False,
-            userGesture:           Optional[bool] = True,
-            awaitPromise:          Optional[bool] = False
+            objectGroup:            str = "console",
+            includeCommandLineAPI: bool = True,
+            silent:                bool = False,
+            returnByValue:         bool = False,
+            userGesture:           bool = True,
+            awaitPromise:          bool = False
     ) -> dict:
         raise NotImplementedError("async method Eval() — is not implemented")
 
@@ -479,7 +479,7 @@ class Page(ABC):
     async def Call(
             self, domain_and_method: str,
             params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+            wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 

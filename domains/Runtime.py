@@ -5,7 +5,8 @@ except ModuleNotFoundError:
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List, Literal, Callable
 from dataclasses import dataclass, field
-from aio_dt_protocol.Data import DomainEvent
+from ..Data import DomainEvent
+from ..exceptions import PromiseEvaluateError, highlight_promise_error
 
 
 class Runtime(ABC):
@@ -30,9 +31,56 @@ class Runtime(ABC):
     def page_id(self) -> str:
         return ""
 
+    async def GetProperties(
+            self, objectId: str,
+            skip_complex_types: bool = True,
+            ownProperties: Optional[bool] = None,
+            accessorPropertiesOnly: Optional[bool] = None,
+            generatePreview: Optional[bool] = None,
+            nonIndexedPropertiesOnly: Optional[bool] = None,
+    ) -> List["RuntimeType.PropertyDescriptor"]:
+        """ Возвращает свойства заданного объекта. Группа объектов результата наследуется
+        от целевого объекта.
+        https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#method-getProperties
+        :param objectId:                    Идентификатор объекта, для которого возвращаются свойства.
+        :param ownProperties:               Если true, возвращает свойства, принадлежащие только самому
+                                                элементу, а не его цепочке прототипов.
+        :param accessorPropertiesOnly:      Если true, возвращает только свойства доступа (с геттером/сеттером);
+                                                внутренние свойства также не возвращаются.
+        :param generatePreview:             Должен ли быть создан предварительный просмотр для результатов.
+        :param nonIndexedPropertiesOnly:    Если true, возвращает только неиндексированные свойства.
+        :return:    {
+            "result": array[ PropertyDescriptor ],
+            "internalProperties":  list[ InternalPropertyDescriptor ],
+            "privateProperties":  list[ PrivatePropertyDescriptor ],
+            "exceptionDetails": dict{ ExceptionDetails }
+        }
+        """
+        args = {"objectId": objectId}
+        if ownProperties: args.update({"ownProperties": ownProperties})
+        if accessorPropertiesOnly: args.update({"accessorPropertiesOnly": accessorPropertiesOnly})
+        if generatePreview: args.update({"generatePreview": generatePreview})
+        if nonIndexedPropertiesOnly: args.update({"nonIndexedPropertiesOnly": nonIndexedPropertiesOnly})
+        response = await self.Call("Runtime.getProperties", args)
+        if "exceptionDetails" in response:
+            raise PromiseEvaluateError(
+                highlight_promise_error(response["result"]["description"]) +
+                "\n" + json.dumps(response["exceptionDetails"])
+            )
+        if not skip_complex_types:
+            return [RuntimeType.PropertyDescriptor(**p) for p in response["result"]]
+
+        result = []
+        for p in response["result"]:
+            if (subtype := p["value"].get("type")) and subtype == "function":
+                continue
+            result.append(RuntimeType.PropertyDescriptor(**p))
+        return result
+
+
     async def AwaitPromise(
             self, promiseObjectId: str, returnByValue: bool = False, generatePreview: bool = False
-    ) -> any:
+    ) -> dict:
         """
         Добавляет обработчик к промису с переданным идентификатором.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-awaitPromise
@@ -49,7 +97,10 @@ class Runtime(ABC):
         args = {"promiseObjectId": promiseObjectId, "returnByValue": returnByValue, "generatePreview": generatePreview}
         response = await self.Call("Runtime.awaitPromise", args)
         if "exceptionDetails" in response:
-            raise Exception(response["result"]["description"] + "\n" + json.dumps(response["exceptionDetails"]))
+            raise PromiseEvaluateError(
+                highlight_promise_error(response["result"]["description"]) +
+                "\n" + json.dumps(response["exceptionDetails"])
+            )
         return response["result"]
 
     async def CallFunctionOn(
@@ -118,7 +169,7 @@ class Runtime(ABC):
             raise Exception(response["result"]["description"] + "\n" + json.dumps(response["exceptionDetails"]))
         return response["result"]
 
-    async def RuntimeEnable(self, watch_for_execution_contexts: Optional[bool] = False) -> None:
+    async def RuntimeEnable(self, watch_for_execution_contexts: bool = False) -> None:
         """
         Включает создание отчетов о создании контекстов выполнения с помощью события executeContextCreated.
             При включении, событие будет отправлено немедленно для каждого существующего контекста выполнения.
@@ -191,8 +242,8 @@ class Runtime(ABC):
 
     async def CompileScript(
             self, expression: str,
-            sourceURL: Optional[str] = "",
-            persistScript: Optional[bool] = True,
+            sourceURL: str = "",
+            persistScript: bool = True,
             executionContextId: Optional[int] = None
     ) -> str:
         """
@@ -231,12 +282,12 @@ class Runtime(ABC):
     async def RunScript(
             self, scriptId: str,
             executionContextId: Optional[int] = None,
-            objectGroup: Optional[str] = "console",
-            silent: Optional[bool] = False,
-            includeCommandLineAPI: Optional[bool] = True,
-            returnByValue: Optional[bool] = False,
-            generatePreview: Optional[bool] = False,
-            awaitPromise: Optional[bool] = True
+            objectGroup: str = "console",
+            silent: bool = False,
+            includeCommandLineAPI: bool = True,
+            returnByValue: bool = False,
+            generatePreview: bool = False,
+            awaitPromise: bool = True
     ) -> dict:
         """
         Запускает скрипт с заданным идентификатором в заданном контексте.
@@ -299,7 +350,7 @@ class Runtime(ABC):
     async def Call(
             self, domain_and_method: str,
             params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+            wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
     @abstractmethod
@@ -462,6 +513,20 @@ class RuntimeType:
         @auxData.setter
         def auxData(self, data: dict) -> None:
             self._auxData = RuntimeType.AuxData(**data)
+
+    @dataclass
+    class PropertyDescriptor:
+        name: str
+        configurable: bool
+        enumerable: bool
+        value: Optional['RuntimeType.RemoteObject'] = None
+        writable: Optional[bool] = None
+        get: Optional['RuntimeType.RemoteObject'] = None
+        set: Optional['RuntimeType.RemoteObject'] = None
+        wasThrown: Optional[bool] = None
+        isOwn: Optional[bool] = None
+        symbol: Optional['RuntimeType.RemoteObject'] = None
+
 
 
 class Script:

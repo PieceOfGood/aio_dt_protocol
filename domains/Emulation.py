@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union
-from aio_dt_protocol.Data import DomainEvent
+from ..Data import DomainEvent
 
 class Emulation(ABC):
     """
@@ -89,8 +89,8 @@ class Emulation(ABC):
 
     async def SetDeviceMetricsOverride(
             self, width: int, height: int,
-            deviceScaleFactor: Optional[float] = 0,
-                        mobile: Optional[bool] = False,
+            deviceScaleFactor: float = 0,
+                        mobile: bool = False,
                         scale: Optional[float] = None,
                     screenWidth: Optional[int] = None,
                    screenHeight: Optional[int] = None,
@@ -206,7 +206,7 @@ class Emulation(ABC):
             args.update({"configuration": configuration})
         await self.Call("Emulation.setEmitTouchEventsForMouse", args)
 
-    async def SetEmulatedMedia(self, media: Optional[str] = "", features: Optional[list] = None) -> None:
+    async def SetEmulatedMedia(self, media: str = "", features: Optional[list] = None) -> None:
         """
         Эмулирует переданный тип медиа или медиа-функцию для медиа-запросов CSS.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setEmulatedMedia
@@ -224,7 +224,7 @@ class Emulation(ABC):
             args.update({"features": features})
         await self.Call("Emulation.setEmulatedMedia", args)
 
-    async def SetEmulatedVisionDeficiency(self, type_: Optional[str] = "none") -> None:
+    async def SetEmulatedVisionDeficiency(self, type_: str = "none") -> None:
         """
         (EXPERIMENTAL)
         Эмулирует переданный дефицит зрения.
@@ -311,7 +311,7 @@ class Emulation(ABC):
             args.update({"locale": locale})
         await self.Call("Emulation.setLocaleOverride", args)
 
-    async def SetTimezoneOverride(self, timezoneId: Optional[str] = "") -> None:
+    async def SetTimezoneOverride(self, timezoneId: str = "") -> None:
         """
         (EXPERIMENTAL)
         Переопределяет часовой пояс хост-системы на указанный.
@@ -379,7 +379,7 @@ class Emulation(ABC):
     async def Call(
             self, domain_and_method: str,
             params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+            wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 class EmulationEvent(DomainEvent):

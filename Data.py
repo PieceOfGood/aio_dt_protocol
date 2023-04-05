@@ -1,9 +1,10 @@
-from typing import Optional, List, TypeVar, Generic
+from typing import Optional, List, TypeVar, Generic, Tuple, Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
 from asyncio import Queue
 
 
+CommonCallback = Optional[Callable[[dict], Coroutine[None, None, None]]]
 T = TypeVar("T")
 
 
@@ -32,6 +33,13 @@ class Sender(__Base[T]):
 class Receiver(__Base[T]):
     async def recv(self) -> T:
         return await self.que.get()
+
+
+class Channel(Generic[T]):
+    @classmethod
+    def one_way(cls) -> Tuple[Sender[T], Receiver[T]]:
+        que: Queue = Queue()
+        return Sender[T](que), Receiver[T](que)
 
 
 class DomainEvent(Enum): pass

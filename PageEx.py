@@ -3,32 +3,32 @@ try:
 except ModuleNotFoundError:
     import json
 
-from aio_dt_protocol.Page import Page
-from aio_dt_protocol.Actions import Actions
-from aio_dt_protocol.DOMElement import Node
-from aio_dt_protocol.Data import ViewportRect, WindowRect, GeoInfo
+from .Page import Page
+from .Actions import Actions
+from .DOMElement import Node
+from .Data import ViewportRect, WindowRect, GeoInfo
 
 import asyncio
 import base64, re
 from typing import Optional, Union
 
-from aio_dt_protocol.exceptions import EvaluateError, JavaScriptError, NullProperty
+from .exceptions import EvaluateError, JavaScriptError, NullProperty
 
-from aio_dt_protocol.domains.BackgroundService import BackgroundService as BackgroundServiceDomain
-from aio_dt_protocol.domains.Browser import Browser as BrowserDomain
-from aio_dt_protocol.domains.DOM import DOM as DOMDomain
-from aio_dt_protocol.domains.Emulation import Emulation as EmulationDomain
-from aio_dt_protocol.domains.Log import Log as LogDomain
-from aio_dt_protocol.domains.Network import Network as NetworkDomain
-from aio_dt_protocol.domains.Page import Page as PageDomain
-from aio_dt_protocol.domains.Runtime import Runtime as RuntimeDomain
-from aio_dt_protocol.domains.Target import Target as TargetDomain
-from aio_dt_protocol.domains.Console import Console as ConsoleDomain
-from aio_dt_protocol.domains.Overlay import Overlay as OverlayDomain
-from aio_dt_protocol.domains.CSS import CSS as CSSDomain
-from aio_dt_protocol.domains.DeviceOrientation import DeviceOrientation as DeviceOrientationDomain
-from aio_dt_protocol.domains.Fetch import Fetch as FetchDomain
-from aio_dt_protocol.domains.SystemInfo import SystemInfo as SystemInfoDomain
+from .domains.BackgroundService import BackgroundService as BackgroundServiceDomain
+from .domains.Browser import Browser as BrowserDomain
+from .domains.DOM import DOM as DOMDomain
+from .domains.Emulation import Emulation as EmulationDomain
+from .domains.Log import Log as LogDomain
+from .domains.Network import Network as NetworkDomain
+from .domains.Page import Page as PageDomain
+from .domains.Runtime import Runtime as RuntimeDomain
+from .domains.Target import Target as TargetDomain
+from .domains.Console import Console as ConsoleDomain
+from .domains.Overlay import Overlay as OverlayDomain
+from .domains.CSS import CSS as CSSDomain
+from .domains.DeviceOrientation import DeviceOrientation as DeviceOrientationDomain
+from .domains.Fetch import Fetch as FetchDomain
+from .domains.SystemInfo import SystemInfo as SystemInfoDomain
 
 class PageEx(
     Page, BrowserDomain, DOMDomain, EmulationDomain, LogDomain, NetworkDomain,
@@ -37,12 +37,12 @@ class PageEx(
 ):
     """
     Расширение для 'Page'. Включает сборку наиболее востребованных методов для работы
-        с API 'ChromeDevTools Protocol'.
+        с API 'ChromeDevTools Protocol', а так же дополняет некоторыми полезными методами.
     """
     __slots__ = (
         "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
         "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_method",
-        "runtime_enabled", "on_close_event", "channels", "storage", "action", "_root", "style_sheets", "loading_state",
+        "runtime_enabled", "on_close_event", "storage", "action", "_root", "style_sheets", "loading_state",
         "observing_started", "recording_started", "dom_domain_enabled", "targets_discovered", "log_domain_enabled",
         "network_domain_enabled", "console_domain_enabled", "page_domain_enabled", "fetch_domain_enabled",
         "css_domain_enabled", "overlay_domain_enabled"
@@ -85,6 +85,29 @@ class PageEx(
     # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
     #
 
+    async def PyExecAddOnload(self) -> None:
+        """ Включает автоматически добавляющийся JavaScript, вызывающий слушателей
+        клиента, добавленных на страницу с помощью await <Page>.AddListener(...) и
+        await <Page>.AddListeners(...).
+
+        Например, `test_func()` объявленная и добавленная следующим образом:
+
+        async def test_func(number: int, text: str, bind_arg: dict) -> None:
+            print("[- test_func -] Called with args:\n\tnumber: "
+                  f"{number}\n\ttext: {text}\n\tbind_arg: {bind_arg}")
+
+        await page.AddListener(
+            test_func,                          # ! слушатель
+            {"name": "test", "value": True}     # ! bind_arg
+        )
+
+        Может быть вызвана со страницы браузера, так:
+        py_exec("test_func", 1, "testtt");
+        """
+        py_exec_js = """function py_exec(funcName, ...args) {
+            console.info(JSON.stringify({ func_name: funcName, args: args })); }"""
+        await self.AddScriptOnLoad(py_exec_js)
+
     async def GetViewportRect(self) -> ViewportRect:
         """
         Возвращает список с длиной и шириной вьюпорта браузера.
@@ -109,10 +132,10 @@ class PageEx(
 
     async def MakeScreenshot(
             self,
-                 format_: Optional[str] = "",
-                 quality: Optional[int] = -1,
+                 format_: str = "",
+                 quality: int = -1,
                    clip: Optional[dict] = None,
-            fromSurface: Optional[bool] = True
+            fromSurface: bool = True
     ) -> bytes:
         """
         Сделать скриншот. Возвращает набор байт, представляющий скриншот.
@@ -166,16 +189,11 @@ class PageEx(
         async_fn_js = """\
         async function get_geo_info() {
             const resp = await fetch('https://time.gologin.com/');
-            return await resp.json();
-        }
-        get_geo_info().then(result)
+            return await resp.text();
+        } get_geo_info();
         """
 
-        promise = """\
-        fetch('https://time.gologin.com/')
-            .then(res => res.json())
-            .then(result)
-        """
+        promise = """fetch('https://time.gologin.com/').then(res => res.text())"""
 
         result: dict = await self.EvalPromise(promise)
         result.update(

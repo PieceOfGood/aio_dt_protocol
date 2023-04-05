@@ -1,5 +1,7 @@
 
-__version__ = '1.0.0'
+__version__ = "0.9.0"
+__author__ = "PieceOfGood"
+__email__ = "78sanchezz@gmail.com"
 
 __all__ = [
     "find_instances",
@@ -8,8 +10,6 @@ __all__ = [
     "PageEx",
     "catch_headers_for_url"
 ]
-
-__author__ = "PieceOfGood"
 
 from .Browser import CMDFlags
 from .Browser import Browser

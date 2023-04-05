@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Dict, List
-from aio_dt_protocol.Data import WindowBounds, WindowInfo
-from aio_dt_protocol.Data import DomainEvent
+from ..Data import WindowBounds, WindowInfo
+from ..Data import DomainEvent
 
 class Browser(ABC):
     """
@@ -212,7 +212,7 @@ class Browser(ABC):
     async def Call(
             self, domain_and_method: str,
             params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+            wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 class BrowserEvent(DomainEvent):

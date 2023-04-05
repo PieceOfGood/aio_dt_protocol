@@ -1,9 +1,9 @@
 import re
 import asyncio
 from typing import List, Dict, Optional, Union, Literal
-from aio_dt_protocol.Data import NodeCenter, NodeRect, StyleProp, BoxModel
-from aio_dt_protocol.domains.Runtime import RuntimeType, Script
-from aio_dt_protocol.exceptions import (
+from .Data import NodeCenter, NodeRect, StyleProp, BoxModel
+from .domains.Runtime import RuntimeType, Script
+from .exceptions import (
     CouldNotFindNodeWithGivenID, RootIDNoLongerExists, NodeNotResolved, NodeNotDescribed,
     StateError
 )
@@ -108,11 +108,11 @@ class Node:
             list_nodes.append(Node(self.page_instance, **child))
         return list_nodes
 
-    def _AddChild(self, child: Union[dict, 'Node', None] = None) -> Union["Node", None]:
+    def _AddChild(self, child: Union[dict, "Node", None] = None) -> Optional["Node"]:
         if not child: return None
         return Node(self.page_instance, **child) if type(child) is dict else child
 
-    async def QuerySelector(self, selector: str, ignore_root_id_exists: bool = False) -> Union["Node", None]:
+    async def QuerySelector(self, selector: str, ignore_root_id_exists: bool = False) -> Optional["Node"]:
         """
         Выполняет DOM-запрос, возвращая объект найденного узла, или None.
             Эквивалент  === element.querySelector()
@@ -161,7 +161,7 @@ class Node:
             raise
         return nodes
 
-    async def GetChildNodes(self, depth: Optional[int] = -1, pierce: Optional[bool] = False) -> None:
+    async def GetChildNodes(self, depth: int = -1, pierce: bool = False) -> None:
         """
         Запрашивает событие 'DOM.setChildNodes' для собственного узла и устанавливает слушателя.
             Как только событие будет сгенерировано для текущего идентификатора узла, слушатель
@@ -266,7 +266,7 @@ class Node:
             return m.group(1)
         return html
 
-    async def GetInnerText(self, with_new_line_symbols: Optional[bool] = True) -> str:
+    async def GetInnerText(self, with_new_line_symbols: bool = True) -> str:
         """
         Возвращает текстовое содержимое элемента.
         :param with_new_line_symbols:     (optional) — Оставлять символы новой строки?
@@ -358,7 +358,7 @@ class Node:
         """
         await self.page_instance.Call("DOM.setAttributeValue", {"nodeId": self.nodeId, "name": attributeName, "value": value})
 
-    async def RequestChildNodes(self, depth: Optional[int] = 1, pierce: Optional[bool] = False) -> None:
+    async def RequestChildNodes(self, depth: int = 1, pierce: bool = False) -> None:
         """
         Запрашивает, чтобы дочерние элементы узла с данным идентификатором возвращались
             вызывающей стороне в форме событий DOM.setChildNodes, при которых извлекаются
@@ -375,7 +375,7 @@ class Node:
         args = {"nodeId": self.nodeId, "depth": depth, "pierce": pierce}
         await self.page_instance.Call("DOM.requestChildNodes", args)
 
-    async def SetAttributesAsText(self, text: str, name: Optional[str] = "") -> None:
+    async def SetAttributesAsText(self, text: str, name: str = "") -> None:
         """
         Устанавливает атрибуты для элемента с заданным идентификатором. Этот метод полезен, когда пользователь
             редактирует некоторые существующие значения и типы атрибутов в нескольких парах имя/значение атрибута.
@@ -438,7 +438,7 @@ class Node:
 
     async def GetNodesForSubtreeByStyle(
             self, computedStyles: List[dict],
-            pierce: Optional[bool] = False
+            pierce: bool = False
     ) -> List["Node"]:
         """
         Находит узлы с заданным вычисленным стилем в поддереве текущего узла.
@@ -532,7 +532,7 @@ class Node:
         # print("DOM.resolveNode", result)
         self.remote_object = RuntimeType.RemoteObject(**result.get("object"))
 
-    async def Request(self) -> 'Node':
+    async def Request(self) -> "Node":
         """ Запрашивает ноду по ссылке на её оригинальный JavaScript объект. """
         if self.remote_object is None:
             raise NodeNotResolved
@@ -548,7 +548,7 @@ class Node:
             contentDocument=self.contentDocument
         )
 
-    async def RequestMirror(self) -> 'Node':
+    async def RequestMirror(self) -> "Node":
         """
         Создаёт JavaScript-объект для этой ноды и запрашивает ноду по ссылке на этот объект.
             Таким образом можно получать ноды для изолированных DOM-элементов, вроде iframe.
@@ -561,7 +561,7 @@ class Node:
         await self.Resolve()
         return await self.Request()
 
-    async def BuildScript(self, expression: str) -> 'Script':
+    async def BuildScript(self, expression: str) -> "Script":
         if not self.page_instance.runtime_enabled:
             raise StateError("Domain 'Runtime' — must be enabled. Like: "
                              "await instance.RuntimeEnable(True)")

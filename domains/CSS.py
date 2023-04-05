@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Callable, List
-from aio_dt_protocol.Data import DomainEvent
+from ..Data import DomainEvent
 
 class CSS(ABC):
     """
@@ -65,10 +65,10 @@ class CSS(ABC):
 
     async def AddRule(
         self, styleSheetId: str, ruleText: str,
-        startLine:   Optional[int] = 0,
-        startColumn: Optional[int] = 0,
-        endLine:     Optional[int] = 0,
-        endColumn:   Optional[int] = 0
+        startLine:   int = 0,
+        startColumn: int = 0,
+        endLine:     int = 0,
+        endColumn:   int = 0
     ) -> dict:
         """
         Вставляет новое правило с заданным ruleText в таблицу стилей с заданным styleSheetId в позицию,
@@ -126,7 +126,7 @@ class CSS(ABC):
 
     @abstractmethod
     async def AddListenerForEvent(
-            self, event: str, listener: Callable, *args: Optional[any]) -> None:
+            self, event: str, listener: Callable, *args: any) -> None:
         raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
 
     @abstractmethod
@@ -137,7 +137,7 @@ class CSS(ABC):
     async def Call(
             self, domain_and_method: str,
             params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+            wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 class CSSEvent(DomainEvent):

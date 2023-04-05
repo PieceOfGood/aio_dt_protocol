@@ -1,10 +1,10 @@
 import re
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
-from aio_dt_protocol.DOMElement import Node
-from aio_dt_protocol.domains.Runtime import RuntimeType
-from aio_dt_protocol.exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
-from aio_dt_protocol.Data import DomainEvent
+from ..DOMElement import Node
+from ..domains.Runtime import RuntimeType
+from ..exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
+from ..Data import DomainEvent
 
 class DOM(ABC):
     """
@@ -127,8 +127,8 @@ class DOM(ABC):
 
     async def QuerySelector(
             self, selector: str,
-            ignore_root_id_exists: Optional[bool] = False,
-            in_frames: Optional[bool] = False
+            ignore_root_id_exists: bool = False,
+            in_frames: bool = False
     ) -> Union[Node, None]:
         """
         Выполняет DOM-запрос, возвращая объект найденного узла, или None.
@@ -158,8 +158,8 @@ class DOM(ABC):
 
     async def QuerySelectorAll(
             self, selector: str,
-            ignore_root_id_exists: Optional[bool] = False,
-            in_frames: Optional[bool] = False
+            ignore_root_id_exists: bool = False,
+            in_frames: bool = False
     ) -> List[Node]:
         """
         Выполняет DOM-запрос, возвращая список объектов найденных узлов, или пустой список.
@@ -208,8 +208,8 @@ class DOM(ABC):
 
     async def GetSearchResults(
             self, searchId: str,
-            fromIndex: Optional[int] = 0,
-            toIndex:   Optional[int] = 0
+            fromIndex: int = 0,
+            toIndex:   int = 0
     ) -> List[Node]:
         """
         (EXPERIMENTAL)
@@ -317,7 +317,7 @@ class DOM(ABC):
     async def Call(
             self, domain_and_method: str,
             params: Optional[dict] = None,
-            wait_for_response: Optional[bool] = True
+            wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 

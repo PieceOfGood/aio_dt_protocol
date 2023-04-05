@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List, Callable, Awaitable
-from aio_dt_protocol.Data import DomainEvent
-from aio_dt_protocol.domains.Network import NetworkType
+from ..Data import DomainEvent
+from ..domains.Network import NetworkType
 from dataclasses import dataclass, field
 
 
@@ -29,7 +29,7 @@ class Fetch(ABC):
     async def FetchEnable(
         self,
         patterns: Optional[List["FetchType.RequestPattern"]] = None,
-        handleAuthRequests: Optional[bool] = False,
+        handleAuthRequests: bool = False,
         on_pause: Optional[Callable[['FetchType.EventRequestPaused'], Awaitable[None]]] = None,
         on_auth:  Optional[Callable[['FetchType.EventAuthRequired'], Awaitable[None]]] = None,
     ) -> None:
@@ -97,12 +97,12 @@ class Fetch(ABC):
 
     async def FulfillRequest(
             self, requestId: str,
-            responseCode:           Optional[int] = 200,
+            responseCode:                     int = 200,
             responseHeaders: Optional[List[dict]] = None,
             binaryResponseHeaders:  Optional[str] = None,
             body:                   Optional[str] = None,
             responsePhrase:         Optional[str] = None,
-            wait_for_response:     Optional[bool] = False
+            wait_for_response:               bool = False
     ) -> None:
         """
         Предоставляет ответ на запрос.
@@ -140,7 +140,7 @@ class Fetch(ABC):
         method:             Optional[str] = None,
         postData:           Optional[str] = None,
         headers:     Optional[List[dict]] = None,
-        wait_for_response: Optional[bool] = False
+        wait_for_response:           bool = False
     ) -> None:
         """
         Продолжает запрос, дополнительно изменяя некоторые его параметры.
@@ -232,12 +232,12 @@ class Fetch(ABC):
     async def Call(
         self, domain_and_method: str,
         params: Optional[dict] = None,
-        wait_for_response: Optional[bool] = True
+        wait_for_response: bool = True
     ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
     @abstractmethod
     async def AddListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable, *args: Optional[any]) -> None:
+            self, event: Union[str, DomainEvent], listener: Callable, *args: any) -> None:
         raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
 
     @abstractmethod
@@ -261,7 +261,7 @@ class FetchType:
                                                         # !     Manifest, SignedExchange, Ping, CSPViolationReport,
                                                         # !     Preflight, Other
         request: NetworkType.Request
-        responseHeaders: Optional[list["FetchType.HeaderEntry"]]
+        responseHeaders: list["FetchType.HeaderEntry"]
         responseErrorReason: Optional[str] = None       # ! Allowed Values: Failed, Aborted, TimedOut, AccessDenied,
                                                         # !     ConnectionClosed, ConnectionReset, ConnectionRefused,
                                                         # !     ConnectionAborted, ConnectionFailed, NameNotResolved,
