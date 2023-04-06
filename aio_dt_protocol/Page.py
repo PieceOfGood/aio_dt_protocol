@@ -13,7 +13,7 @@ from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
 from typing import Callable, Awaitable, Optional, Union, Tuple, List, Dict
 from abc import ABC
-from .Data import DomainEvent, Sender, Receiver, T, CommonCallback
+from .Data import DomainEvent, Sender, Receiver, CommonCallback
 
 
 class AbsPage(ABC):

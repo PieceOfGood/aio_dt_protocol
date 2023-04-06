@@ -4,7 +4,7 @@ except ModuleNotFoundError:
     import json
 import asyncio
 import warnings
-import re, os, sys, signal, subprocess, getpass
+import re, os, sys, signal, subprocess
 from urllib.parse import quote
 from os.path import expanduser
 from inspect import iscoroutinefunction

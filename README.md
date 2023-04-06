@@ -1,7 +1,9 @@
 Асинхронная обёртка над [протоколом](https://chromedevtools.github.io/devtools-protocol/) отладчика браузера Chromium.
 
 ### Установка
-Клонировать, или скачать репозиторий архивом и распаковать в каталог проекта.
+```shell
+pip install aio-dt-protocol
+```
 
 Имеет одну зависимость:
 https://github.com/aaugustin/websockets
