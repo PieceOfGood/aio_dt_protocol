@@ -209,7 +209,7 @@ class PageEx(
         del result["ll"]
         del result["accuracy"]
         del result["stateProv"]
-        if pt:
+        if pt is not None:
             del result["proxyType"]
         return GeoInfo(**result)
 

@@ -1,8 +1,9 @@
 try:
     import ujson as json
+    HAS_UJSON = True
 except ModuleNotFoundError:
+    HAS_UJSON = False
     import json
-import asyncio
 import warnings
 import re, os, sys, signal, subprocess
 from urllib.parse import quote
@@ -14,7 +15,7 @@ from enum import Enum
 from .Page import Page
 from .Data import TargetConnectionInfo, TargetConnectionType, CommonCallback
 from .exceptions import FlagArgumentContainError
-from .utils import get_request, registry_read_key, log
+from .utils import get_request, registry_read_key, log, async_util_call
 
 
 class Browser:
@@ -49,7 +50,8 @@ class Browser:
         if sys.platform == "win32":
             if "chrome" in browser: browser = "chrome.exe"
             elif "brave" in browser: browser = "brave.exe"
-            elif "netbox" in browser: browser = "netboxbrowser.exe"
+            elif "edge" in browser: browser = "msedge.exe"
+            else: ValueError("Not support browser: " + browser)
             cmd = f"WMIC PROCESS WHERE NAME='{browser}' GET Commandline,Processid"
             for line in subprocess.Popen(cmd, stdout=subprocess.PIPE).stdout:
                 if b"--type=renderer" not in line and b"--remote-debugging-port=" in line:
@@ -60,7 +62,8 @@ class Browser:
         elif sys.platform == "linux":
             if "chrome" in browser: browser = "google-chrome"
             elif "brave" in browser: browser = "brave"
-            else: ValueError("Not support browser " + browser)
+            elif "edge" in browser: browser = "edge"
+            else: ValueError("Not support browser: " + browser)
             try: itr = map(int, subprocess.check_output(["pidof", browser]).split())
             except subprocess.CalledProcessError: itr = []
             for pid in itr:
@@ -75,7 +78,7 @@ class Browser:
     def __init__(
             self,
             profile_path: str = "testProfile",
-            dev_tool_profiles:      bool = False,
+            dev_tool_profiles:  bool = False,
             url: Optional[Union[str, bytes]] = None,
             flags:  Optional[List[str]] = None,
             browser_path: str = "",
@@ -93,19 +96,6 @@ class Browser:
     ) -> None:
         """
         Все параметры — не обязательны.
-        ==============================================================================================
-        Refused Error: <urlopen error [Errno 111] Connection refused>
-        !!! ВНИМАНИЕ !!! — на Linux, после получения инстанса браузера, часто встречается
-            невозможность установить HTTP соединение для получения инстансов его страниц(табов/вкладок).
-            Связано это(возможно) с тем, что браузер ещё не успел инициализировать свои службы.
-            Преодолевается простым ожиданием, например:
-                while True:
-                    try:
-                        while (page := await browser.GetPage()) is None:
-                            await asyncio.sleep(.1)
-                        break
-                    except urllib.error.URLError as e:
-                        await asyncio.sleep(.5)
         ==============================================================================================
 
         :param profile_path:    Путь до каталога, в который будет сохранена сессия профиля.
@@ -165,6 +155,9 @@ class Browser:
         """
         if sys.platform not in ("win32", "linux"): raise OSError(f"Platform '{sys.platform}' — not supported")
         self.dev_tool_profiles = dev_tool_profiles if profile_path else False
+
+        if verbose and not HAS_UJSON:
+            log("Call 'python -m pip install ujson' for install", lvl="[- UJSON IS NOT INSTALLED -]")
 
         if self.dev_tool_profiles:
             self.profile_path = os.path.join(expanduser("~"), "DevTools_Profiles", profile_path)
@@ -374,7 +367,9 @@ class Browser:
                     "webSocketDebuggerUrl": "ws://localhost:9222/devtools/page/DAB7FB6187B554E10B0BD18821265734"
                 }, { ... } ]
         """
-        result = await self._Get(f"http://127.0.0.1:{self.debug_port}/json/list")
+        result = await async_util_call(
+            get_request, f"http://127.0.0.1:{self.debug_port}/json/list")
+
         if self.verbose: log("GetPageList() => " + result)
         return json.loads(result)
 
@@ -503,12 +498,6 @@ class Browser:
         """
         return await self.GetPageBy("url", value, match_mode, index, callback)
 
-    @staticmethod
-    async def _Get(url: str) -> str:
-        return await asyncio.get_running_loop().run_in_executor(
-            None, get_request, url
-        )
-
 
 class FlagBuilder:
 
@@ -522,7 +511,8 @@ class FlagBuilder:
         f = flag.value
         if f[-1] == "=":
             if not args:
-                raise FlagArgumentContainError(f"Для флага {flag.name} ожидается аргумент, или список аргументов.")
+                raise FlagArgumentContainError(
+                    f"Для флага {flag.name} ожидается аргумент, или список аргументов.")
             for arg in args:
                 f += str(arg) + separator
             f = f[:-1]

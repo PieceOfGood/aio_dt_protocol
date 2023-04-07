@@ -118,3 +118,32 @@ if __name__ == '__main__':
 
     await page.Navigate(html)
 ```
+### Headless
+Чтобы запустить браузер в `безголовом` режиме, нужно передать аргументу принимающему путь к папке профиля пустую строку.
+```python
+import asyncio
+from aio_dt_protocol import BrowserEx as Browser
+from aio_dt_protocol.utils import save_img_as, async_util_call
+
+
+async def main() -> None:
+    print("[- HEADLESS RUN -]")
+    browser = Browser(profile_path="")
+    print("[- WAITING PAGE -]")
+    page = await browser.WaitFirstTab()
+    print("[- GO TO GOOGLE -]")
+    await page.Navigate("https://www.google.com")
+    
+    print("[- MAKE SCREENSHOT -]")
+    await async_util_call(
+        save_img_as, "google.png", await page.MakeScreenshot()
+    )
+    
+    print("[- CLOSE BROWSER -]")
+    await page.CloseBrowser()
+    print("[- DONE -]")
+
+if __name__ == '__main__':
+    asyncio.run(main())
+
+```
