@@ -80,7 +80,7 @@ class Browser:
             profile_path: str = "testProfile",
             dev_tool_profiles:  bool = False,
             url: Optional[Union[str, bytes]] = None,
-            flags:  Optional[List[str]] = None,
+            flags:  Optional["FlagBuilder"] = None,
             browser_path: str = "",
             debug_port:   Union[str, int] = 9222,
             browser_pid:  int = 0,
@@ -228,7 +228,7 @@ class Browser:
         self.browser_path = browser_path
 
         if int(debug_port) <= 0:
-            raise ValueError(f"Значение 'debug_port' => '{debug_port}' — должно быть положителным целым числом!")
+            raise ValueError(f"Значение 'debug_port' => '{debug_port}' — должно быть положительным целым числом!")
         self.debug_port = str(debug_port)
         self.proxy_addres = proxy_address
         self.proxy_port = str(proxy_port)
@@ -270,7 +270,7 @@ class Browser:
         self.is_headless_mode = False
         self.browser_pid = browser_pid if browser_pid > 0 else self._RunBrowser(_url_, flags, position, sizes)
 
-    def _RunBrowser(self, url: str, flags: list, position: Optional[Tuple[int, int]] = None,
+    def _RunBrowser(self, url: str, flags: "FlagBuilder", position: Optional[Tuple[int, int]] = None,
                     sizes: Optional[Tuple[int, int]] = None) -> int:
         """
         Запускает браузер с переданными флагами.
@@ -291,6 +291,7 @@ class Browser:
             (CMDFlags.Background.no_service_autorun, []),
             (CMDFlags.Performance.disable_gpu_shader_disk_cache, []),
             (CMDFlags.Performance.disk_cache_dir, ["null"]),
+            (CMDFlags.Performance.media_cache_dir, ["null"]),
             (CMDFlags.Render.enable_features_WebUIDarkMode, []),
             (CMDFlags.Render.force_dark_mode, []),
         )
@@ -310,7 +311,6 @@ class Browser:
             flag_box.add(CMDFlags.Headless.headless)
             self.is_headless_mode = True
 
-
         if self.proxy_port:
             flag_box.add(CMDFlags.Other.proxy_server, self.proxy_addres + ":" + self.proxy_port)
             if self.verbose:
@@ -320,10 +320,10 @@ class Browser:
             if self.verbose:
                 log(f"Run browser {self.browser_name!r} on port: {self.debug_port}")
 
-        run_args += flag_box.flags()
-
         if flags is not None:
-            run_args += flags
+            flag_box += flags
+
+        run_args += flag_box.flags()
         return subprocess.Popen(run_args).pid
 
     def KillBrowser(self) -> None:
@@ -500,47 +500,64 @@ class Browser:
 
 
 class FlagBuilder:
-
+    """ Обеспечивает последовательность неповторяющихся флагов
+    для запуска браузера.
+    """
     def __init__(self):
-        self._flags: set = set()
+        self._flags: Dict[str, Tuple[str]] = {}
 
-    def add(self, flag: "CMDFlag", *args: Union[str, int, float], separator: str = ",") -> None:
-        """
-        Принимает один флаг, его аргументы и разделитель аргументов.
-        """
-        f = flag.value
+    def add(self, flag: "CMDFlag", *args: Union[str, int, float]) -> None:
+        """ Принимает один флаг и его аргументы. """
+        f: str = flag.value
         if f[-1] == "=":
             if not args:
                 raise FlagArgumentContainError(
                     f"Для флага {flag.name} ожидается аргумент, или список аргументов.")
-            for arg in args:
-                f += str(arg) + separator
-            f = f[:-1]
-        self._flags.add(f)
 
-    def set(self, *flags: Sequence["CMDFlag", Sequence[Union[str, int, float]]], separator: str = ",") -> None:
+            self._flags[f] = tuple(map(str, args))
+        else:
+            self._flags[f] = tuple()
+
+    def set(self, *flags: Tuple["CMDFlag", Sequence[Union[str, int, float]]]) -> None:
+        """ Принимает произвольную последовательность флагов, из кортежей,
+         содержащих сам флаг и его аргументы:
+            object.set(
+                (CMDFlags.Background.disable_breakpad, []),
+                (CMDFlags.Background.no_recovery_component, [])
+            )
         """
-        Принимает произвольную последовательность флагов, из последовательностей, содержащих сам флаг и
-            его аргументы, а так же разделитель аргументов:
-                object.set(
-                    (CMDFlags.Background.disable_breakpad, []),
-                    (CMDFlags.Background.no_recovery_component, []),
-                    separator=" "
-                )
-        """
-        for flag in flags:
-            cmd_flag, args = flag
-            self.add(cmd_flag, *args, separator=separator)
+        for cmd_flag, args in flags:
+            self.add(cmd_flag, *args)
 
     def custom(self, flag: str) -> None:
+        """ Принимает строку в качестве флага.
+        object.custom("--mute-audio")
         """
-        Принимает строку в качестве флага.
-            object.custom("--mute-audio")
-        """
-        self._flags.add(flag)
+        self._flags[flag] = tuple()
 
-    def flags(self) -> list[str]:
-        return list(self._flags)
+    def flags(self) -> List[str]:
+        result: List[str] = []
+        for cmd_flag, args in self._flags.items():
+            result.append(cmd_flag + ",".join(args))
+        return result
+
+    def __str__(self) -> str:
+        return str(self.flags())
+
+    def __add__(self, other: "FlagBuilder") -> "FlagBuilder":
+        if not isinstance(other, FlagBuilder):
+            raise TypeError(f"Ожидаемый тип: {self.__class__.__name__}; "
+                            f"полученный тип: {other.__class__.__name__}")
+
+        flags = {}
+        for cmd_flag, args in self._flags.items():
+            flags[cmd_flag] = args
+        for cmd_flag, args in other._flags.items():
+            flags[cmd_flag] = args
+
+        result = FlagBuilder()
+        setattr(result, "_flags", flags)
+        return result
 
 
 class CMDFlag(Enum): pass
@@ -617,6 +634,10 @@ class CMDFlags:
         disk_cache_dir = "--disk-cache-dir="    # * $
         # ! Задает максимальное дисковое пространство, используемое дисковым кешем, в байтах.
         disk_cache_size = "--disk-cache-size="  # * $
+        # ! Принимает путь расположения media-кэша на диске, отличный от UserDatadir. Отключить: '--media-cache-dir=null'
+        media_cache_dir = "--media-cache-dir="    # * $
+        # ! Задает максимальное дисковое пространство, используемое дисковым кешем для медиа, в байтах.
+        media_cache_size = "--media-cache-size="  # * $
 
     class Test(CMDFlag):
         # ? Test & debugging flags
