@@ -1,5 +1,5 @@
 
-__version__ = "0.9.4"
+__version__ = "0.9.5"
 __author__ = "PieceOfGood"
 __email__ = "78sanchezz@gmail.com"
 
@@ -8,14 +8,11 @@ __all__ = [
     "CMDFlags",
     "FlagBuilder",
     "BrowserEx",
-    "PageEx",
-    "catch_headers_for_url"
+    "PageEx"
 ]
 
 from .Browser import CMDFlags
 from .Browser import FlagBuilder
-from .Browser import Browser
 from .BrowserEx import BrowserEx
-from .PageEx import PageEx, catch_headers_for_url
-
-find_instances = Browser.FindInstances
+from .PageEx import PageEx
+from .utils import find_instances

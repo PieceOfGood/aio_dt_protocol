@@ -43,6 +43,8 @@ class AnotherLocaleOverrideIsAlreadyInEffect(MyBaseException): pass     # ! пр
 
 class FontFamiliesCanOnlyBeSetOnce(MyBaseException): pass               # ! при установке тех же шрифтов
 
+class GetRequestBodyBeforeRequestReceived(MyBaseException): pass        # ! получение тела до получения ответа
+
 
 exception_store = {
     "Target crashed": TargetCrashed,
@@ -54,7 +56,8 @@ exception_store = {
     "No script with given id": NoScriptWithGivenId,
     "uniqueContextId not found": UniqueContextIdNotFound,
     "Another locale override is already in effect": AnotherLocaleOverrideIsAlreadyInEffect,
-    "Font families can only be set once": FontFamiliesCanOnlyBeSetOnce
+    "Font families can only be set once": FontFamiliesCanOnlyBeSetOnce,
+    "Can only get response body on requests captured after headers received": GetRequestBodyBeforeRequestReceived,
 }
 
 

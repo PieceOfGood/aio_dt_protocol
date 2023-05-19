@@ -59,8 +59,13 @@ class Fetch(ABC):
                 params: dict, func: Callable[["FetchType.EventAuthRequired"], Awaitable[None]]) -> None:
             await func(FetchType.EventAuthRequired(**params))
 
-        if on_pause is not None: await self.AddListenerForEvent(FetchEvent.requestPaused, on_pause_decorator, on_pause)
-        if on_auth is not None: await self.AddListenerForEvent(FetchEvent.authRequired, on_auth_decorator, on_auth)
+        if on_pause is not None:
+            await self.AddListenerForEvent(
+                FetchEvent.requestPaused, on_pause_decorator, on_pause)
+
+        if on_auth is not None:
+            await self.AddListenerForEvent(
+                FetchEvent.authRequired, on_auth_decorator, on_auth)
 
         args = {}
         patterns = patterns if patterns is not None else []
@@ -105,7 +110,7 @@ class Fetch(ABC):
             wait_for_response:               bool = False
     ) -> None:
         """
-        Предоставляет ответ на запрос.
+        Предоставляет браузеру ответ на запрос.
         https://chromedevtools.github.io/devtools-protocol/tot/Fetch#method-fulfillRequest
         :param requestId:               Идентификатор, полученный клиентом в событии requestPaused.
         :param responseCode:            Код ответа HTTP(например - 200).
@@ -140,6 +145,7 @@ class Fetch(ABC):
         method:             Optional[str] = None,
         postData:           Optional[str] = None,
         headers:     Optional[List[dict]] = None,
+        interceptResponse: Optional[bool] = None,
         wait_for_response:           bool = False
     ) -> None:
         """
@@ -155,7 +161,8 @@ class Fetch(ABC):
                                             { "name": "User-Agent", "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36" },
                                             { "name": "Content-Type", "value": "application/json; charset=UTF-8" }
                                         ]
-        :param wait_for_response:       (optional) Дожидаться ответа?
+        :param interceptResponse:   (optional) Если установлено, переопределяет поведение перехвата ответа для этого запроса.
+        :param wait_for_response:   (optional) Дожидаться ответа?
         :return:
         """
         args = {"requestId": requestId}
@@ -163,6 +170,7 @@ class Fetch(ABC):
         if method is not None: args.update({"method": method})
         if postData is not None: args.update({"postData": postData})
         if headers is not None: args.update({"headers": headers})
+        if interceptResponse is not None: args.update({"interceptResponse": interceptResponse})
         await self.Call("Fetch.continueRequest", args, wait_for_response=wait_for_response)
 
     async def ContinueWithAuth(self, requestId: str, authChallengeResponse: list) -> None:
@@ -270,6 +278,7 @@ class FetchType:
         responseStatusCode: Optional[int] = None
         responseStatusText: Optional[str] = None
         networkId: Optional[str] = None                 # ! id of request
+        redirectedRequestId: Optional[str] = None       # ! id запроса вызвавшего редирект
         _request: NetworkType.Request = field(init=False, repr=False, default=None)
         _responseHeaders: Optional[list["FetchType.HeaderEntry"]] = field(init=False, repr=False, default=None)
 

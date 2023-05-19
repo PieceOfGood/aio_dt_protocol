@@ -20,61 +20,6 @@ from .utils import get_request, registry_read_key, log, async_util_call
 
 class Browser:
 
-    @staticmethod
-    def FindInstances(for_port: Optional[int] = None, browser: str = "chrome") -> Dict[int, int]:
-        """
-        Используется для обнаружения уже запущенных инстансов браузера в режиме отладки.
-        Более быстрая альтернатива для win32 систем FindInstances() есть в aio_dt_utils.Utils,
-            но она требует установленный пакет pywin32 для использования COM.
-        Например:
-                if browser_instances := Browser.FindInstances():
-                    port, pid = [(k, v) for k, v in browser_instances.items()][0]
-                    browser_instance = Browser(debug_port=port, chrome_pid=pid)
-                else:
-                    browser_instance = Browser()
-
-                # Или для конкретного, известного порта:
-                if browser_instances := Browser.FindInstances(port):
-                    pid = browser_instances[port]
-                    browser_instance = Browser(debug_port=port, chrome_pid=pid)
-                else:
-                    browser_instance = Browser()
-        :param for_port:    - порт, для которого осуществляется поиск.
-        :param browser:     - браузер, для которого запрашивается поиск.
-        :return:            - словарь, ключами которого являются используемые порты запущенных
-                                браузеров, а значениями, их ProcessID, или пустой словарь,
-                                если ничего не найдено.
-                                { 9222: 16017, 9223: 2001, ... }
-        """
-        result = {}
-        if sys.platform == "win32":
-            if "chrome" in browser: browser = "chrome.exe"
-            elif "brave" in browser: browser = "brave.exe"
-            elif "edge" in browser: browser = "msedge.exe"
-            else: ValueError("Not support browser: " + browser)
-            cmd = f"WMIC PROCESS WHERE NAME='{browser}' GET Commandline,Processid"
-            for line in subprocess.Popen(cmd, stdout=subprocess.PIPE).stdout:
-                if b"--type=renderer" not in line and b"--remote-debugging-port=" in line:
-                    port, pid = re.findall(r"--remote-debugging-port=(\d+).*?(\d+)\s*$", line.decode())[0]
-                    port, pid = int(port), int(pid)
-                    if for_port == port: return {port: pid}
-                    result[port] = pid
-        elif sys.platform == "linux":
-            if "chrome" in browser: browser = "google-chrome"
-            elif "brave" in browser: browser = "brave"
-            elif "edge" in browser: browser = "edge"
-            else: ValueError("Not support browser: " + browser)
-            try: itr = map(int, subprocess.check_output(["pidof", browser]).split())
-            except subprocess.CalledProcessError: itr = []
-            for pid in itr:
-                with open("/proc/" + str(pid) + "/cmdline") as f: cmd_line =  f.read()[:-1]
-                if "--type=renderer" not in cmd_line and "--remote-debugging-port=" in cmd_line:
-                    port = int(re.findall(r"--remote-debugging-port=(\d+)", cmd_line)[0])
-                    if for_port == port: return {port: pid}
-                    result[port] = pid
-        else: raise OSError(f"Platform '{sys.platform}' — not supported")
-        return {} if for_port else result
-
     def __init__(
             self,
             profile_path: str = "testProfile",

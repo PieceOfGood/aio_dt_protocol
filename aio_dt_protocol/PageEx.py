@@ -8,7 +8,6 @@ from .Actions import Actions
 from .DOMElement import Node
 from .Data import ViewportRect, WindowRect, GeoInfo
 
-import asyncio
 import base64, re
 from typing import Optional, Union
 
@@ -214,96 +213,4 @@ class PageEx(
         return GeoInfo(**result)
 
 
-    async def CatchMetaForUrl(self, url: str, uniq_key: Optional[str] = None) -> None:
-        """
-        Получает заголовки запроса, ответа, а так же cookie для конкретного url и сохраняет их
-            в виде словарей в поле собственного инстанса, доступного как:
-            page_instance.storage[uniq_key]. Если 'uniq_key' не указан, в его качестве будет
-            использован 'url'.
-
-        Для работы будет активирован домен Fetch со значением "True" для "fetch_onResponse".
-        :param url:             Адрес ресурса, или его уникальная часть.
-        :param uniq_key:        Идентификатор, под которым будут сохраняться данные перехвата.
-        :return:
-        """
-        if not self.fetch_domain_enabled:
-            await self.FetchEnable()
-        key = uniq_key if uniq_key else url
-        await self.AddListenerForEvent("Fetch.requestPaused", catch_headers_for_url, self, url, self.storage, key)
-
-
     # endregion
-
-async def catch_headers_for_url(data: dict, instance: 'PageEx', url: str, storage: dict, storage_key: str) -> None:
-    """
-    Получает заголовки запроса, ответа, а так же cookie для конкретного url и сохраняет их
-    в виде словарей в переданном по ссылке 'storage'. Требует активации домена Fetch со значением
-    "True" для "fetch_onResponse", после чего, инстансу страницы, эта корутина добавляется как
-     слушатель транслирующий через 'data' параметры перехваченных запросов. Например:
-            await page.FetchEnable( fetch_onResponse=True )
-            await page.AddListenerForEvent(
-                "Fetch.requestPaused",
-                catch_headers_for_url,
-                page,
-                "persistentBadging",
-                GLOBAL_STORAGE,
-                "storage_key"
-            )
-    Структура сохранённых данных: (dict) {
-        "request_url":      (str) - полный url перехваченного запроса,
-        "request_headers":  (dict) - {"hdr_name": "hdr_value", "hdr_name": "hdr_value", ... },
-        "response_headers": (dict) - {"hdr_name": "hdr_value", "hdr_name": "hdr_value", ... },
-        "response_cookies": (dict) - {"cook_name": "cook_value", "cook_name": "cook_value", ... },
-        "full_cookie_data": (list[ dict ]) - [
-            {
-                "name": "cookie name",
-                "value": "cookie value",
-                "domain": ".instagram.com",
-                "path": "/",
-                "expires": -1,
-                "size": 149,
-                "httpOnly": true,
-                "secure": true,
-                "session": true,
-                "priority": "Medium"
-            }, { ... }
-        ]
-    }
-    :param data:            Содержимое перехваченного запроса. Эти данные будут переданы в слушатель из браузера.
-                                Структура: {
-                                    requestId: (str),
-                                    request: {
-                                        url: (str),
-                                        method: (str),
-                                        headers: (dict) — Все заголовки запроса включая куки,
-                                        postData: (str) — payload POST-запросов,
-                                        initialPriority: (str),
-                                        referrerPolicy: (str),
-                                        Возможно какие-то ещё ...
-                                    },
-                                    frameId: (str) — like "75ED3620550E8F5E16B8F6D1FF2EE4D1",
-                                    resourceType: (str) — like "XHR",
-                                    responseStatusCode: (int) — like 200,
-                                    responseHeaders: (List[dict]) — заголовки ответа, не включая куки:
-                                        [ {'name': 'content-type', 'value': '"application/json; charset=utf-8'}, ... ]
-                                }
-    :param instance:        Инстанс страницы, от лица которой происходит перехват.
-    :param url:             Адрес ресурса, или его уникальная часть.
-    :param storage:         Ссылка на словарь, в который будет сохранён результат.
-    :param storage_key:     Идентификатор, под которым сохранится запись в 'storage'.
-    :return:    None
-    """
-    asyncio.create_task(instance.ContinueRequest(data["requestId"]))
-    if url in data["request"]["url"]:
-        response_headers = {}; response_cookies = {}
-        for item in data["responseHeaders"]: response_headers[item["name"]] = item["value"]
-        full_cookie_data = await instance.GetCookies()
-        for item in full_cookie_data:
-            response_cookies[item["name"]] = item["value"]
-        storage[storage_key] = {
-            "request_url":      data["request"]["url"],
-            "request_headers":  data["request"]["headers"],
-            "response_headers": response_headers,
-            "response_cookies": response_cookies,
-            "full_cookie_data": full_cookie_data
-        }
