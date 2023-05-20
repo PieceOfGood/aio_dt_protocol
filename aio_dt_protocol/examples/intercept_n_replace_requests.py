@@ -122,5 +122,65 @@ async def replace() -> None:
     await page.WaitForClose()
 
 
+async def re_proxy() -> None:
+    """ Пример того, как выполнять HTTP-запросы вместо браузера,
+    с возможным участием любой конфигурации прокси, для конкретной
+    страницы.
+    """
+
+    from aiohttp import request
+
+    # ? Адрес прокси
+    # https://docs.aiohttp.org/en/stable/client_advanced.html?highlight=proxy#proxy-support
+    proxy = "http://proxy-address.com:9876" or "http://username:password@proxy-address.com:9876"
+
+    async def req(
+            method: str,
+            url: str,
+            headers: dict,
+            post_data: str | None
+    ) -> tuple[list[FetchType.HeaderEntry], str]:
+        request_data = dict(
+            method=method,
+            url=url,
+            headers=headers,
+            data=post_data,
+            proxy=proxy,        # ! Можно установить None и тогда все запросы
+        )                       # ! будут выполнены через клиент без проксирования
+
+        async with request(**request_data) as resp:
+            out_headers = [
+                FetchType.HeaderEntry(name, value)
+                for name, value in resp.headers.items()]
+
+            body = await resp.read()
+
+            return out_headers, b64encode(body).decode("utf-8")
+
+    # ? В этом шаблоне проксируем абсолютно все исходящие запросы
+    req_pattern = FetchType.RequestPattern(
+        urlPattern="*", requestStage="Request"
+    )
+    browser, page = await run_browser()
+
+    async def catch_data_for_response(data: FetchType.EventRequestPaused) -> None:
+        headers, body = await req(
+            data.request.method,
+            data.request.url,
+            data.request.headers,
+            data.request.postData,
+        )
+
+        await page.FulfillRequest(
+            data.requestId, responseHeaders=headers, body=body)
+
+    await page.FetchEnable([req_pattern], on_pause=catch_data_for_response)
+
+    await page.Navigate("https://www.python.org/")
+
+    # await page.CloseBrowser()
+    await page.WaitForClose()
+
+
 if __name__ == '__main__':
     run(intercept())

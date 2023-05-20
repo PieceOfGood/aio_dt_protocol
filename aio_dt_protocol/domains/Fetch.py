@@ -103,7 +103,7 @@ class Fetch(ABC):
     async def FulfillRequest(
             self, requestId: str,
             responseCode:                     int = 200,
-            responseHeaders: Optional[List[dict]] = None,
+            responseHeaders: Optional[List["FetchType.HeaderEntry"]] = None,
             binaryResponseHeaders:  Optional[str] = None,
             body:                   Optional[str] = None,
             responsePhrase:         Optional[str] = None,
@@ -132,7 +132,10 @@ class Fetch(ABC):
         :return:
         """
         args = {"requestId": requestId, "responseCode": responseCode}
-        if responseHeaders is not None: args.update({"responseHeaders": responseHeaders})
+        if responseHeaders is not None:
+            headers = [h.__dict__ for h in responseHeaders]
+            args.update({"responseHeaders": headers})
+
         if binaryResponseHeaders is not None: args.update({"binaryResponseHeaders": binaryResponseHeaders})
         if body is not None: args.update({"body": body})
         if responsePhrase is not None: args.update({"responsePhrase": responsePhrase})
