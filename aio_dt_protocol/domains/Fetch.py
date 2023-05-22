@@ -51,21 +51,19 @@ class Fetch(ABC):
         :param on_auth:             (optional) Корутина, которая будет получать все события "authRequired".
         :return:
         """
-        async def on_pause_decorator(
-                params: dict, func: Callable[["FetchType.EventRequestPaused"], Awaitable[None]]) -> None:
-            await func(FetchType.EventRequestPaused(**params))
+        async def on_pause_decorator(params: dict) -> None:
+            await on_pause(FetchType.EventRequestPaused(**params))
 
-        async def on_auth_decorator(
-                params: dict, func: Callable[["FetchType.EventAuthRequired"], Awaitable[None]]) -> None:
-            await func(FetchType.EventAuthRequired(**params))
+        async def on_auth_decorator(params: dict) -> None:
+            await on_auth(FetchType.EventAuthRequired(**params))
 
         if on_pause is not None:
             await self.AddListenerForEvent(
-                FetchEvent.requestPaused, on_pause_decorator, on_pause)
+                FetchEvent.requestPaused, on_pause_decorator)
 
         if on_auth is not None:
             await self.AddListenerForEvent(
-                FetchEvent.authRequired, on_auth_decorator, on_auth)
+                FetchEvent.authRequired, on_auth_decorator)
 
         args = {}
         patterns = patterns if patterns is not None else []

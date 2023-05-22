@@ -1,7 +1,7 @@
 import asyncio
 from urllib.parse import quote
 from abc import ABC, abstractmethod
-from typing import Optional, Union, Callable, List, Literal
+from typing import Optional, Union, Callable, List, Literal, Awaitable
 from ..Data import DomainEvent
 from dataclasses import dataclass, field
 
@@ -223,6 +223,14 @@ class Page(ABC):
         """
         if frameId is None: frameId = self.page_id
         await self.Call("Page.setDocumentContent", {"frameId": frameId, "html": html})
+
+    async def StopLoading(self) -> None:
+        """
+        Останавливает загрузку страницы.
+        https://chromedevtools.github.io/devtools-protocol/tot/Page#method-stopLoading
+        :return:
+        """
+        await self.Call("Page.stopLoading")
 
     async def SetAdBlockingEnabled(self, enabled: bool) -> None:
         """
@@ -454,13 +462,32 @@ class Page(ABC):
         """
         await self.Call("Page.setInterceptFileChooserDialog", {"enabled": enabled})
 
+    async def SetLifecycleEventsEnabled(
+            self, enabled: bool,
+            handler: Optional[Callable[['PageType.LifecycleEventData'], Awaitable[None]]] = None,
+    ) -> None:
+        """
+        Определяет, будет ли страница генерировать события жизненного цикла.
+        https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-setLifecycleEventsEnabled
+        :param enabled:            Если true, начинает генерировать события жизненного цикла.
+        :param handler:            Ожидаемый объект, которому будут переданы данные события.
+        :return:
+        """
+        async def wrapper(params: dict) -> None:
+            await handler(PageType.LifecycleEventData(**params))
+
+        if handler is not None:
+            await self.AddListenerForEvent(PageEvent.lifecycleEvent, wrapper)
+
+        await self.Call("Page.setLifecycleEventsEnabled", {"enabled": enabled})
+
     @abstractmethod
     async def AddListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable, *args: any) -> None:
+            self, event: Union[str, DomainEvent], listener: Callable[[any], Awaitable[None]], *args: any) -> None:
         raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
 
     @abstractmethod
-    def RemoveListenerForEvent(self, event: str, listener: Callable) -> None:
+    def RemoveListenerForEvent(self, event: str, listener: Callable[[any], Awaitable[None]]) -> None:
         raise NotImplementedError("method RemoveListenerForEvent() — is not implemented")
 
     @abstractmethod
@@ -510,6 +537,16 @@ class PageEvent(DomainEvent):
     screencastVisibilityChanged = "Page.screencastVisibilityChanged"            # ! EXPERIMENTAL
     downloadProgress = "Page.downloadProgress"                                  # * EXPERIMENTAL DEPRECATED
     downloadWillBegin = "Page.downloadWillBegin"                                # * EXPERIMENTAL DEPRECATED
+
+
+class PageType:
+
+    @dataclass
+    class LifecycleEventData:
+        frameId: str
+        loaderId: str
+        name: str
+        timestamp: float
 
 
 @dataclass

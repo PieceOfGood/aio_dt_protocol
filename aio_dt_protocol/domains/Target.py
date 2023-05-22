@@ -221,24 +221,27 @@ class Target(ABC):
         :param destroyed:           Корутина вызываемая для события 'Target.targetDestroyed'.
         :return:
         """
-        async def message_decor(params: dict, func: Callable[[str, str], Awaitable[None]]) -> None:
-            await func(params["sessionId"], params["message"])
+        async def on_message(params: dict) -> None:
+            await message(params["sessionId"], params["message"])
 
-        async def crash_decor(params: dict, func: Callable[[str, str, int], Awaitable[None]]) -> None:
-            await func(params["targetId"], params["status"], params["errorCode"])
+        async def on_crashed(params: dict) -> None:
+            await crashed(params["targetId"], params["status"], params["errorCode"])
 
-        async def decorator(params: dict, func: Callable[['TargetType.TargetInfo'], Awaitable[None]]) -> None:
-            await func(TargetType.TargetInfo(**params["targetInfo"]))
+        async def on_created(params: dict) -> None:
+            await created(TargetType.TargetInfo(**params["targetInfo"]))
 
-        async def destroy_decor(params: dict, func: Callable[[str], Awaitable[None]]) -> None:
-            await func(params["targetId"])
+        async def on_changed(params: dict) -> None:
+            await changed(TargetType.TargetInfo(**params["targetInfo"]))
+
+        async def on_destroyed(params: dict) -> None:
+            await destroyed(params["targetId"])
 
         if discover:
-            if message is not None: await self.AddListenerForEvent(TargetEvent.receivedMessageFromTarget, message_decor, message)
-            if created is not None: await self.AddListenerForEvent(TargetEvent.targetCreated, decorator, created)
-            if crashed is not None: await self.AddListenerForEvent(TargetEvent.targetCrashed, crash_decor, crashed)
-            if changed is not None: await self.AddListenerForEvent(TargetEvent.targetInfoChanged, decorator, changed)
-            if destroyed is not None: await self.AddListenerForEvent(TargetEvent.targetDestroyed, destroy_decor, destroyed)
+            if message is not None: await self.AddListenerForEvent(TargetEvent.receivedMessageFromTarget, on_message)
+            if created is not None: await self.AddListenerForEvent(TargetEvent.targetCreated, on_created)
+            if crashed is not None: await self.AddListenerForEvent(TargetEvent.targetCrashed, on_crashed)
+            if changed is not None: await self.AddListenerForEvent(TargetEvent.targetInfoChanged, on_changed)
+            if destroyed is not None: await self.AddListenerForEvent(TargetEvent.targetDestroyed, on_destroyed)
         else:
             for event in [
                 'Target.receivedMessageFromTarget',

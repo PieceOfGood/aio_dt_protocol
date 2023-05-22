@@ -6,6 +6,8 @@ from .Data import WINDOWS_KEY_SET, WindowBounds, TouchPoint, KeyModifiers, KeyEv
 
 
 class Actions:
+    __slots__ = ("page_instance",)
+
     def __init__(self, page_instance):
         self.page_instance = page_instance
 

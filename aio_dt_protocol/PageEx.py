@@ -75,6 +75,9 @@ class PageEx(
                                                 #   включены уведомления домена Page. Может иметь значения:
                                                 # |  started; navigated; stopped; do_navigate; do_reload |
 
+    def __str__(self) -> str:
+        return f"<Page targetId={self.page_id!r}>"
+
     def __eq__(self, other: "PageEx") -> bool:
         return self.page_id == other.page_id
 
