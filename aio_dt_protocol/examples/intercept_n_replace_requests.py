@@ -2,9 +2,9 @@ import re
 from asyncio import run
 from base64 import b64decode, b64encode
 from pprint import pprint
-from aio_dt_protocol import BrowserEx, PageEx, find_instances
-from aio_dt_protocol.Data import CommonCallback
-from aio_dt_protocol.domains.Fetch import FetchType
+from aio_dt_protocol import BrowserEx, extend_connection, find_instances
+from aio_dt_protocol.data import CommonCallback
+from aio_dt_protocol.domains.fetch import FetchType
 
 
 # ? Описываем шаблон с признаком конкретного адреса
@@ -53,13 +53,13 @@ async def intercept() -> None:
         print("\nLIST COOKIES:")
         pprint(await page.GetAllCookies())
 
-        await page.ContinueRequest(data.requestId)
+        await page.continueRequest(data.requestId)
 
     # ? Включаем уведомления домена, передаём ему список шаблонов
     # ? и ссылку на обработчик события "on_pause"
-    await page.FetchEnable([REQ_PATTERN], on_pause=catch_data_for_response)
+    await page.enable([REQ_PATTERN], on_pause=catch_data_for_response)
 
-    await page.Navigate("https://www.python.org/")
+    await page.navigate("https://www.python.org/")
 
     # await page.CloseBrowser()
     await page.WaitForClose()
@@ -107,16 +107,16 @@ async def replace() -> None:
             flags=re.DOTALL
         )
 
-        await page.FulfillRequest(
+        await page.fulfillRequest(
             data.requestId,
             body=b64encode(body).decode("utf-8")
         )
 
     # ? Включаем уведомления домена, передаём ему список шаблонов
     # ? и ссылку на обработчик события "on_pause"
-    await page.FetchEnable([REQ_PATTERN], on_pause=catch_data_for_response)
+    await page.enable([REQ_PATTERN], on_pause=catch_data_for_response)
 
-    await page.Navigate("https://www.python.org/")
+    await page.navigate("https://www.python.org/")
 
     # await page.CloseBrowser()
     await page.WaitForClose()
@@ -171,12 +171,12 @@ async def re_proxy() -> None:
             data.request.postData,
         )
 
-        await page.FulfillRequest(
+        await page.fulfillRequest(
             data.requestId, responseHeaders=headers, body=body)
 
-    await page.FetchEnable([req_pattern], on_pause=catch_data_for_response)
+    await page.enable([req_pattern], on_pause=catch_data_for_response)
 
-    await page.Navigate("https://www.python.org/")
+    await page.navigate("https://www.python.org/")
 
     # await page.CloseBrowser()
     await page.WaitForClose()

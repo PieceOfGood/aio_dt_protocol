@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union
-from ..Data import DomainEvent
+from ..data import DomainEvent
 
 class BackgroundService(ABC):
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/BackgroundService
     """
-    __slots__ = ()
+    __slots__ = ("connection",)
 
     def __init__(self):
         self.observing_started = False

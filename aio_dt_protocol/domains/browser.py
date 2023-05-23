@@ -1,27 +1,20 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Union, Dict, List
-from ..Data import WindowBounds, WindowInfo
-from ..Data import DomainEvent
+from typing import Optional, Dict, List
+from ..data import WindowBounds, WindowInfo
+from ..data import DomainEvent
 
-class Browser(ABC):
+class Browser:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Browser/
     """
-    __slots__ = ()
+    __slots__ = ("_connection")
 
-    @property
-    def connected(self) -> bool:
-        return False
+    def __init__(self, conn) -> None:
 
-    @property
-    def verbose(self) -> bool:
-        return False
+        from ..connection import Connection
 
-    @property
-    def page_id(self) -> str:
-        return ""
+        self._connection: Connection = conn
 
-    async def SetPermission(
+    async def setPermission(
             self, permission: dict, setting: str, origin: str = None,
             browserContextId: str = None
     ) -> None:
@@ -59,9 +52,9 @@ class Browser(ABC):
             args.update({"origin": origin})
         if browserContextId is not None:
             args.update({"browserContextId": browserContextId})
-        await self.Call("Browser.setPermission", args)
+        await self._connection.Call("Browser.setPermission", args)
 
-    async def GrantPermissions(
+    async def grantPermissions(
             self, permissions: List[str],
             origin: Optional[str] = None,
             browserContextId: Optional[str] = None
@@ -87,9 +80,9 @@ class Browser(ABC):
             args.update({"origin": origin})
         if browserContextId is not None:
             args.update({"browserContextId": browserContextId})
-        await self.Call("Browser.grantPermissions", args)
+        await self._connection.Call("Browser.grantPermissions", args)
 
-    async def ResetPermissions(self, browserContextId: Optional[str] = None) -> None:
+    async def resetPermissions(self, browserContextId: Optional[str] = None) -> None:
         """
         Сбросить все управление разрешениями для всех источников.
         https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-resetPermissions
@@ -100,9 +93,9 @@ class Browser(ABC):
         args = {}
         if browserContextId is not None:
             args.update({"browserContextId": browserContextId})
-        await self.Call("Browser.resetPermissions", args)
+        await self._connection.Call("Browser.resetPermissions", args)
 
-    async def GetVersion(self) -> Dict[str, str]:
+    async def getVersion(self) -> Dict[str, str]:
         """
         Возвращает словарь с информацией о текущем билде браузера.
         https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-getVersion
@@ -114,9 +107,9 @@ class Browser(ABC):
                                     "jsVersion":        str( ... )  -> V8 version.
                                 }
         """
-        return await self.Call("Browser.getVersion")
+        return await self._connection.Call("Browser.getVersion")
 
-    async def GetWindowBounds(self, windowId: int = None) -> WindowBounds:
+    async def getWindowBounds(self, windowId: int = None) -> WindowBounds:
         """
         (EXPERIMENTAL)
         Возвращает позицию и размер окна.
@@ -134,10 +127,11 @@ class Browser(ABC):
                                 }
         """
         if windowId is None:
-            windowId = (await self.GetWindowForTarget()).windowId
-        return WindowBounds(**(await self.Call("Browser.getWindowBounds", {"windowId": windowId}))["bounds"])
+            windowId = (await self._connection.Target.getWindowForTarget()).windowId
+        return WindowBounds(
+            **(await self._connection.Call("Browser.getWindowBounds", {"windowId": windowId}))["bounds"])
 
-    async def GetWindowForTarget(self, targetId: Optional[str] = None) -> WindowInfo:
+    async def getWindowForTarget(self, targetId: Optional[str] = None) -> WindowInfo:
         """
         (EXPERIMENTAL)
         Возвращает идентификатор, а так же позицию и размер окна.
@@ -150,11 +144,11 @@ class Browser(ABC):
                                 }
         """
         if targetId is None:
-            targetId = self.page_id
-        result = await self.Call("Browser.getWindowForTarget", {"targetId": targetId})
+            targetId = self._connection.conn_id
+        result = await self._connection.Call("Browser.getWindowForTarget", {"targetId": targetId})
         return WindowInfo(windowId=result["windowId"], bounds=WindowBounds(**result["bounds"]))
 
-    async def SetDockTile(self, badgeLabel: Optional[str] = None, image: Optional[str] = None) -> None:
+    async def setDockTile(self, badgeLabel: Optional[str] = None, image: Optional[str] = None) -> None:
         """
         (EXPERIMENTAL)
         Задать сведения о док-плитке для конкретной платформы.
@@ -170,9 +164,9 @@ class Browser(ABC):
             args.update({"image": image})
         if not args:
             return
-        await self.Call("Browser.setDockTile", args)
+        await self._connection.Call("Browser.setDockTile", args)
 
-    async def SetDownloadBehavior(
+    async def setDownloadBehavior(
             self, behavior: str,
             browserContextId: Optional[str] = None,
             downloadPath: Optional[str] = None,
@@ -195,25 +189,18 @@ class Browser(ABC):
         if browserContextId is not None: args.update(browserContextId=browserContextId)
         if downloadPath is not None: args.update(downloadPath=downloadPath)
         if eventsEnabled is not None: args.update(eventsEnabled=eventsEnabled)
-        await self.Call("Browser.setDownloadBehavior", args)
+        await self._connection.Call("Browser.setDownloadBehavior", args)
 
-    async def CloseBrowser(self) -> bool:
+    async def close(self) -> bool:
         """
         Изящно завершает работу браузера.
         https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-close
         :return:        Закрылся/был закрыт
         """
-        if self.connected:
-            await self.Call("Browser.close")
+        if self._connection.connected:
+            await self._connection.Call("Browser.close")
             return True
         return False
-
-    @abstractmethod
-    async def Call(
-            self, domain_and_method: str,
-            params: Optional[dict] = None,
-            wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 class BrowserEvent(DomainEvent):
     downloadProgress = "Browser.downloadProgress"

@@ -1,32 +1,23 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Union, Callable, List
-from ..Data import DomainEvent
+from typing import List
+from ..data import DomainEvent
 
-class CSS(ABC):
+class CSS:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Log
     #   LogEntry -> https://chromedevtools.github.io/devtools-protocol/tot/Log#type-LogEntry
     """
-    __slots__ = ()
+    __slots__ = ("_connection", "enabled", "_style_sheets")
 
-    def __init__(self):
-        self.css_domain_enabled = False
-        self.style_sheets = []  # Если домен CSS активирован, сюда попадут все 'styleSheetId' страницы
+    def __init__(self, conn) -> None:
 
-    @property
-    def connected(self) -> bool:
-        return False
+        from ..connection import Connection
 
-    @property
-    def verbose(self) -> bool:
-        return False
+        self._connection: Connection = conn
+        self.enabled = False
+        self._style_sheets: List[str] = []  # Если домен CSS активирован, сюда попадут все 'styleSheetId' страницы
 
     @property
-    def page_id(self) -> str:
-        return ""
-
-    @property
-    def style_sheets(self) -> list:
+    def style_sheets(self) -> List[str]:
         return self._style_sheets
 
     @style_sheets.setter
@@ -38,7 +29,7 @@ class CSS(ABC):
         Колбэк вызываемый для каждого 'CSS.styleSheetAdded'-события, если
             включён агент домена 'CSS'.
         """
-        self.style_sheets.append(data["header"]["styleSheetId"])
+        self._style_sheets.append(data["header"]["styleSheetId"])
 
     async def CSSEnable(self) -> None:
         """
@@ -47,10 +38,10 @@ class CSS(ABC):
         https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-disable
         :return:
         """
-        if not self.css_domain_enabled:
-            await self.AddListenerForEvent("CSS.styleSheetAdded", self._CSS_sheet_catcher)
-            await self.Call("CSS.enable")
-            self.css_domain_enabled = True
+        if not self.enabled:
+            await self._connection.AddListenerForEvent("CSS.styleSheetAdded", self._CSS_sheet_catcher)
+            await self._connection.Call("CSS.enable")
+            self.enabled = True
 
     async def CSSDisable(self) -> None:
         """
@@ -58,10 +49,11 @@ class CSS(ABC):
         https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-disable
         :return:
         """
-        if self.css_domain_enabled:
-            self.RemoveListenerForEvent("CSS.styleSheetAdded", self._CSS_sheet_catcher)
-            await self.Call("CSS.disable")
-            self.css_domain_enabled = False
+        if self.enabled:
+            self._connection.RemoveListenerForEvent("CSS.styleSheetAdded", self._CSS_sheet_catcher)
+            await self._connection.Call("CSS.disable")
+            self.style_sheets = []
+            self.enabled = False
 
     async def AddRule(
         self, styleSheetId: str, ruleText: str,
@@ -90,7 +82,7 @@ class CSS(ABC):
             "ruleText": ruleText,
             "location": location
         }
-        return (await self.Call("CSS.addRule", args))["rule"]
+        return (await self._connection.Call("CSS.addRule", args))["rule"]
 
     async def CollectClassNames(self, styleSheetId: str) -> List[str]:
         """
@@ -99,7 +91,7 @@ class CSS(ABC):
         :param styleSheetId:            Идентификатор стилей.
         :return:
         """
-        return (await self.Call("CSS.collectClassNames", {"styleSheetId": styleSheetId}))["classNames"]
+        return (await self._connection.Call("CSS.collectClassNames", {"styleSheetId": styleSheetId}))["classNames"]
 
     async def CreateStyleSheet(self, frameId: str = None) -> str:
         """
@@ -110,9 +102,9 @@ class CSS(ABC):
         :param frameId:                 Идентификатор фрейма, в котором будет создан styleSheet.
         :return:                styleSheetId
         """
-        frameId = frameId if frameId else self.page_id
-        styleSheetId = (await self.Call("CSS.createStyleSheet", {"frameId": frameId}))["styleSheetId"]
-        self.style_sheets.append(styleSheetId)
+        frameId = frameId if frameId else self._connection.conn_id
+        styleSheetId = (await self._connection.Call("CSS.createStyleSheet", {"frameId": frameId}))["styleSheetId"]
+        self._style_sheets.append(styleSheetId)
         return styleSheetId
 
     async def GetStyleSheetText(self, styleSheetId: str) -> str:
@@ -122,23 +114,7 @@ class CSS(ABC):
         :param styleSheetId:            Идентификатор стилей.
         :return:
         """
-        return (await self.Call("CSS.getStyleSheetText", {"styleSheetId": styleSheetId}))["text"]
-
-    @abstractmethod
-    async def AddListenerForEvent(
-            self, event: str, listener: Callable, *args: any) -> None:
-        raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
-
-    @abstractmethod
-    def RemoveListenerForEvent(self, event: str, listener: Callable) -> None:
-        raise NotImplementedError("method RemoveListenerForEvent() — is not implemented")
-
-    @abstractmethod
-    async def Call(
-            self, domain_and_method: str,
-            params: Optional[dict] = None,
-            wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+        return (await self._connection.Call("CSS.getStyleSheetText", {"styleSheetId": styleSheetId}))["text"]
 
 class CSSEvent(DomainEvent):
     fontsUpdated = "CSS.fontsUpdated"

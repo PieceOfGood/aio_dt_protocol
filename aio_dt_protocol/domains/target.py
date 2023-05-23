@@ -1,34 +1,21 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Union, List, Awaitable, Callable
-from ..Data import DomainEvent
+from typing import Optional, List, Awaitable, Callable
+from ..data import DomainEvent
 from dataclasses import dataclass
 
-class Target(ABC):
+class Target:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Target
     """
-    __slots__ = ()
+    __slots__ = ("_connection", "targets_discovered")
 
-    def __init__(self):
+    def __init__(self, conn) -> None:
+
+        from ..connection import Connection
+
+        self._connection: Connection = conn
         self.targets_discovered = False
 
-    @property
-    def connected(self) -> bool:
-        return False
-
-    @property
-    def verbose(self) -> bool:
-        return False
-
-    @property
-    def is_headless_mode(self) -> bool:
-        return False
-
-    @property
-    def page_id(self) -> str:
-        return ""
-
-    async def CreateBrowserContext(
+    async def createBrowserContext(
         self,
         disposeOnDetach: Optional[bool] = None,
         proxyServer: Optional[str]      = None,
@@ -46,26 +33,26 @@ class Target(ABC):
         if disposeOnDetach is not None: args.update(disposeOnDetach=disposeOnDetach)
         if proxyServer is not None: args.update(proxyServer=proxyServer)
         if proxyBypassList is not None: args.update(proxyBypassList=proxyBypassList)
-        return (await self.Call("Target.createBrowserContext", args))["browserContextId"]
+        return (await self._connection.Call("Target.createBrowserContext", args))["browserContextId"]
 
-    async def GetBrowserContexts(self) -> List[str]:
+    async def getBrowserContexts(self) -> List[str]:
         """
         Возвращает все контексты браузера, созданные с помощью метода Target.createBrowserContext.
         https://chromedevtools.github.io/devtools-protocol/tot/Target/#method-getBrowserContexts
         :return:                [ Browser.BrowserContextID, Browser.BrowserContextID, ... ]
         """
-        return (await self.Call("Target.getBrowserContexts"))["browserContextIds"]
+        return (await self._connection.Call("Target.getBrowserContexts"))["browserContextIds"]
 
-    async def DisposeBrowserContext(self, browserContextId: str) -> None:
+    async def disposeBrowserContext(self, browserContextId: str) -> None:
         """
         Удаляет BrowserContext. Все соответствующие страницы будут закрыты без вызова их хуков beforeunload.
         https://chromedevtools.github.io/devtools-protocol/tot/Target/#method-disposeBrowserContext
         :param browserContextId:    Идентификатор контекста браузера.
         :return:
         """
-        await self.Call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
+        await self._connection.Call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
 
-    async def GetTargetInfo(self, targetId: Optional[str] = None) -> 'TargetType.TargetInfo':
+    async def getTargetInfo(self, targetId: Optional[str] = None) -> 'TargetType.TargetInfo':
         """
         (EXPERIMENTAL)
         Возвращает информацию о "target", или о себе, если идентификатор не передан.
@@ -81,27 +68,28 @@ class Target(ABC):
                                         "browserContextId": str,
                                     }
         """
-        if targetId is None: targetId = self.page_id
-        return TargetType.TargetInfo(**((await self.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]))
+        if targetId is None: targetId = self._connection.conn_id
+        return TargetType.TargetInfo(
+            **((await self._connection.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]))
 
-    async def GetTargets(self) -> List['TargetType.TargetInfo']:
+    async def getTargets(self) -> List['TargetType.TargetInfo']:
         """
         Возвращает список 'targetInfo' о доступных 'targets'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-getTargets
         :return:                [ targetInfo, targetInfo, ... ]
         """
-        result = (await self.Call("Target.getTargets"))["targetInfos"]
+        result = (await self._connection.Call("Target.getTargets"))["targetInfos"]
         return [TargetType.TargetInfo(**info) for i, info in enumerate(result)]
 
-    async def AttachToBrowserTarget(self) -> str:
+    async def attachToBrowserTarget(self) -> str:
         """
         Присоединяется к target браузера, использует только режим flat sessionId.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-attachToBrowserTarget
         :return:                    sessionId
         """
-        return (await self.Call("Target.attachToBrowserTarget"))["sessionId"]
+        return (await self._connection.Call("Target.attachToBrowserTarget"))["sessionId"]
 
-    async def AttachToTarget(self, targetId: str, flatten: Optional[bool] = None) -> str:
+    async def attachToTarget(self, targetId: str, flatten: Optional[bool] = None) -> str:
         """
         Присоединяется к 'target' по указанному 'targetId'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-attachToTarget
@@ -112,9 +100,9 @@ class Target(ABC):
         """
         args = {"targetId": targetId}
         if flatten is not None: args.update({"flatten": flatten})
-        return (await self.Call("Target.attachToTarget", args))["sessionId"]
+        return (await self._connection.Call("Target.attachToTarget", args))["sessionId"]
 
-    async def DetachFromTarget(self, sessionId: str = "", targetId: str = "") -> None:
+    async def detachFromTarget(self, sessionId: str = "", targetId: str = "") -> None:
         """
         Отключается от сессии переданного 'sessionId'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-detachFromTarget
@@ -126,9 +114,9 @@ class Target(ABC):
         if sessionId: args.update({"sessionId": sessionId})
         elif targetId: args.update({"targetId": targetId})
         else: raise ValueError("At least one parameter must be specified 'sessionId' or 'targetId'")
-        await self.Call("Target.detachFromTarget", args)
+        await self._connection.Call("Target.detachFromTarget", args)
 
-    async def SetAutoAttach(
+    async def setAutoAttach(
             self, autoAttach: bool, waitForDebuggerOnStart: bool, flatten: Optional[bool] = None) -> None:
         """
         Определяет, следует ли автоматически присоединяться к новым target, которые считаются связанными
@@ -145,9 +133,9 @@ class Target(ABC):
         """
         args = {"autoAttach": autoAttach, "waitForDebuggerOnStart": waitForDebuggerOnStart}
         if flatten is not None: args.update(flatten=flatten)
-        await self.Call("Target.setAutoAttach", args)
+        await self._connection.Call("Target.setAutoAttach", args)
 
-    async def CreateTarget(
+    async def createTarget(
         self,
         url: str                        = "about:blank",
         width: Optional[int]            = None,
@@ -176,15 +164,15 @@ class Target(ABC):
         """
         args = {
             "url": url, "enableBeginFrameControl": enableBeginFrameControl,
-            "newWindow": False if self.is_headless_mode else newWindow,
-            "background": False if self.is_headless_mode else background
+            "newWindow": False if self._connection.is_headless_mode else newWindow,
+            "background": False if self._connection.is_headless_mode else background
         }
         if width is not None: args.update(width=width)
         if height is not None: args.update(height=height)
         if browserContextId is not None: args.update(browserContextId=browserContextId)
-        return (await self.Call("Target.createTarget", args))["targetId"]
+        return (await self._connection.Call("Target.createTarget", args))["targetId"]
 
-    async def CloseTarget(self, targetId: Optional[str] = None) -> None:
+    async def closeTarget(self, targetId: Optional[str] = None) -> None:
         """
         Закрывает вкладку указанного идентификатора, или завершает собственный инстанс,
             если идентификатор не передан.
@@ -192,16 +180,16 @@ class Target(ABC):
         :param targetId:        Строка, представляющая идентификатор созданной страницы.
         :return:                None
         """
-        if targetId is None: targetId = self.page_id
-        await self.Call("Target.closeTarget", {"targetId": targetId})
+        if targetId is None: targetId = self._connection.conn_id
+        await self._connection.Call("Target.closeTarget", {"targetId": targetId})
 
-    async def Close(self) -> None:
+    async def close(self) -> None:
         """
         Закрывает вкладку.
         """
-        await self.CloseTarget()
+        await self.closeTarget()
 
-    async def SetDiscoverTargets(
+    async def setDiscoverTargets(
         self, discover: bool,
         message:   Optional[Callable[[str, str], Awaitable[None]]] = None,
         created:   Optional[Callable[['TargetType.TargetInfo'], Awaitable[None]]] = None,
@@ -237,11 +225,16 @@ class Target(ABC):
             await destroyed(params["targetId"])
 
         if discover:
-            if message is not None: await self.AddListenerForEvent(TargetEvent.receivedMessageFromTarget, on_message)
-            if created is not None: await self.AddListenerForEvent(TargetEvent.targetCreated, on_created)
-            if crashed is not None: await self.AddListenerForEvent(TargetEvent.targetCrashed, on_crashed)
-            if changed is not None: await self.AddListenerForEvent(TargetEvent.targetInfoChanged, on_changed)
-            if destroyed is not None: await self.AddListenerForEvent(TargetEvent.targetDestroyed, on_destroyed)
+            if message is not None:
+                await self._connection.AddListenerForEvent(TargetEvent.receivedMessageFromTarget, on_message)
+            if created is not None:
+                await self._connection.AddListenerForEvent(TargetEvent.targetCreated, on_created)
+            if crashed is not None:
+                await self._connection.AddListenerForEvent(TargetEvent.targetCrashed, on_crashed)
+            if changed is not None:
+                await self._connection.AddListenerForEvent(TargetEvent.targetInfoChanged, on_changed)
+            if destroyed is not None:
+                await self._connection.AddListenerForEvent(TargetEvent.targetDestroyed, on_destroyed)
         else:
             for event in [
                 'Target.receivedMessageFromTarget',
@@ -250,25 +243,9 @@ class Target(ABC):
                 'Target.targetInfoChanged',
                 'Target.targetDestroyed'
             ]:
-                self.RemoveListenersForEvent(event)
+                self._connection.RemoveListenersForEvent(event)
         self.targets_discovered = discover
-        await self.Call("Target.setDiscoverTargets", {"discover": discover})
-
-    @abstractmethod
-    async def Call(
-        self, domain_and_method: str,
-        params: Optional[dict]            = None,
-        wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
-
-    @abstractmethod
-    async def AddListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable, *args: any) -> None:
-        raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
-
-    @abstractmethod
-    def RemoveListenersForEvent(self, event: str) -> None:
-        raise NotImplementedError("method RemoveListenersForEvent() — is not implemented")
+        await self._connection.Call("Target.setDiscoverTargets", {"discover": discover})
 
 
 class TargetEvent(DomainEvent):

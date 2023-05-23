@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
-from ..Data import SystemData, GPUInfo, ProcessInfo
+from ..data import SystemData, GPUInfo, ProcessInfo
 
 class SystemInfo(ABC):
     """

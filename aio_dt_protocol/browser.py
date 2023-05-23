@@ -1,3 +1,6 @@
+import asyncio
+from urllib.error import URLError
+
 try:
     import ujson as json
     HAS_UJSON = True
@@ -12,9 +15,9 @@ from inspect import iscoroutinefunction
 from typing import List, Dict, Union, Optional, Tuple
 from collections.abc import Sequence
 from enum import Enum
-from .Page import Page
-from .Data import TargetConnectionInfo, TargetConnectionType, CommonCallback
-from .exceptions import FlagArgumentContainError
+from .connection import Connection
+from .data import TargetConnectionInfo, TargetConnectionType, CommonCallback
+from .exceptions import FlagArgumentContainError, NoTargetWithGivenIdFound
 from .utils import get_request, registry_read_key, log, async_util_call
 
 
@@ -271,7 +274,7 @@ class Browser:
         run_args += flag_box.flags()
         return subprocess.Popen(run_args).pid
 
-    def KillBrowser(self) -> None:
+    def kill(self) -> None:
         """
         "Убивает" процесс браузера. Рекомендуется только в крайних случаях.
             Лучше всего вызывать метод Call("Browser.close") у инстанса страницы
@@ -280,36 +283,36 @@ class Browser:
         try: os.kill(self.browser_pid, signal.SIGTERM)
         except PermissionError: pass
 
-    async def GetTargetConnectionInfoList(self) -> List[TargetConnectionInfo]:
-        return [TargetConnectionInfo(**i) for i in await self.GetPageList()]
+    async def getTargetConnectionInfoList(self) -> List[TargetConnectionInfo]:
+        return [TargetConnectionInfo(**i) for i in await self.getPageList()]
 
-    async def GetTargetConnectionInfo(
+    async def getTargetConnectionInfo(
             self, key: str = "type",
-            connection_type: Union[str, TargetConnectionType] = "page") -> TargetConnectionInfo:
+            connection_type: Union[str, TargetConnectionType] = "conn") -> TargetConnectionInfo:
         v = connection_type if type(connection_type) is str else connection_type.value
-        for page_data in await self.GetPageList():
+        for page_data in await self.getPageList():
             data = page_data[key]
             if v in data: return TargetConnectionInfo(**page_data)
         raise ValueError(f"No have value {v} for key {key} in active target list")
 
-    async def GetConnectionsByType(
+    async def getConnectionsByType(
             self, connection_type: Union[str, TargetConnectionType]) -> List[TargetConnectionInfo]:
         t = connection_type if type(connection_type) is str else connection_type.value
-        return [ti for ti in await self.GetTargetConnectionInfoList() if ti.type == t]
+        return [ti for ti in await self.getTargetConnectionInfoList() if ti.type == t]
 
-    async def GetPageList(self) -> List[dict]:
+    async def getPageList(self) -> List[dict]:
         """
         Запрашивает у браузера список всех его дочерних процессов,
         включая табы(вкладки/страницы), воркеры, расширения, сервисы и прочее.
 
         :return: [ {
                     "description": "",
-                    "devtoolsFrontendUrl": "/devtools/inspector.html?ws=localhost:9222/devtools/page/DAB7FB6187B554E10B0BD18821265734",
+                    "devtoolsFrontendUrl": "/devtools/inspector.html?ws=localhost:9222/devtools/conn/DAB7FB6187B554E10B0BD18821265734",
                     "id": "DAB7FB6187B554E10B0BD18821265734",
                     "title": "Yahoo",
-                    "type": "page",
+                    "type": "conn",
                     "url": "https://www.yahoo.com/",
-                    "webSocketDebuggerUrl": "ws://localhost:9222/devtools/page/DAB7FB6187B554E10B0BD18821265734"
+                    "webSocketDebuggerUrl": "ws://localhost:9222/devtools/conn/DAB7FB6187B554E10B0BD18821265734"
                 }, { ... } ]
         """
         result = await async_util_call(
@@ -318,13 +321,13 @@ class Browser:
         if self.verbose: log("GetPageList() => " + result)
         return json.loads(result)
 
-    async def GetPageBy(
+    async def getPageBy(
             self, key: Union[str, int],
             value: Union[str, int],
             match_mode: str = "exact",
             index: int = 0,
             callback: CommonCallback = None
-    ) -> Union[Page, None]:
+    ) -> Union[Connection, None]:
         """
         Организует выбор нужного инстанса из процессов браузера по следующим критериям:
         :param key:                 По ключу из словаря. Список ключей смотри
@@ -349,13 +352,13 @@ class Browser:
             raise TypeError("Argument 'callback' must be a coroutine")
 
         counter = 0; v = value.lower()
-        for page_data in await self.GetPageList():
+        for page_data in await self.getPageList():
             data = page_data[key]
             if ((match_mode == "exact" and data == v)
                 or (match_mode == "contains" and data.find(v) > -1 )
                     or (match_mode == "startswith" and data.find(v) == 0)):
                 if counter == index:
-                    page = Page(
+                    conn = Connection(
                         page_data["webSocketDebuggerUrl"],
                         page_data["id"],
                         page_data["devtoolsFrontendUrl"],
@@ -364,16 +367,16 @@ class Browser:
                         self.verbose,
                         self.browser_name
                     )
-                    await page.Activate()
-                    return page
+                    await conn.Activate()
+                    return conn
                 counter += 1
         return None
 
-    async def GetPage(
+    async def getPage(
             self,
             index: int = 0, page_type: str = "page",
             callback: CommonCallback = None
-    ) -> "Page":
+    ) -> "Connection":
         """
         Получает страницу браузера по индексу. По умолчанию, первую.
         :param index:       - Желаемый индекс страницы начиная с нуля.
@@ -382,15 +385,15 @@ class Browser:
                                 всех событий страницы в виде словаря.
         :return:        <Page>
         """
-        return await self.GetPageBy("type", page_type, "exact", index, callback)
+        return await self.getPageBy("type", page_type, "exact", index, callback)
 
-    async def GetPageByID(
-            self, page_id: str,
+    async def getPageByID(
+            self, conn_id: str,
             callback: CommonCallback = None
-    ) -> "Page":
+    ) -> "Connection":
         """
         Получает страницу браузера по уникальному идентификатору.
-        :param page_id:     - Желаемый идентификатор страницы. Метод GetPageList()
+        :param conn_id:     - Желаемый идентификатор страницы. Метод GetPageList()
                                 возвращает список доступных инстансов и словарь
                                 каждого из них содержит 'id'. Так же создание инстансов
                                 страниц через домен 'Target' возвращает 'targetId',
@@ -399,14 +402,14 @@ class Browser:
                                 всех событий страницы в виде словаря.
         :return:        <Page>
         """
-        return await self.GetPageBy("id", page_id, "exact", 0, callback)
+        return await self.getPageBy("id", conn_id, "exact", 0, callback)
 
-    async def GetPageByTitle(
+    async def getPageByTitle(
             self, value: str,
             match_mode: str = "startswith",
             index: int = 0,
             callback: CommonCallback = None
-    ) -> "Page":
+    ) -> "Connection":
         """
         Получает страницу браузера по заголовку. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -420,14 +423,14 @@ class Browser:
                                 всех событий страницы в виде словаря.
         :return:        <Page>
         """
-        return await self.GetPageBy("title", value, match_mode, index, callback)
+        return await self.getPageBy("title", value, match_mode, index, callback)
 
-    async def GetPageByURL(
+    async def getPageByURL(
             self, value: str,
             match_mode: str = "startswith",
             index: int = 0,
             callback: CommonCallback = None
-    ) -> "Page":
+    ) -> "Connection":
         """
         Получает страницу браузера по её URL. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -441,7 +444,132 @@ class Browser:
                                 всех событий страницы в виде словаря.
         :return:        <Page>
         """
-        return await self.GetPageBy("url", value, match_mode, index, callback)
+        return await self.getPageBy("url", value, match_mode, index, callback)
+
+    async def createPage(
+            self, url: str = "about:blank",
+            newWindow: bool = False,
+            background: bool = False,
+            wait_for_create: bool = True,
+            callback: CommonCallback = None
+    ) -> Optional[Connection]:
+        """
+        Создаёт новую вкладку в браузере.
+        :param url:                     - (optional) Адрес будет открыт при создании.
+        :param newWindow:               - (optional) Если 'True' — страница будет открыта в новом окне.
+        :param background:              - (optional) Если 'True' — страница будет открыта в фоне.
+        :return:                    * Инстанс страницы <PageEx>
+        """
+        while not (tmp := await self.getPage(callback=callback)):
+            await asyncio.sleep(.5)
+        page_id = await tmp.Target.createTarget(url, newWindow=newWindow, background=background)
+        if wait_for_create:
+            while not (page := await self.getPageByID(page_id)):
+                await asyncio.sleep(.5)
+        else:
+            page = await self.getPageByID(page_id)
+        return page
+    
+    async def showInspector(self, conn: Connection, new_window: bool = True,
+                            callback: CommonCallback = None) -> Optional[Connection]:
+        """
+        Открывает новую вкладку с дебаггером для инспектируемой страницы.
+        :param conn:            - Инспектируемая страница. Может принадлежать любому браузеру.
+        :param new_window:      - Создать target в отдельном окне?
+        :return:        <Connection>
+        """
+        return await self.createPage(
+            "http://127.0.0.1:" + str(self.debug_port) + conn.frontend_url, new_window, callback=callback
+        )
+
+    async def createPopupWindow(self, conn: Connection, url: str = "about:blank",
+                                callback: CommonCallback = None) -> Optional[Connection]:
+        """
+        Создаёт всплывающее окно с минимумом интерфейса браузера".
+        :param url:             - Адрес, ресурс которого будет загружен
+        :param conn:            - Родительская страница, инициатор
+        :return:        Connection or None
+        """
+        await conn.extend.injectJS(f'window.open("{url}", "blank_window_name", "popup,noopener,noreferrer");')
+        return await self.getPageByOpener(conn, callback=callback)
+
+    async def getPageByOpener(self, conn: Connection, callback: CommonCallback = None) -> Optional[Connection]:
+        """
+        Возвращает последний созданный инстанс страницы, открытие которого инициировано с конкретной страницы.
+            Например, при использовании JavaScript "window.open()".
+        :param conn:            - Родительская страница, инициатор
+        :return:        Connection or None
+        """
+        for target_info in await conn.Target.getTargets():
+            if target_info.openerId == conn.conn_id:
+                return await self.getPageByID(target_info.targetId, callback=callback)
+        return None
+
+    async def getPagesByOpener(self, conn: Connection, callback: CommonCallback = None) -> List[Connection]:
+        """
+        Возвращает список всех инстансов страниц, открытие которых инициировано с конкретной страницы.
+            Например, при использовании JavaScript "window.open()".
+        :param conn:            - Родительская страница, инициатор открытых окон
+        :return:        List[Connection]
+        """
+        pages = []
+        for target_info in await conn.Target.getTargets():
+            if target_info.openerId == conn.conn_id:
+                pages.append(await self.getPageByID(target_info.targetId, callback=callback))
+        return pages
+
+    async def waitFirstTab(self, timeout: float = 20.0, callback: CommonCallback = None) -> Connection:
+        """
+        Вызывает исключение 'asyncio.exceptions.TimeoutError' по истечении таймаута, или возвращает инстанс.
+        """
+        return await asyncio.wait_for(self.getFirstTab(callback), timeout)
+
+    async def getFirstTab(self, callback: CommonCallback = None) -> Connection:
+        """
+        Безусловно дожидается соединения со страницей.
+        """
+        while True:
+            try:
+                while (conn := await self.getPage(callback=callback)) is None:
+                    await asyncio.sleep(.5)
+                return conn
+            except URLError: await asyncio.sleep(1)
+
+    async def close(self) -> None:
+        """ Корректно закрывает браузер если остались ещё его инстансы """
+        if conn := await self.getPage():
+            await conn.Browser.close()
+
+    async def closeAllPagesExcept(self, *except_list: Connection) -> None:
+        """ Закрывает все страницы браузера, кроме переданных """
+        for conn in await self.getTargetConnectionInfoList():
+            if conn.type == "conn":
+                condition = False
+                for conn in except_list:
+                    condition |= conn.conn_id == conn.id
+                if not condition:
+                    i = 4
+                    try:
+                        while (tab := await self.getPageByID(conn.id)) is None and i:
+                            await asyncio.sleep(.5)
+                            i -= 1
+                        if tab: await tab.Target.close()
+                    except NoTargetWithGivenIdFound:
+                        pass
+
+    async def getFramesFor(self, conn: Connection) -> List[Connection]:
+        """ Возвращает список iFrame для указанного инстанса """
+        result = []
+        for data in await self.getPageList():
+            if data["type"] == "iframe" and data["parentId"] == conn.conn_id:
+                result.append(await self.getPageByID(data["id"]))
+        return result
+
+    def __eq__(self, other: "Browser") -> bool:
+        return self.debug_port == other.debug_port
+
+    def __hash__(self) -> int:
+        return hash(self.debug_port)
 
 
 class FlagBuilder:

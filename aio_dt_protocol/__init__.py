@@ -7,12 +7,12 @@ __all__ = [
     "find_instances",
     "CMDFlags",
     "FlagBuilder",
-    "BrowserEx",
-    "PageEx"
+    # "BrowserEx",
+    # "PageEx"
 ]
 
-from .Browser import CMDFlags
-from .Browser import FlagBuilder
-from .BrowserEx import BrowserEx
-from .PageEx import PageEx
+from .browser import CMDFlags
+from .browser import FlagBuilder
+# from .BrowserEx import BrowserEx
+# from .PageEx import PageEx
 from .utils import find_instances

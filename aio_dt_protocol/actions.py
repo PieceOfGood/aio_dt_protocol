@@ -2,14 +2,16 @@ import time
 import asyncio
 import random
 from typing import Tuple, List, Optional, Literal
-from .Data import WINDOWS_KEY_SET, WindowBounds, TouchPoint, KeyModifiers, KeyEvents
+from .data import WINDOWS_KEY_SET, WindowBounds, TouchPoint, KeyModifiers, KeyEvents
 
 
 class Actions:
-    __slots__ = ("page_instance",)
+    __slots__ = ("_connection",)
 
-    def __init__(self, page_instance):
-        self.page_instance = page_instance
+    def __init__(self, conn) -> None:
+        from .connection import Connection
+
+        self._connection: Connection = conn
 
 
 # region [ |>*<|=== Domains ===|>*<| ] Input [ |>*<|=== Domains ===|>*<| ]
@@ -79,7 +81,7 @@ class Actions:
             args.update({"timestamp": timestamp})
         else:
             args.update({"timestamp": int(time.time() * 1000)})
-        await self.page_instance.Call("Input.dispatchKeyEvent", args)
+        await self._connection.Call("Input.dispatchKeyEvent", args)
 
     async def DispatchMouseEvent(
         self, type_: str, x: float, y: float,
@@ -148,7 +150,7 @@ class Actions:
             args.update({"timestamp": timestamp})
         else:
             args.update({"timestamp": int(time.time() * 1000)})
-        await self.page_instance.Call("Input.dispatchMouseEvent", args)
+        await self._connection.Call("Input.dispatchMouseEvent", args)
 
     async def DispatchTouchEvent(
         self, type_: str,
@@ -181,7 +183,7 @@ class Actions:
         if timestamp is not None: args.update({"timestamp": timestamp})
         else: args.update({"timestamp": int(time.time() * 1000)})
 
-        await self.page_instance.Call("Input.dispatchTouchEvent", args)
+        await self._connection.Call("Input.dispatchTouchEvent", args)
 
     async def InsertText(self, text: str) -> None:
         """
@@ -192,7 +194,7 @@ class Actions:
         :param text:                    Текст для вставки.
         :return:
         """
-        await self.page_instance.Call("Input.insertText", {"text": text})
+        await self._connection.Call("Input.insertText", {"text": text})
 
     async def SynthesizePinchGesture(
             self, x: float, y: float, scaleFactor: float,
@@ -218,7 +220,7 @@ class Actions:
             args.update({"relativeSpeed": relativeSpeed})
         if gestureSourceType is not None:
             args.update({"gestureSourceType": gestureSourceType})
-        await self.page_instance.Call("Input.synthesizePinchGesture", args)
+        await self._connection.Call("Input.synthesizePinchGesture", args)
 
     async def SynthesizeScrollGesture(
             self, x: float, y: float,
@@ -277,7 +279,7 @@ class Actions:
             args.update({"repeatDelayMs": repeatDelayMs})
         if interactionMarkerName is not None:
             args.update({"interactionMarkerName": interactionMarkerName})
-        await self.page_instance.Call("Input.synthesizeScrollGesture", args)
+        await self._connection.Call("Input.synthesizeScrollGesture", args)
 
     async def SynthesizeTapGesture(
             self, x: float, y: float,
@@ -305,7 +307,7 @@ class Actions:
             args.update({"tapCount": tapCount})
         if gestureSourceType is not None:
             args.update({"gestureSourceType": gestureSourceType})
-        await self.page_instance.Call("Input.synthesizeTapGesture", args)
+        await self._connection.Call("Input.synthesizeTapGesture", args)
 
     async def ActivateTarget(self, targetId: Optional[str] = None) -> None:
         """
@@ -314,8 +316,8 @@ class Actions:
         :param targetId:        Строка, представляющая идентификатор созданной страницы.
         :return:
         """
-        if targetId is None: targetId = self.page_instance.page_id
-        await self.page_instance.Call("Target.activateTarget", {"targetId": targetId})
+        if targetId is None: targetId = self._connection.conn_id
+        await self._connection.Call("Target.activateTarget", {"targetId": targetId})
 
     async def BringToFront(self) -> None:
         """
@@ -323,7 +325,7 @@ class Actions:
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-bringToFront
         :return:
         """
-        await self.page_instance.Call("Page.bringToFront")
+        await self._connection.Call("Page.bringToFront")
 
     # endregion
 
@@ -364,15 +366,15 @@ class Actions:
         sign = -1 if direction in ["up", "left"] else 1
         rect = None
         if x is None:
-            rect = await self.page_instance.GetViewportRect()
+            rect = await self._connection.GetViewportRect()
             x = 10 if direction == "right" else rect.width - 10 if direction == "left" else rect.height / 2
 
         if y is None:
-            rect = await self.page_instance.GetViewportRect()
+            rect = await self._connection.GetViewportRect()
             y = 10 if direction == "down" else rect.height - 10 if direction == "up" else rect.width / 2
 
         if distance is None:
-            rect = rect or await self.page_instance.GetViewportRect()
+            rect = rect or await self._connection.GetViewportRect()
             distance = (rect.height if direction in ["up", "down"] else rect.width) - 10
 
         overscroll = overscroll if overscroll is not None else 0
@@ -415,7 +417,7 @@ class Actions:
 
     async def WheelTo(self, direction: str = "down") -> None:
         sign = -1 if direction in ["up", "left"] else 1
-        rect = await self.page_instance.GetViewportRect()
+        rect = await self._connection.GetViewportRect()
         x = 10 if direction == "right" else rect.width - 10 if direction == "left" else rect.height / 2
         y = 10 if direction == "down" else rect.height - 10 if direction == "up" else rect.width / 2
         distance = ((rect.height if direction in ["up", "down"] else rect.width) - 10) * sign
@@ -505,5 +507,5 @@ class Actions:
         :return:        None
         """
         if windowId is None:
-            windowId = (await self.page_instance.GetWindowForTarget()).windowId
-        await self.page_instance.Call("Browser.setWindowBounds", {"windowId": windowId, "bounds": bounds.to_dict()})
+            windowId = (await self._connection.GetWindowForTarget()).windowId
+        await self._connection.Call("Browser.setWindowBounds", {"windowId": windowId, "bounds": bounds.to_dict()})

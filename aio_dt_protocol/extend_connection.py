@@ -3,91 +3,41 @@ try:
 except ModuleNotFoundError:
     import json
 
-from .Page import Page
-from .Actions import Actions
-from .DOMElement import Node
-from .Data import ViewportRect, WindowRect, GeoInfo
+from .actions import Actions
+from .dom_element import Node
+from .data import ViewportRect, WindowRect, GeoInfo
 
 import base64, re
 from typing import Optional, Union
 
 from .exceptions import EvaluateError, JavaScriptError, NullProperty
 
-from .domains.BackgroundService import BackgroundService as BackgroundServiceDomain
-from .domains.Browser import Browser as BrowserDomain
-from .domains.DOM import DOM as DOMDomain
-from .domains.Emulation import Emulation as EmulationDomain
-from .domains.Log import Log as LogDomain
-from .domains.Network import Network as NetworkDomain
-from .domains.Page import Page as PageDomain
-from .domains.Runtime import Runtime as RuntimeDomain
-from .domains.Target import Target as TargetDomain
-from .domains.Console import Console as ConsoleDomain
-from .domains.Overlay import Overlay as OverlayDomain
-from .domains.CSS import CSS as CSSDomain
-from .domains.DeviceOrientation import DeviceOrientation as DeviceOrientationDomain
-from .domains.Fetch import Fetch as FetchDomain
-from .domains.SystemInfo import SystemInfo as SystemInfoDomain
 
-class PageEx(
-    Page, BrowserDomain, DOMDomain, EmulationDomain, LogDomain, NetworkDomain,
-    PageDomain, RuntimeDomain, TargetDomain, ConsoleDomain, OverlayDomain,
-    CSSDomain, DeviceOrientationDomain, FetchDomain, SystemInfoDomain, BackgroundServiceDomain
-):
+class Extend:
     """
     Расширение для 'Page'. Включает сборку наиболее востребованных методов для работы
         с API 'ChromeDevTools Protocol', а так же дополняет некоторыми полезными методами.
     """
-    __slots__ = (
-        "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
-        "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_method",
-        "runtime_enabled", "on_close_event", "storage", "action", "_root", "style_sheets", "loading_state",
-        "observing_started", "recording_started", "dom_domain_enabled", "targets_discovered", "log_domain_enabled",
-        "network_domain_enabled", "console_domain_enabled", "page_domain_enabled", "fetch_domain_enabled",
-        "css_domain_enabled", "overlay_domain_enabled"
-    )
+    __slots__ = ("_connection", "storage", "action", "_root", "style_sheets")
 
-    def __init__(self, *args):
-        Page.__init__(self, *args)
+    def __init__(self, conn) -> None:
 
-        BrowserDomain.__init__(self)
-        DOMDomain.__init__(self)
-        EmulationDomain.__init__(self)
-        LogDomain.__init__(self)
-        NetworkDomain.__init__(self)
-        PageDomain.__init__(self)
-        RuntimeDomain.__init__(self)
-        TargetDomain.__init__(self)
-        ConsoleDomain.__init__(self)
-        OverlayDomain.__init__(self)
-        CSSDomain.__init__(self)
-        DeviceOrientationDomain.__init__(self)
-        FetchDomain.__init__(self)
-        SystemInfoDomain.__init__(self)
-        BackgroundServiceDomain.__init__(self)
+        from .connection import Connection
+
+        self._connection: Connection = conn
 
         self.storage = {}
         self.action = Actions(self)             # Совершает действия на странице. Клики; движения мыши; события клавиш
         self._root: Union[Node, None] = None
         self.style_sheets = []                  # Если домен CSS активирован, сюда попадут все 'styleSheetId' страницы
 
-        self.loading_state = ""                 # Состояние загрузки страницы(основного фрейма). Отслеживается, если
-                                                #   включены уведомления домена Page. Может иметь значения:
-                                                # |  started; navigated; stopped; do_navigate; do_reload |
 
-    def __str__(self) -> str:
-        return f"<Page targetId={self.page_id!r}>"
 
-    def __eq__(self, other: "PageEx") -> bool:
-        return self.page_id == other.page_id
-
-    def __hash__(self) -> int:
-        return hash(self.page_id)
 
     # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
     #
 
-    async def PyExecAddOnload(self) -> None:
+    async def pyExecAddOnload(self) -> None:
         """ Включает автоматически добавляющийся JavaScript, вызывающий слушателей
         клиента, добавленных на страницу с помощью await <Page>.AddListener(...) и
         await <Page>.AddListeners(...).
@@ -108,31 +58,31 @@ class PageEx(
         """
         py_exec_js = """function py_exec(funcName, ...args) {
             console.info(JSON.stringify({ func_name: funcName, args: args })); }"""
-        await self.AddScriptOnLoad(py_exec_js)
+        await self._connection.Page.addScriptOnLoad(py_exec_js)
 
-    async def GetViewportRect(self) -> ViewportRect:
+    async def getViewportRect(self) -> ViewportRect:
         """
         Возвращает список с длиной и шириной вьюпорта браузера.
         """
         code = "(()=>{return JSON.stringify([window.innerWidth,window.innerHeight]);})();"
-        data = json.loads(await self.InjectJS(code))
+        data = json.loads(await self.injectJS(code))
         return ViewportRect(int(data[0]), int(data[1]))
 
-    async def GetWindowRect(self) -> WindowRect:
+    async def getWindowRect(self) -> WindowRect:
         """
         Возвращает список с длиной и шириной окна браузера.
         """
         code = "(()=>{return JSON.stringify([window.outerWidth,window.outerHeight]);})();"
-        data = json.loads(await self.InjectJS(code))
+        data = json.loads(await self.injectJS(code))
         return WindowRect(int(data[0]), int(data[1]))
 
-    async def GetUrl(self) -> str:
-        return (await self.GetTargetInfo()).url
+    async def getUrl(self) -> str:
+        return (await self._connection.Target.getTargetInfo()).url
 
-    async def GetTitle(self) -> str:
-        return (await self.GetTargetInfo()).title
+    async def getTitle(self) -> str:
+        return (await self._connection.Target.getTargetInfo()).title
 
-    async def MakeScreenshot(
+    async def makeScreenshot(
             self,
                  format_: str = "",
                  quality: int = -1,
@@ -154,23 +104,23 @@ class PageEx(
                                     Defaults to true.
         :return:                bytes
         """
-        shot = await self.CaptureScreenshot(format_, quality, clip, fromSurface)
+        shot = await self._connection.Page.captureScreenshot(format_, quality, clip, fromSurface)
         return base64.b64decode(shot.encode("utf-8"))
 
-    async def SelectInputContentBy(self, css: str) -> None:
-        await self.InjectJS(f"let _i_ = document.querySelector('{css}'); _i_.focus(); _i_.select();")
+    async def selectInputContentBy(self, css: str) -> None:
+        await self.injectJS(f"let _i_ = document.querySelector('{css}'); _i_.focus(); _i_.select();")
 
-    async def ScrollIntoViewJS(self, selector: str) -> None:
-        await self.InjectJS(
+    async def scrollIntoViewJS(self, selector: str) -> None:
+        await self.injectJS(
             "document.querySelector(\"" +
             selector +
             "\").scrollIntoView({'behavior':'smooth', 'block': 'center'});"
         )
 
-    async def InjectJS(self, code: str) -> any:
+    async def injectJS(self, code: str) -> any:
         """ Выполняет JavaScript-выражение во фрейме верхнего уровня. """
         try:
-            result = await self.Eval(code)
+            result = await self._connection.Eval(code)
         except EvaluateError as error:
             error = str(error)
             if "of null" in error:
@@ -184,7 +134,7 @@ class PageEx(
 
         return result.get('value')
 
-    async def GetGeoInfo(self) -> GeoInfo:
+    async def getGeoInfo(self) -> GeoInfo:
         """
         Возвращает информацию о Вашем местоположении, вычисленному по IP.
         """
@@ -197,7 +147,7 @@ class PageEx(
 
         promise = """fetch('https://time.gologin.com/').then(res => res.text())"""
 
-        result: dict = await self.EvalPromise(promise)
+        result: dict = await self._connection.EvalPromise(promise)
         result.update(
             geo=dict(
                 latitude=float(result["ll"][0]),

@@ -17,7 +17,7 @@ https://github.com/ultrajson/ultrajson
 import asyncio
 from aio_dt_protocol import BrowserEx as Browser
 from aio_dt_protocol import find_instances
-from aio_dt_protocol.Data import KeyEvents
+from aio_dt_protocol.data import KeyEvents
 
 DEBUG_PORT: int = 9222
 BROWSER_NAME: str = "chrome"
@@ -42,10 +42,10 @@ async def main() -> None:
     # async def action_printer(data: dict) -> None:
     #     print(data)
     # page = await browser.GetPage(callback=action_printer)
-    page = await browser.GetPage()
+    page = await browser.getPage()
 
     print("[- GO TO GOOGLE ... -]")
-    await page.Navigate("https://www.google.com")
+    await page.navigate("https://www.google.com")
 
     input_node = await page.QuerySelector("input")
     await input_node.Click()
@@ -99,27 +99,30 @@ if __name__ == '__main__':
     </script>
     </html>"""
 
-    # ? number и text будут переданы из браузера, а bind_arg указан при регистрации
-    async def test_func(number: int, text: str, bind_arg: dict) -> None:
-        print(f"[- test_func -] Called with args:\n\tnumber: {number}\n\ttext: {text}\n\tbing_arg: {bind_arg}")
 
-    await page.AddListener(
-        test_func,                          # ! слушатель
-        {"name": "test", "value": True}     # ! bind_arg
-    )
+# ? number и text будут переданы из браузера, а bind_arg указан при регистрации
+async def test_func(number: int, text: str, bind_arg: dict) -> None:
+    print(f"[- test_func -] Called with args:\n\tnumber: {number}\n\ttext: {text}\n\tbing_arg: {bind_arg}")
 
-    # ? Если ожидается внушительный функционал прикрутить к странице, то это можно
-    # ? сделать за один раз.
-    # await page.AddListeners(
-    #     (test_func, [ {"name": "test", "value": True} ]),
-    #     # (any_awaitable1, [1, 2, 3])
-    #     # (any_awaitable2, [])
-    # )
 
-    await page.Navigate(html)
+await page.AddListener(
+    test_func,  # ! слушатель
+    {"name": "test", "value": True}  # ! bind_arg
+)
+
+# ? Если ожидается внушительный функционал прикрутить к странице, то это можно
+# ? сделать за один раз.
+# await page.AddListeners(
+#     (test_func, [ {"name": "test", "value": True} ]),
+#     # (any_awaitable1, [1, 2, 3])
+#     # (any_awaitable2, [])
+# )
+
+await page.navigate(html)
 ```
 ### Headless
 Чтобы запустить браузер в `безголовом` режиме, нужно передать аргументу принимающему путь к папке профиля пустую строку.
+
 ```python
 import asyncio
 from aio_dt_protocol import BrowserEx as Browser
@@ -132,16 +135,17 @@ async def main() -> None:
     print("[- WAITING PAGE -]")
     page = await browser.WaitFirstTab()
     print("[- GO TO GOOGLE -]")
-    await page.Navigate("https://www.google.com")
-    
+    await page.navigate("https://www.google.com")
+
     print("[- MAKE SCREENSHOT -]")
     await async_util_call(
         save_img_as, "google.png", await page.MakeScreenshot()
     )
-    
+
     print("[- CLOSE BROWSER -]")
     await page.CloseBrowser()
     print("[- DONE -]")
+
 
 if __name__ == '__main__':
     asyncio.run(main())

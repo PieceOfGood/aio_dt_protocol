@@ -12,77 +12,50 @@ from .utils import log
 from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
 from typing import Callable, Awaitable, Optional, Union, Tuple, List, Dict
-from abc import ABC
-from .Data import DomainEvent, Sender, Receiver, CommonCallback
+from .data import DomainEvent, Sender, Receiver, CommonCallback
+from .extend_connection import Extend
+
+from .domains.browser import Browser
+from .domains.css import CSS
+from .domains.page import Page
+from .domains.fetch import Fetch
+from .domains.target import Target
 
 
-class AbsPage(ABC):
+class Connection:
+    """ Инстанс страницы должен быть активирован после создания вызовом метода Activate(),
+    это создаст подключение по WebSocket и запустит задачи обеспечивающие
+    обратную связь. Метод GetPageBy() инстанса браузера, заботится об этом
+    по умолчанию.
+
+        Если инстанс страницы более не нужен, например, при перезаписи в него нового
+    инстанса, перед этим [-!-] ОБЯЗАТЕЛЬНО [-!-] - вызовите у него метод
+    Detach(), или закройте вкладку/страницу браузера, с которой он связан,
+    тогда это будет выполнено автоматом. Иначе в цикле событий останутся
+    задачи связанные с поддержанием соединения, которое более не востребовано.
+    """
     __slots__ = (
-        "ws_url", "page_id", "frontend_url", "callback", "is_headless_mode", "verbose", "browser_name", "id",
-        "responses", "connected", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_event",
-        "runtime_enabled", "on_close_event", "context_manager", "_connected", "_page_id", "_verbose",
-        "_browser_name", "_is_headless_mode"
+        "ws_url", "frontend_url", "callback", "id", "extend",
+        "responses", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_event",
+        "runtime_enabled", "on_close_event", "context_manager", "_connected", "_conn_id", "_verbose",
+        "_browser_name", "_is_headless_mode",
+
+        "Browser", "CSS", "Page", "Fetch", "Target",
     )
 
     def __init__(
-        self,
-        ws_url:           str,
-        page_id:          str,
-        frontend_url:     str,
-        callback:         CommonCallback,
-        is_headless_mode: bool,
-        verbose:          bool,
-        browser_name:     str
-    ) -> None:
-        self.ws_url            = ws_url
-        self.page_id           = page_id
-        self.frontend_url      = frontend_url
-        self.callback          = callback
-        self.is_headless_mode  = is_headless_mode
-
-        self.verbose           = verbose
-        self.browser_name      = browser_name
-
-        self.id                = 0
-        self.connected         = False
-        self.ws_session        = None
-        self.receiver          = None
-        self.on_detach_listener: List[Callable[[any], Awaitable[None]], list, dict] = []
-        self.listeners         = {}
-        self.listeners_for_event = {}
-        self.runtime_enabled     = False
-        self.on_close_event = asyncio.Event()
-        self.responses: Dict[int, Optional[Sender[dict]]] = {}
-
-
-class Page(AbsPage):
-    """
-    Инстанс страницы должен быть активирован после создания вызовом метода Activate(),
-        это создаст подключение по WebSocket и запустит задачи обеспечивающие
-        обратную связь. Метод GetPageBy() инстанса браузера, заботится об этом
-        по умолчанию.
-
-    Если инстанс страницы более не нужен, например, при перезаписи в него нового
-        инстанса, перед этим [-!-] ОБЯЗАТЕЛЬНО [-!-] - вызовите у него метод
-        Detach(), или закройте вкладку/страницу браузера, с которой он связан,
-        тогда это будет выполнено автоматом. Иначе в цикле событий останутся
-        задачи связанные с поддержанием соединения, которое более не востребовано.
-    """
-    __slots__ = ()
-
-    def __init__(
-        self,
-        ws_url:           str,
-        page_id:          str,
-        frontend_url:     str,
-        callback:         CommonCallback,
-        is_headless_mode: bool,
-        verbose:          bool,
-        browser_name:     str
+            self,
+            ws_url: str,
+            conn_id: str,
+            frontend_url: str,
+            callback: CommonCallback,
+            is_headless_mode: bool,
+            verbose: bool,
+            browser_name: str
     ) -> None:
         """
         :param ws_url:              Адрес WebSocket
-        :param page_id:             Идентификатор страницы
+        :param conn_id:             Идентификатор страницы
         :param frontend_url:        devtoolsFrontendUrl по которому происходит подключение к дебаггеру
         :param callback:            Колбэк, который будет получать все данные,
                                         приходящие по WebSocket в виде словарей
@@ -90,37 +63,68 @@ class Page(AbsPage):
         :param verbose:             Печатать некие подробности процесса?
         :param browser_name:        Имя браузера
         """
-        AbsPage.__init__(self, ws_url, page_id, frontend_url, callback, is_headless_mode, verbose, browser_name)
+
+        self.ws_url = ws_url
+        self._conn_id = conn_id
+        self.frontend_url = frontend_url
+        self.callback = callback
+        self._is_headless_mode = is_headless_mode
+
+        self._verbose = verbose
+        self._browser_name = browser_name
+
+        self.id = 0
+        self._connected = False
+        self.ws_session = None
+        self.receiver = None
+        self.on_detach_listener: List[Callable[[any], Awaitable[None]], list, dict] = []
+        self.listeners = {}
+        self.listeners_for_event = {}
+        self.runtime_enabled = False
+        self.on_close_event = asyncio.Event()
+        self.responses: Dict[int, Optional[Sender[dict]]] = {}
+
+        self.extend = Extend(self)
+
+        self.Browser = Browser(self)
+        self.CSS = CSS(self)
+        self.Page = Page(self)
+        self.Fetch = Fetch(self)
+        self.Target = Target(self)
+
 
     @property
-    def connected(self) -> bool: return self._connected
-
-    @connected.setter
-    def connected(self, value) -> None: self._connected = value
+    def connected(self) -> bool:
+        return self._connected
 
     @property
-    def page_id(self) -> str: return self._page_id
-
-    @page_id.setter
-    def page_id(self, value) -> None: self._page_id = value
+    def conn_id(self) -> str:
+        return self._conn_id
 
     @property
-    def verbose(self) -> bool: return self._verbose
+    def verbose(self) -> bool:
+        return self._verbose
 
     @verbose.setter
-    def verbose(self, value) -> None: self._verbose = value
+    def verbose(self, value: bool) -> None:
+        self._verbose = value
 
     @property
-    def browser_name(self) -> str: return self._browser_name
-
-    @browser_name.setter
-    def browser_name(self, value) -> None: self._browser_name = value
+    def browser_name(self) -> str:
+        return self._browser_name
 
     @property
-    def is_headless_mode(self) -> bool: return self._is_headless_mode
+    def is_headless_mode(self) -> bool:
+        return self._is_headless_mode
 
-    @is_headless_mode.setter
-    def is_headless_mode(self, value) -> None: self._is_headless_mode = value
+    def __str__(self) -> str:
+        return f"<Connection targetId={self.conn_id!r}>"
+
+    def __eq__(self, other: "Connection") -> bool:
+        return self.conn_id == other.conn_id
+
+    def __hash__(self) -> int:
+        return hash(self.conn_id)
 
     async def Call(
         self, domain_and_method: str,
@@ -302,8 +306,8 @@ class Page(AbsPage):
             return
 
         self.receiver.cancel()
-        if self.verbose: log(f"[ DETACH ] {self.page_id}")
-        self.connected = False
+        if self.verbose: log(f"[ DETACH ] {self.conn_id}")
+        self._connected = False
 
         if self.on_detach_listener:
             function, args, kvargs = self.on_detach_listener
@@ -319,13 +323,14 @@ class Page(AbsPage):
         """
         if not iscoroutinefunction(function):
             raise TypeError("OnDetach-listener must be a async callable object!")
-        if not self.connected: return False
+        if not self.connected:
+            return False
         self.on_detach_listener = [function, args, kvargs]
         return True
 
     async def Activate(self) -> None:
         self.ws_session = await websockets.client.connect(self.ws_url, ping_interval=None)
-        self.connected = True
+        self._connected = True
         self.receiver = asyncio.create_task(self._Recv())
         if self.callback is not None:
             await self.Call("Runtime.enable")
@@ -449,4 +454,4 @@ class Page(AbsPage):
             self.listeners_for_event.pop(e)
 
     def __del__(self) -> None:
-        if self.verbose: log(f"[ DELETED ] {self.page_id}")
+        if self.verbose: log(f"[ DELETED ] {self.conn_id}")

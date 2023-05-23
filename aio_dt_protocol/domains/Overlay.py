@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union
-from ..Data import DomainEvent
+from ..data import DomainEvent
 
 class Overlay(ABC):
     """

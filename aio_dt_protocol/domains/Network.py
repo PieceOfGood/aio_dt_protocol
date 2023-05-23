@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
 from dataclasses import dataclass, field
-from ..Data import Cookie, ConnectionType, DomainEvent
+from ..data import Cookie, ConnectionType, DomainEvent
 
 
 class Network(ABC):

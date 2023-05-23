@@ -1,10 +1,10 @@
 import re
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List
-from ..DOMElement import Node
+from ..dom_element import Node
 from ..domains.Runtime import RuntimeType
 from ..exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
-from ..Data import DomainEvent
+from ..data import DomainEvent
 
 class DOM(ABC):
     """

@@ -5,7 +5,7 @@ except ModuleNotFoundError:
 from abc import ABC, abstractmethod
 from typing import Optional, Union, List, Literal, Callable
 from dataclasses import dataclass, field
-from ..Data import DomainEvent
+from ..data import DomainEvent
 from ..exceptions import PromiseEvaluateError, highlight_promise_error
 
 

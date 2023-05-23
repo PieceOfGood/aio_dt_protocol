@@ -1,60 +1,46 @@
 import asyncio
 from urllib.parse import quote
-from abc import ABC, abstractmethod
 from typing import Optional, Union, Callable, List, Literal, Awaitable
-from ..Data import DomainEvent
+from ..data import DomainEvent
 from dataclasses import dataclass, field
 
 
-class Page(ABC):
+class Page:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Page
     """
-    __slots__ = ()
+    __slots__ = ("_connection", "enabled", "loading_state")
+    def __init__(self, conn) -> None:
 
-    def __init__(self):
-        self.page_domain_enabled = False
+        from ..connection import Connection
 
-    @property
-    def connected(self) -> bool:
-        return False
+        self._connection: Connection = conn
+        self.enabled = False
+        self.loading_state = ""
 
-    @property
-    def verbose(self) -> bool:
-        return False
-
-    @property
-    def page_id(self) -> str:
-        return ""
-
-    @property
-    def browser_name(self) -> str: return ""
-
-    async def PageEnable(self) -> None:
+    async def enable(self) -> None:
         """
         Включает уведомления домена 'Page'.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-enable
-        :return:
         """
-        if not self.page_domain_enabled:
-            await self.AddListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher, "started")
-            await self.AddListenerForEvent("Page.frameNavigated", self._StateLoadWatcher, "navigated")
-            await self.AddListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher, "stopped")
-            await self.Call("Page.enable")
-            self.page_domain_enabled = True
+        if not self.enabled:
+            await self._connection.AddListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher, "started")
+            await self._connection.AddListenerForEvent("Page.frameNavigated", self._StateLoadWatcher, "navigated")
+            await self._connection.AddListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher, "stopped")
+            await self._connection.Call("Page.enable")
+            self.enabled = True
 
-    async def PageDisable(self) -> None:
+    async def disable(self) -> None:
         """
         Выключает уведомления домена 'Page'.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-disable
-        :return:
         """
-        if self.page_domain_enabled:
-            self.RemoveListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher)
-            self.RemoveListenerForEvent("Page.frameNavigated", self._StateLoadWatcher)
-            self.RemoveListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher)
-            await self.Call("Page.disable")
-            self.page_domain_enabled = False
+        if self.enabled:
+            self._connection.RemoveListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher)
+            self._connection.RemoveListenerForEvent("Page.frameNavigated", self._StateLoadWatcher)
+            self._connection.RemoveListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher)
+            await self._connection.Call("Page.disable")
+            self.enabled = False
 
     async def _StateLoadWatcher(self, params: dict, state: str) -> None:
         """
@@ -62,10 +48,10 @@ class Page(ABC):
             домена Page.
         """
         frame_id = params["frameId"] if state != "navigated" else params["frame"]["id"]
-        if frame_id == self.page_id:
+        if frame_id == self._connection.conn_id:
             self.loading_state = state
 
-    async def CreateIsolatedWorld(
+    async def createIsolatedWorld(
             self, frameId: str, worldName: Optional[str] = None, grantUniversalAccess: Optional[bool] = None) -> int:
         """
         Создаёт изолированный мир для указанного фрейма.
@@ -79,21 +65,20 @@ class Page(ABC):
         args = dict(frameId=frameId)
         if worldName is not None: args.update(worldName=worldName)
         if grantUniversalAccess is not None: args.update(grantUniversalAccess=grantUniversalAccess)
-        result: dict = await self.Call("Page.createIsolatedWorld", args)
+        result: dict = await self._connection.Call("Page.createIsolatedWorld", args)
         return result.get("executionContextId")
 
-    async def GetFrameTree(self) -> 'FrameTree':
+    async def getFrameTree(self) -> 'FrameTree':
         """
         Возвращает структуру присутствующих на странице фреймов. !!! Справедливо только в рамках одного домена.
         https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-getFrameTree
         """
-        result = await self.Call("Page.getFrameTree")
-        # print("Page.getFrameTree", result)
+        result = await self._connection.Call("Page.getFrameTree")
         return FrameTree(**result.get("frameTree"))
 
     # async def GetFrameFor
 
-    async def HandleJavaScriptDialog(self, accept: bool, promptText: str = "") -> None:
+    async def handleJavaScriptDialog(self, accept: bool, promptText: str = "") -> None:
         """
         Подтверждает или закрывает диалоговое окно, инициированное JavaScript (alert, confirm,
             prompt или для onbeforeunload).
@@ -105,9 +90,9 @@ class Page(ABC):
         """
         args = {"accept": accept}
         if promptText: args.update({"promptText": promptText})
-        await self.Call("Page.handleJavaScriptDialog", args)
+        await self._connection.Call("Page.handleJavaScriptDialog", args)
 
-    async def Navigate(
+    async def navigate(
             self,
             url:  Union[str, bytes] = "about:blank",
             wait_for_load:     bool = True,
@@ -124,14 +109,14 @@ class Page(ABC):
                                         страницы, на которую осуществляется переход.
         :return:
         """
-        b_name_len = len(self.browser_name)
+        b_name_len = len(self._connection.browser_name)
         is_url = (
             "http" == url[:4] or
             "chrome" == url[:6] or
-            self.browser_name == url[:b_name_len] or
+            self._connection.browser_name == url[:b_name_len] or
             url == "about:blank"
         )
-        if self.page_domain_enabled: self.loading_state = "do_navigate"
+        if self.enabled: self.loading_state = "do_navigate"
         _url_ = ("data:text/html," + quote(url)
              # передать разметку как data-url, если начало этой строки
              # не содержит признаков url-адреса или передать "как есть",
@@ -142,11 +127,11 @@ class Page(ABC):
                      "data:text/html;Base64," + url.decode()
              )
 
-        await self.Call("Page.navigate", {"url": _url_})
+        await self._connection.Call("Page.navigate", {"url": _url_})
         if wait_for_load:
-            await self.WaitForLoad(ignore_loading_state=wait_for_complete)
+            await self.waitForLoad(ignore_loading_state=wait_for_complete)
 
-    async def WaitForLoad(
+    async def waitForLoad(
         self,
         desired_state:         str = "complete",
         interval:            float = .1,
@@ -162,56 +147,37 @@ class Page(ABC):
         :return:        None
         """
 
-        if self.page_domain_enabled and not ignore_loading_state:
+        if self.enabled and not ignore_loading_state:
             while self.loading_state != "stopped":
                 await asyncio.sleep(.1)
         else: await asyncio.sleep(1)
 
-        while (await self.Eval("document.readyState"))["value"] != desired_state:
+        while (await self._connection.Eval("document.readyState"))["value"] != desired_state:
             await asyncio.sleep(interval)
 
-    async def WaitNavigate(
-            self,
-            url: Union[str, bytes] = "about:blank",
-            wait_for_load: bool    = True,
-            timeout: float         = 10.0
-    ) -> bool:
-        """
-        Дожидается совершения перехода на адрес за указанный интервал времени возвращая True, или False,
-            если дождаться не удалось.
-        :param url:                 Адрес, по которому происходит навигация.
-        :param wait_for_load:       (optional) Если 'True' - ожидает 'complete' у 'document.readyState'
-                                        страницы, на которую осуществляется переход.
-        :param timeout:             (optional) Кол-во секунд ожидания.
-        :return:
-        """
-        try: await asyncio.wait_for(self.Navigate(url, wait_for_load), timeout)
-        except asyncio.exceptions.TimeoutError: return False
-        else: return True
-
-    async def AddScriptOnLoad(self, src: str) -> str:
+    async def addScriptOnLoad(self, src: str) -> str:
         """
         Запускает полученный 'src' скрипта в каждом фрейме и перед загрузкой скриптов самого фрейма.
             Так же, такой скрипт будет запускаться автоматически в течении всей жизни инстанса,
             включая перезагрузку страницы.
-        Требует включения( PageEnable() ) уведомлений домена "Page".
+        Требует включения( Enable() ) уведомлений домена "Page".
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-addScriptToEvaluateOnNewDocument
         :param src:             Текст сценария.
         :return:                identifier -> Уникальный идентификатор скрипта.
         """
-        if not self.page_domain_enabled: await self.PageEnable()
-        return (await self.Call("Page.addScriptToEvaluateOnNewDocument", {"source": src}))["identifier"]
+        if not self.enabled: await self.enable()
+        return (await self._connection.Call("Page.addScriptToEvaluateOnNewDocument", {"source": src}))["identifier"]
 
-    async def RemoveScriptOnLoad(self, identifier: str) -> None:
+    async def removeScriptOnLoad(self, identifier: str) -> None:
         """
         Удаляет данный скрипт из списка запускаемых при загрузке фрейма.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-removeScriptToEvaluateOnNewDocument
         :param identifier:      Идентификатор сценария.
         :return:
         """
-        await self.Call("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
+        await self._connection.Call("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
 
-    async def SetDocumentContent(self, html: str, frameId: str = None) -> None:
+    async def setDocumentContent(self, html: str, frameId: str = None) -> None:
         """
         Устанавливает полученную разметку как HTML-код документа.
             frameId — можно найти среди параметров события 'Runtime.executionContextCreated',
@@ -221,18 +187,18 @@ class Page(ABC):
         :param frameId:         Идентификатор фрейма, которому предназначается html.
         :return:
         """
-        if frameId is None: frameId = self.page_id
-        await self.Call("Page.setDocumentContent", {"frameId": frameId, "html": html})
+        if frameId is None: frameId = self._connection.conn_id
+        await self._connection.Call("Page.setDocumentContent", {"frameId": frameId, "html": html})
 
-    async def StopLoading(self) -> None:
+    async def stopLoading(self) -> None:
         """
         Останавливает загрузку страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-stopLoading
         :return:
         """
-        await self.Call("Page.stopLoading")
+        await self._connection.Call("Page.stopLoading")
 
-    async def SetAdBlockingEnabled(self, enabled: bool) -> None:
+    async def setAdBlockingEnabled(self, enabled: bool) -> None:
         """
         (EXPERIMENTAL)
         Включите экспериментальный рекламный фильтр Chrome на всех сайтах.
@@ -240,10 +206,10 @@ class Page(ABC):
         :param enabled:         Включить?
         :return:
         """
-        if not self.page_domain_enabled: await self.PageEnable()
-        await self.Call("Page.setAdBlockingEnabled", {"enabled": enabled})
+        if not self.enabled: await self.enable()
+        await self._connection.Call("Page.setAdBlockingEnabled", {"enabled": enabled})
 
-    async def SetFontFamilies(self, fontFamilies: dict) -> None:
+    async def setFontFamilies(self, fontFamilies: dict) -> None:
         """
         (EXPERIMENTAL)
         Установить общие семейства шрифтов.
@@ -260,9 +226,9 @@ class Page(ABC):
                                     }
         :return:
         """
-        await self.Call("Page.setFontFamilies", {"fontFamilies": fontFamilies})
+        await self._connection.Call("Page.setFontFamilies", {"fontFamilies": fontFamilies})
 
-    async def SetFontSizes(self, fontSizes: dict) -> None:
+    async def setFontSizes(self, fontSizes: dict) -> None:
         """
         (EXPERIMENTAL)
         Установите размеры шрифта по умолчанию.
@@ -275,9 +241,9 @@ class Page(ABC):
                                     }
         :return:
         """
-        await self.Call("Page.setFontSizes", {"fontSizes": fontSizes})
+        await self._connection.Call("Page.setFontSizes", {"fontSizes": fontSizes})
 
-    async def CaptureScreenshot(
+    async def captureScreenshot(
         self,
         format_: str = "",
         quality: int = -1,
@@ -304,9 +270,9 @@ class Page(ABC):
         if format_: args.update({"format": format_})
         if quality > -1 and format_ == "jpeg": args.update({"quality": quality})
         if clip: args.update({"clip": clip})
-        return (await self.Call("Page.captureScreenshot", args))["data"]
+        return (await self._connection.Call("Page.captureScreenshot", args))["data"]
 
-    async def PrintToPDF(
+    async def printToPDF(
         self,
         landscape:               Optional[bool] = None,
         displayHeaderFooter:     Optional[bool] = None,
@@ -384,9 +350,9 @@ class Page(ABC):
         if preferCSSPageSize is not None:       args.update({"preferCSSPageSize": preferCSSPageSize})
         if transferMode is not None:            args.update({"transferMode": transferMode})
 
-        return await self.Call("Page.printToPDF", args)
+        return await self._connection.Call("Page.printToPDF", args)
 
-    async def Reload(
+    async def reload(
         self,
         ignoreCache: bool = False,
         scriptToEvaluateOnLoad: str = "",
@@ -404,15 +370,15 @@ class Page(ABC):
                                             Установите False, если это поведение не требуется.
         :return:
         """
-        if self.page_domain_enabled: self.loading_state = "do_reload"
+        if self.enabled: self.loading_state = "do_reload"
         args = {}
         if ignoreCache:            args.update({"ignoreCache": ignoreCache})
         if scriptToEvaluateOnLoad: args.update({"scriptToEvaluateOnLoad": scriptToEvaluateOnLoad})
-        await self.Call("Page.reload", args)
+        await self._connection.Call("Page.reload", args)
         if wait_for_load:
-            await self.WaitForLoad()
+            await self.waitForLoad()
 
-    async def GetNavigationHistory(self) -> dict:
+    async def getNavigationHistory(self) -> dict:
         """
         Возвращает историю навигации для текущей страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-getNavigationHistory
@@ -431,27 +397,27 @@ class Page(ABC):
                                 }, ... ) -> Список записей истории навигации.
                             }
         """
-        return await self.Call("Page.getNavigationHistory")
+        return await self._connection.Call("Page.getNavigationHistory")
 
-    async def NavigateToHistoryEntry(self, entryId: int) -> None:
+    async def navigateToHistoryEntry(self, entryId: int) -> None:
         """
         Навигация текущей страницы к выбранной записи в истории навгации.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-navigateToHistoryEntry
         :param entryId:             Уникальный идентификатор записи для перехода.
         :return:
         """
-        if self.page_domain_enabled: self.loading_state = "do_navigate"
-        await self.Call("Page.navigateToHistoryEntry", {"entryId": entryId})
+        if self.enabled: self.loading_state = "do_navigate"
+        await self._connection.Call("Page.navigateToHistoryEntry", {"entryId": entryId})
 
-    async def ResetNavigationHistory(self) -> None:
+    async def resetNavigationHistory(self) -> None:
         """
         Сбрасывает историю навигации для текущей страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-resetNavigationHistory
         :return:
         """
-        await self.Call("Page.resetNavigationHistory")
+        await self._connection.Call("Page.resetNavigationHistory")
 
-    async def SetInterceptFileChooserDialog(self, enabled: bool) -> None:
+    async def setInterceptFileChooserDialog(self, enabled: bool) -> None:
         """
         Перехватывает запросы выбора файлов и передает управление клиентам протокола. Когда включен перехват
             файлов, диалоговое окно выбора файлов не отображается. Вместо этого генерируется событие
@@ -460,9 +426,9 @@ class Page(ABC):
         :param enabled:             Включить перехват?
         :return:
         """
-        await self.Call("Page.setInterceptFileChooserDialog", {"enabled": enabled})
+        await self._connection.Call("Page.setInterceptFileChooserDialog", {"enabled": enabled})
 
-    async def SetLifecycleEventsEnabled(
+    async def setLifecycleEventsEnabled(
             self, enabled: bool,
             handler: Optional[Callable[['PageType.LifecycleEventData'], Awaitable[None]]] = None,
     ) -> None:
@@ -477,37 +443,10 @@ class Page(ABC):
             await handler(PageType.LifecycleEventData(**params))
 
         if handler is not None:
-            await self.AddListenerForEvent(PageEvent.lifecycleEvent, wrapper)
+            await self._connection.AddListenerForEvent(PageEvent.lifecycleEvent, wrapper)
 
-        await self.Call("Page.setLifecycleEventsEnabled", {"enabled": enabled})
+        await self._connection.Call("Page.setLifecycleEventsEnabled", {"enabled": enabled})
 
-    @abstractmethod
-    async def AddListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable[[any], Awaitable[None]], *args: any) -> None:
-        raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
-
-    @abstractmethod
-    def RemoveListenerForEvent(self, event: str, listener: Callable[[any], Awaitable[None]]) -> None:
-        raise NotImplementedError("method RemoveListenerForEvent() — is not implemented")
-
-    @abstractmethod
-    async def Eval(
-            self, expression: str,
-            objectGroup:            str = "console",
-            includeCommandLineAPI: bool = True,
-            silent:                bool = False,
-            returnByValue:         bool = False,
-            userGesture:           bool = True,
-            awaitPromise:          bool = False
-    ) -> dict:
-        raise NotImplementedError("async method Eval() — is not implemented")
-
-    @abstractmethod
-    async def Call(
-            self, domain_and_method: str,
-            params: Optional[dict] = None,
-            wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 
 class PageEvent(DomainEvent):

@@ -1,18 +1,21 @@
-from abc import ABC, abstractmethod
 from typing import Optional, Union, List, Callable, Awaitable
-from ..Data import DomainEvent
+from ..data import DomainEvent
 from ..domains.Network import NetworkType
 from dataclasses import dataclass, field
 
 
-class Fetch(ABC):
+class Fetch:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Fetch
     """
-    __slots__ = ()
+    __slots__ = ("_connection", "enabled")
 
-    def __init__(self):
-        self.fetch_domain_enabled = False
+    def __init__(self, conn) -> None:
+
+        from ..connection import Connection
+
+        self._connection: Connection = conn
+        self.enabled = False
 
     @property
     def connected(self) -> bool:
@@ -26,7 +29,7 @@ class Fetch(ABC):
     def page_id(self) -> str:
         return ""
 
-    async def FetchEnable(
+    async def enable(
         self,
         patterns: Optional[List["FetchType.RequestPattern"]] = None,
         handleAuthRequests: bool = False,
@@ -58,11 +61,11 @@ class Fetch(ABC):
             await on_auth(FetchType.EventAuthRequired(**params))
 
         if on_pause is not None:
-            await self.AddListenerForEvent(
+            await self._connection.AddListenerForEvent(
                 FetchEvent.requestPaused, on_pause_decorator)
 
         if on_auth is not None:
-            await self.AddListenerForEvent(
+            await self._connection.AddListenerForEvent(
                 FetchEvent.authRequired, on_auth_decorator)
 
         args = {}
@@ -70,19 +73,19 @@ class Fetch(ABC):
         if patterns:
             args.update({"patterns": [p.dict() for p in patterns]})
         if handleAuthRequests: args.update({"handleAuthRequests": handleAuthRequests})
-        await self.Call("Fetch.enable", args)
-        self.fetch_domain_enabled = True
+        await self._connection.Call("Fetch.enable", args)
+        self.enabled = True
 
-    async def FetchDisable(self) -> None:
+    async def disable(self) -> None:
         """
         Отключает взаимодействие с доменом.
         https://chromedevtools.github.io/devtools-protocol/tot/Fetch#method-disable
         :return:
         """
-        await self.Call("Fetch.disable")
-        self.fetch_domain_enabled = False
+        await self._connection.Call("Fetch.disable")
+        self.enabled = False
 
-    async def FailRequest(self, requestId: str, errorReason: str) -> None:
+    async def failRequest(self, requestId: str, errorReason: str) -> None:
         """
         Вызывает сбой запроса по указанной причине.
         https://chromedevtools.github.io/devtools-protocol/tot/Fetch#method-failRequest
@@ -96,9 +99,9 @@ class Fetch(ABC):
                                         BlockedByClient, BlockedByResponse
         :return:
         """
-        await self.Call("Fetch.failRequest", {"requestId": requestId, "errorReason": errorReason})
+        await self._connection.Call("Fetch.failRequest", {"requestId": requestId, "errorReason": errorReason})
 
-    async def FulfillRequest(
+    async def fulfillRequest(
             self, requestId: str,
             responseCode:                     int = 200,
             responseHeaders: Optional[List["FetchType.HeaderEntry"]] = None,
@@ -138,9 +141,9 @@ class Fetch(ABC):
         if body is not None: args.update({"body": body})
         if responsePhrase is not None: args.update({"responsePhrase": responsePhrase})
         # print("fulfillRequest args", json.dumps(args, indent=4))
-        await self.Call("Fetch.fulfillRequest", args, wait_for_response=wait_for_response)
+        await self._connection.Call("Fetch.fulfillRequest", args, wait_for_response=wait_for_response)
 
-    async def ContinueRequest(
+    async def continueRequest(
         self, requestId: str,
         url:                Optional[str] = None,
         method:             Optional[str] = None,
@@ -172,9 +175,9 @@ class Fetch(ABC):
         if postData is not None: args.update({"postData": postData})
         if headers is not None: args.update({"headers": headers})
         if interceptResponse is not None: args.update({"interceptResponse": interceptResponse})
-        await self.Call("Fetch.continueRequest", args, wait_for_response=wait_for_response)
+        await self._connection.Call("Fetch.continueRequest", args, wait_for_response=wait_for_response)
 
-    async def ContinueWithAuth(self, requestId: str, authChallengeResponse: list) -> None:
+    async def continueWithAuth(self, requestId: str, authChallengeResponse: list) -> None:
         """
         Продолжает запрос, предоставляющий authChallengeResponse после события authRequired.
         https://chromedevtools.github.io/devtools-protocol/tot/Fetch#method-continueWithAuth
@@ -198,9 +201,9 @@ class Fetch(ABC):
         :return:
         """
         args = {"requestId": requestId, "authChallengeResponse": authChallengeResponse}
-        await self.Call("Fetch.continueWithAuth", args)
+        await self._connection.Call("Fetch.continueWithAuth", args)
 
-    async def GetResponseBody(self, requestId: str) -> dict:
+    async def getResponseBody(self, requestId: str) -> dict:
         """
         Вызывает тело ответа, получаемого от сервера и возвращаемого в виде одной строки. Может
             выдаваться только для запроса, который приостановлен на этапе ответа и является
@@ -215,9 +218,9 @@ class Fetch(ABC):
                                                                         как base64.
                                         }
         """
-        return await self.Call("Fetch.getResponseBody", {"requestId": requestId})
+        return await self._connection.Call("Fetch.getResponseBody", {"requestId": requestId})
 
-    async def TakeResponseBodyAsStream(self, requestId: str) -> dict:
+    async def takeResponseBodyAsStream(self, requestId: str) -> dict:
         """
         Возвращает дескриптор потока, представляющего тело ответа. Запрос должен быть приостановлен
             на этапе HeadersReceived. Обратите внимание, что после этой команды запрос не может быть
@@ -235,23 +238,7 @@ class Fetch(ABC):
                                                     https://chromedevtools.github.io/devtools-protocol/tot/IO#type-StreamHandle
                                         }
         """
-        return await self.Call("Fetch.takeResponseBodyAsStream", {"requestId": requestId})
-
-    @abstractmethod
-    async def Call(
-        self, domain_and_method: str,
-        params: Optional[dict] = None,
-        wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
-
-    @abstractmethod
-    async def AddListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable, *args: any) -> None:
-        raise NotImplementedError("async method AddListenerForEvent() — is not implemented")
-
-    @abstractmethod
-    def RemoveListenersForEvent(self, event: str) -> None:
-        raise NotImplementedError("method RemoveListenersForEvent() — is not implemented")
+        return await self._connection.Call("Fetch.takeResponseBodyAsStream", {"requestId": requestId})
 
 
 class FetchEvent(DomainEvent):

@@ -1,7 +1,7 @@
 import re
 import asyncio
 from typing import List, Dict, Optional, Union, Literal
-from .Data import NodeCenter, NodeRect, StyleProp, BoxModel
+from .data import NodeCenter, NodeRect, StyleProp, BoxModel
 from .domains.Runtime import RuntimeType, Script
 from .exceptions import (
     CouldNotFindNodeWithGivenID, RootIDNoLongerExists, NodeNotResolved, NodeNotDescribed,
@@ -571,7 +571,7 @@ class Node:
         if not self.frameId:
             await self.Describe()
         if not (context := self.page_instance.context_manager.GetDefaultContext(
-                self.frameId or self.page_instance.page_id)):
+                self.frameId or self.page_instance.conn_id)):
             raise StateError("Something went wrong, or context was not obtained on creation.")
 
         return Script(self.page_instance, expression, context)
