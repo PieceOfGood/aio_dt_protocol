@@ -45,20 +45,21 @@ async def main() -> None:
     conn = await browser.getPage()
 
     print("[- GO TO GOOGLE ... -]")
-    await conn.Page.navigate("https://www.google.com")
+    await conn.Page.navigate("https://www.google.com", )
+    print("[- EMULATE INPUT TEXT ... -]")
 
     input_node = await conn.DOM.querySelector("[type=search]")
     await input_node.click()
     await asyncio.sleep(1)
-    await conn.extend.action.insertText("github PieceOfGood")
+    await conn.Input.insertText("github PieceOfGood")
     await asyncio.sleep(1)
+
     await conn.extend.action.sendKeyEvent(KeyEvents.enter)
     await asyncio.sleep(1)
 
-    submit_button_selector = "div:not([jsname])>center>[type=submit]:not([jsaction])"
-
-    submit_button = await conn.DOM.querySelector(submit_button_selector)
-    await submit_button.click()
+    # submit_button_selector = "div:not([jsname])>center>[type=submit]:not([jsaction])"
+    # submit_button = await conn.DOM.querySelector(submit_button_selector)
+    # await submit_button.click()
 
     # ? Или выполнить клик используя JS
     # click_code = f"""\
