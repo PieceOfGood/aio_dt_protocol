@@ -1,22 +1,29 @@
 import asyncio
 from urllib.parse import quote
-from typing import Optional, Union, Callable, List, Literal, Awaitable
-from ..data import DomainEvent
-from dataclasses import dataclass, field
+from typing import Optional, Union, Callable, Awaitable
+from ...data import DomainEvent
+from .types import FrameTree, LifecycleEventData
 
 
 class Page:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Page
     """
-    __slots__ = ("_connection", "enabled", "loading_state")
+    __slots__ = (
+        "_connection", "enabled", "loading_state_watcher_enabled", "network_idle_state_watcher_enabled",
+        "lifecycle_events_enabled", "loading_state", "network_idle_state"
+    )
     def __init__(self, conn) -> None:
 
-        from ..connection import Connection
+        from ...connection import Connection
 
         self._connection: Connection = conn
         self.enabled = False
-        self.loading_state = ""
+        self.loading_state_watcher_enabled = False
+        self.network_idle_state_watcher_enabled = False
+        self.loading_state = asyncio.Event()
+        self.lifecycle_events_enabled = False
+        self.network_idle_state = asyncio.Event()
 
     async def enable(self) -> None:
         """
@@ -24,10 +31,7 @@ class Page:
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-enable
         """
         if not self.enabled:
-            await self._connection.AddListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher, "started")
-            await self._connection.AddListenerForEvent("Page.frameNavigated", self._StateLoadWatcher, "navigated")
-            await self._connection.AddListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher, "stopped")
-            await self._connection.Call("Page.enable")
+            await self._connection.call("Page.enable")
             self.enabled = True
 
     async def disable(self) -> None:
@@ -36,20 +40,29 @@ class Page:
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-disable
         """
         if self.enabled:
-            self._connection.RemoveListenerForEvent("Page.frameStartedLoading", self._StateLoadWatcher)
-            self._connection.RemoveListenerForEvent("Page.frameNavigated", self._StateLoadWatcher)
-            self._connection.RemoveListenerForEvent("Page.frameStoppedLoading", self._StateLoadWatcher)
-            await self._connection.Call("Page.disable")
+            if self.loading_state_watcher_enabled:
+                await self.enableLoadWatcher(False)
+            if self.network_idle_state_watcher_enabled:
+                await self.enableNetworkIdleWatcher(False)
+            await self._connection.call("Page.disable")
             self.enabled = False
 
-    async def _StateLoadWatcher(self, params: dict, state: str) -> None:
+    async def enableLoadWatcher(self, state: bool) -> None:
+        """ Уведомляет событие loading_state, что основной фрейм страницы завершил загрузку.
+        :param state:           Вкл/выкл
         """
-        Устанавливает состояние загрузки фрейма страницы, если включены уведомления
-            домена Page.
-        """
-        frame_id = params["frameId"] if state != "navigated" else params["frame"]["id"]
-        if frame_id == self._connection.conn_id:
-            self.loading_state = state
+        async def load_watcher_wrapper(params: dict) -> None:
+            if params["frameId"] == self._connection.conn_id:
+                self.loading_state.set()
+
+        if state != self.loading_state_watcher_enabled:
+            if state:
+                await self._connection.addListenerForEvent(
+                    PageEvent.frameStoppedLoading, load_watcher_wrapper)
+            else:
+                self._connection.removeListenerForEvent(
+                    PageEvent.frameStoppedLoading, load_watcher_wrapper)
+            self.loading_state_watcher_enabled = state
 
     async def createIsolatedWorld(
             self, frameId: str, worldName: Optional[str] = None, grantUniversalAccess: Optional[bool] = None) -> int:
@@ -65,7 +78,7 @@ class Page:
         args = dict(frameId=frameId)
         if worldName is not None: args.update(worldName=worldName)
         if grantUniversalAccess is not None: args.update(grantUniversalAccess=grantUniversalAccess)
-        result: dict = await self._connection.Call("Page.createIsolatedWorld", args)
+        result: dict = await self._connection.call("Page.createIsolatedWorld", args)
         return result.get("executionContextId")
 
     async def getFrameTree(self) -> 'FrameTree':
@@ -73,7 +86,7 @@ class Page:
         Возвращает структуру присутствующих на странице фреймов. !!! Справедливо только в рамках одного домена.
         https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-getFrameTree
         """
-        result = await self._connection.Call("Page.getFrameTree")
+        result = await self._connection.call("Page.getFrameTree")
         return FrameTree(**result.get("frameTree"))
 
     # async def GetFrameFor
@@ -90,23 +103,20 @@ class Page:
         """
         args = {"accept": accept}
         if promptText: args.update({"promptText": promptText})
-        await self._connection.Call("Page.handleJavaScriptDialog", args)
+        await self._connection.call("Page.handleJavaScriptDialog", args)
 
     async def navigate(
             self,
-            url:  Union[str, bytes] = "about:blank",
-            wait_for_load:     bool = True,
-            wait_for_complete: bool = False
+            url:  Union[str,     bytes] = "about:blank",
+            wait_for_load:         bool = False,
+            wait_for_network_idle: bool = True,
     ) -> None:
         """
         Переходит на адрес указанного 'url'.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-navigate
         :param url:                 Адрес, по которому происходит навигация.
-        :param wait_for_load:       (optional) Если 'True' - ожидает 'complete' у 'document.readyState'
-                                        страницы, на которую осуществляется переход, а так же состояния остановки
-                                        газрузки ресурсов, если активны уведомления домена Page.
-        :param wait_for_complete:   (optional) Если 'True' - ожидает 'complete' у 'document.readyState'
-                                        страницы, на которую осуществляется переход.
+        :param wait_for_load:       (optional) Если 'True' - ожидает состояния остановки
+                                        загрузки ресурсов, если активны уведомления домена Page.
         :return:
         """
         b_name_len = len(self._connection.browser_name)
@@ -116,7 +126,12 @@ class Page:
             self._connection.browser_name == url[:b_name_len] or
             url == "about:blank"
         )
-        if self.enabled: self.loading_state = "do_navigate"
+
+        if self.enabled:
+            self.loading_state.clear()
+        if self.lifecycle_events_enabled:
+            self.network_idle_state.clear()
+
         _url_ = ("data:text/html," + quote(url)
              # передать разметку как data-url, если начало этой строки
              # не содержит признаков url-адреса или передать "как есть",
@@ -127,33 +142,32 @@ class Page:
                      "data:text/html;Base64," + url.decode()
              )
 
-        await self._connection.Call("Page.navigate", {"url": _url_})
-        if wait_for_load:
-            await self.waitForLoad(ignore_loading_state=wait_for_complete)
+        await self._connection.call("Page.navigate", {"url": _url_})
+        if wait_for_load or wait_for_network_idle:
+            await self.waitForLoad(wait_for_load, wait_for_network_idle)
 
-    async def waitForLoad(
-        self,
-        desired_state:         str = "complete",
-        interval:            float = .1,
-        ignore_loading_state: bool = False
-    ) -> None:
-        """
-        Дожидается указанного состояния загрузки документа.
-            Если включены уведомления домена Page — дожидается, пока основной фрейм
-            страницы не перестанет загружаться.
-        :param desired_state:           (optional) Желаемое состояние загрузки. По умолчанию == полное.
-        :param interval:                (optional) Таймаут ожидания.
-        :param ignore_loading_state:    (optional) Ожидать только состояния загрузки страницы?
-        :return:        None
+    async def waitForLoad(self, by_load_state: bool = False, by_network_idle: bool = True) -> None:
+        """ Дожидается указанного состояния.
+        :param by_load_state:       Ожидать завершения загрузки страницы.
+        :param by_network_idle:     Ожидать завершения активности сети.
         """
 
-        if self.enabled and not ignore_loading_state:
-            while self.loading_state != "stopped":
-                await asyncio.sleep(.1)
-        else: await asyncio.sleep(1)
+        if not by_load_state and not by_network_idle:
+            raise ValueError("'by_load_state' or 'by_network_idle' must be a True")
 
-        while (await self._connection.Eval("document.readyState"))["value"] != desired_state:
-            await asyncio.sleep(interval)
+        if not self.enabled:
+            await self.enable()
+
+        if by_load_state:
+            if not self.loading_state_watcher_enabled:
+                await self.enableLoadWatcher(True)
+                self.loading_state_watcher_enabled = True
+            await self.loading_state.wait()
+
+        if by_network_idle:
+            if not self.network_idle_state_watcher_enabled:
+                await self.enableNetworkIdleWatcher(True)
+            await self.network_idle_state.wait()
 
     async def addScriptOnLoad(self, src: str) -> str:
         """
@@ -166,7 +180,7 @@ class Page:
         :return:                identifier -> Уникальный идентификатор скрипта.
         """
         if not self.enabled: await self.enable()
-        return (await self._connection.Call("Page.addScriptToEvaluateOnNewDocument", {"source": src}))["identifier"]
+        return (await self._connection.call("Page.addScriptToEvaluateOnNewDocument", {"source": src}))["identifier"]
 
     async def removeScriptOnLoad(self, identifier: str) -> None:
         """
@@ -175,7 +189,7 @@ class Page:
         :param identifier:      Идентификатор сценария.
         :return:
         """
-        await self._connection.Call("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
+        await self._connection.call("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
 
     async def setDocumentContent(self, html: str, frameId: str = None) -> None:
         """
@@ -188,7 +202,7 @@ class Page:
         :return:
         """
         if frameId is None: frameId = self._connection.conn_id
-        await self._connection.Call("Page.setDocumentContent", {"frameId": frameId, "html": html})
+        await self._connection.call("Page.setDocumentContent", {"frameId": frameId, "html": html})
 
     async def stopLoading(self) -> None:
         """
@@ -196,7 +210,7 @@ class Page:
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-stopLoading
         :return:
         """
-        await self._connection.Call("Page.stopLoading")
+        await self._connection.call("Page.stopLoading")
 
     async def setAdBlockingEnabled(self, enabled: bool) -> None:
         """
@@ -207,7 +221,7 @@ class Page:
         :return:
         """
         if not self.enabled: await self.enable()
-        await self._connection.Call("Page.setAdBlockingEnabled", {"enabled": enabled})
+        await self._connection.call("Page.setAdBlockingEnabled", {"enabled": enabled})
 
     async def setFontFamilies(self, fontFamilies: dict) -> None:
         """
@@ -226,7 +240,7 @@ class Page:
                                     }
         :return:
         """
-        await self._connection.Call("Page.setFontFamilies", {"fontFamilies": fontFamilies})
+        await self._connection.call("Page.setFontFamilies", {"fontFamilies": fontFamilies})
 
     async def setFontSizes(self, fontSizes: dict) -> None:
         """
@@ -241,7 +255,7 @@ class Page:
                                     }
         :return:
         """
-        await self._connection.Call("Page.setFontSizes", {"fontSizes": fontSizes})
+        await self._connection.call("Page.setFontSizes", {"fontSizes": fontSizes})
 
     async def captureScreenshot(
         self,
@@ -270,7 +284,7 @@ class Page:
         if format_: args.update({"format": format_})
         if quality > -1 and format_ == "jpeg": args.update({"quality": quality})
         if clip: args.update({"clip": clip})
-        return (await self._connection.Call("Page.captureScreenshot", args))["data"]
+        return (await self._connection.call("Page.captureScreenshot", args))["data"]
 
     async def printToPDF(
         self,
@@ -350,13 +364,14 @@ class Page:
         if preferCSSPageSize is not None:       args.update({"preferCSSPageSize": preferCSSPageSize})
         if transferMode is not None:            args.update({"transferMode": transferMode})
 
-        return await self._connection.Call("Page.printToPDF", args)
+        return await self._connection.call("Page.printToPDF", args)
 
     async def reload(
-        self,
-        ignoreCache: bool = False,
-        scriptToEvaluateOnLoad: str = "",
-        wait_for_load: bool = True
+            self,
+            ignoreCache: bool = False,
+            scriptToEvaluateOnLoad: str = "",
+            wait_for_load: bool = False,
+            wait_for_network_idle: bool = True
     ) -> None:
         """
         Перезагружает страницу инстанса, при необходимости игнорируя кеш.
@@ -370,13 +385,16 @@ class Page:
                                             Установите False, если это поведение не требуется.
         :return:
         """
-        if self.enabled: self.loading_state = "do_reload"
+        if self.enabled:
+            self.loading_state.clear()
+        if self.lifecycle_events_enabled:
+            self.network_idle_state.clear()
         args = {}
         if ignoreCache:            args.update({"ignoreCache": ignoreCache})
         if scriptToEvaluateOnLoad: args.update({"scriptToEvaluateOnLoad": scriptToEvaluateOnLoad})
-        await self._connection.Call("Page.reload", args)
-        if wait_for_load:
-            await self.waitForLoad()
+        await self._connection.call("Page.reload", args)
+        if wait_for_load or wait_for_network_idle:
+            await self.waitForLoad(wait_for_load, wait_for_network_idle)
 
     async def getNavigationHistory(self) -> dict:
         """
@@ -397,7 +415,7 @@ class Page:
                                 }, ... ) -> Список записей истории навигации.
                             }
         """
-        return await self._connection.Call("Page.getNavigationHistory")
+        return await self._connection.call("Page.getNavigationHistory")
 
     async def navigateToHistoryEntry(self, entryId: int) -> None:
         """
@@ -407,7 +425,7 @@ class Page:
         :return:
         """
         if self.enabled: self.loading_state = "do_navigate"
-        await self._connection.Call("Page.navigateToHistoryEntry", {"entryId": entryId})
+        await self._connection.call("Page.navigateToHistoryEntry", {"entryId": entryId})
 
     async def resetNavigationHistory(self) -> None:
         """
@@ -415,7 +433,7 @@ class Page:
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-resetNavigationHistory
         :return:
         """
-        await self._connection.Call("Page.resetNavigationHistory")
+        await self._connection.call("Page.resetNavigationHistory")
 
     async def setInterceptFileChooserDialog(self, enabled: bool) -> None:
         """
@@ -426,27 +444,61 @@ class Page:
         :param enabled:             Включить перехват?
         :return:
         """
-        await self._connection.Call("Page.setInterceptFileChooserDialog", {"enabled": enabled})
+        await self._connection.call("Page.setInterceptFileChooserDialog", {"enabled": enabled})
 
     async def setLifecycleEventsEnabled(
             self, enabled: bool,
-            handler: Optional[Callable[['PageType.LifecycleEventData'], Awaitable[None]]] = None,
+            handler: Optional[Callable[[LifecycleEventData], Awaitable[None]]] = None,
     ) -> None:
         """
         Определяет, будет ли страница генерировать события жизненного цикла.
         https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-setLifecycleEventsEnabled
         :param enabled:            Если true, начинает генерировать события жизненного цикла.
-        :param handler:            Ожидаемый объект, которому будут переданы данные события.
+        :param handler:            Awaitable объект, которому будут переданы данные события.
         :return:
         """
-        async def wrapper(params: dict) -> None:
-            await handler(PageType.LifecycleEventData(**params))
+        async def life_cycle_event_wrapper(params: dict) -> None:
+            await handler(LifecycleEventData(**params))
 
-        if handler is not None:
-            await self._connection.AddListenerForEvent(PageEvent.lifecycleEvent, wrapper)
+        if self.lifecycle_events_enabled != enabled:
+            if enabled and handler is not None:
+                await self._connection.addListenerForEvent(
+                    PageEvent.lifecycleEvent, life_cycle_event_wrapper)
+            else:
+                self._connection.removeListenersForEvent(PageEvent.lifecycleEvent)
 
-        await self._connection.Call("Page.setLifecycleEventsEnabled", {"enabled": enabled})
+            await self._connection.call("Page.setLifecycleEventsEnabled", {"enabled": enabled})
+            self.lifecycle_events_enabled = enabled
 
+    async def enableNetworkIdleWatcher(self, state: bool) -> None:
+        """ [Вк/Вык]лючает наблюдение за событием жизненного цикла ресурса, когда
+        у него возникает состояние с именем `networkIdle`, говорящее о простое сети.
+
+        Этот метод активируется автоматически при совершении переходов по URL-адресам
+        """
+        async def idle_watcher_wrapper(params: dict) -> None:
+            if params["frameId"] == self._connection.conn_id:
+                if params["name"] == "networkIdle":
+                    self.network_idle_state.set()
+
+        if state:
+            if not self.lifecycle_events_enabled:
+                await self.setLifecycleEventsEnabled(True)
+            if not self.network_idle_state_watcher_enabled:
+                await self._connection.addListenerForEvent(
+                    PageEvent.lifecycleEvent, idle_watcher_wrapper)
+        elif not state and self.network_idle_state_watcher_enabled:
+            self._connection.removeListenerForEvent(
+                PageEvent.lifecycleEvent, idle_watcher_wrapper)
+        self.network_idle_state_watcher_enabled = state
+
+    async def bringToFront(self) -> None:
+        """
+        Выводит страницу на передний план (активирует вкладку).
+        https://chromedevtools.github.io/devtools-protocol/tot/Page#method-bringToFront
+        :return:
+        """
+        await self._connection.call("Page.bringToFront")
 
 
 class PageEvent(DomainEvent):
@@ -476,90 +528,3 @@ class PageEvent(DomainEvent):
     screencastVisibilityChanged = "Page.screencastVisibilityChanged"            # ! EXPERIMENTAL
     downloadProgress = "Page.downloadProgress"                                  # * EXPERIMENTAL DEPRECATED
     downloadWillBegin = "Page.downloadWillBegin"                                # * EXPERIMENTAL DEPRECATED
-
-
-class PageType:
-
-    @dataclass
-    class LifecycleEventData:
-        frameId: str
-        loaderId: str
-        name: str
-        timestamp: float
-
-
-@dataclass
-class AdFrameStatus:
-    """ Указывает, был ли frame идентифицирован как реклама и почему. """
-    adFrameType: Literal["none", "child", "root"]
-    explanations: Optional[List[Literal["ParentIsAd", "CreatedByAdScript", "MatchedBlockingRule"]]] = None
-
-
-@dataclass
-class Frame:
-    """ Информация о фрейме на странице """
-    id: str
-    loaderId: str                               # ? Network.LoaderId
-    url: str
-    domainAndRegistry: str
-    securityOrigin: str
-    mimeType: str
-    secureContextType: Literal["Secure", "SecureLocalhost", "InsecureScheme", "InsecureAncestor"]
-    crossOriginIsolatedContextType: Literal["Isolated", "NotIsolated", "NotIsolatedFeatureDisabled"]
-    gatedAPIFeatures: List[Literal[
-        "SharedArrayBuffers", "SharedArrayBuffersTransferAllowed", "PerformanceMeasureMemory", "PerformanceProfile"
-    ]]
-    adFrameStatus: Optional['AdFrameStatus']
-    parentId: Optional[str] = None
-    name: Optional[str] = None
-    urlFragment: Optional[str] = None
-    unreachableUrl: Optional[str] = None
-    _adFrameStatus: Optional['AdFrameStatus'] = field(init=False, repr=False, default=None)
-
-    @property
-    def adFrameStatus(self) -> Union['AdFrameStatus', None]:
-        return self._adFrameStatus
-
-    @adFrameStatus.setter
-    def adFrameStatus(self, data: dict) -> None:
-        self._adFrameStatus = AdFrameStatus(**data) if not isinstance(data, property) else None
-
-
-@dataclass
-class FrameTree:
-    """ Информация об иерархии фреймов """
-    frame: 'Frame'
-    childFrames: Optional[List['FrameTree']]
-    _childFrames: Optional[List['FrameTree']] = field(init=False, repr=False, default=None)
-
-    @property
-    def frame(self) -> 'Frame':
-        return self._frame
-
-    @frame.setter
-    def frame(self, data: dict) -> None:
-        self._frame = Frame(**data)
-
-    @property
-    def childFrames(self) -> Union[List['FrameTree'], None]:
-        return self._childFrames
-
-    @childFrames.setter
-    def childFrames(self, data: List[dict]) -> None:
-        if not isinstance(data, property):
-            self._childFrames = [FrameTree(**frame_data) for frame_data in data]
-        else:
-            self._childFrames = None
-
-    def GetFrameByUrl(self, value: str) -> Union['Frame', None]:
-        def search(tree: 'FrameTree', value: str) -> Union['Frame', None]:
-            print("tree.frame.url", tree.frame.url)
-            if value in tree.frame.url:
-                return tree.frame
-            else:
-                if tree.childFrames:
-                    for child in tree.childFrames:
-                        if result := search(child, value):
-                            return result
-            return None
-        return search(self, value)

@@ -1,6 +1,7 @@
 from typing import Optional, List, Awaitable, Callable
-from ..data import DomainEvent
-from dataclasses import dataclass
+from ...data import DomainEvent
+from .types import TargetInfo
+
 
 class Target:
     """
@@ -10,10 +11,20 @@ class Target:
 
     def __init__(self, conn) -> None:
 
-        from ..connection import Connection
+        from ...connection import Connection
 
         self._connection: Connection = conn
         self.targets_discovered = False
+
+    async def activateTarget(self, targetId: Optional[str] = None) -> None:
+        """
+        Активирует (создаёт фокус) "target".
+        https://chromedevtools.github.io/devtools-protocol/tot/Target#method-activateTarget
+        :param targetId:        Строка, представляющая идентификатор созданной страницы.
+        :return:
+        """
+        if targetId is None: targetId = self._connection.conn_id
+        await self._connection.call("Target.activateTarget", {"targetId": targetId})
 
     async def createBrowserContext(
         self,
@@ -33,7 +44,7 @@ class Target:
         if disposeOnDetach is not None: args.update(disposeOnDetach=disposeOnDetach)
         if proxyServer is not None: args.update(proxyServer=proxyServer)
         if proxyBypassList is not None: args.update(proxyBypassList=proxyBypassList)
-        return (await self._connection.Call("Target.createBrowserContext", args))["browserContextId"]
+        return (await self._connection.call("Target.createBrowserContext", args))["browserContextId"]
 
     async def getBrowserContexts(self) -> List[str]:
         """
@@ -41,7 +52,7 @@ class Target:
         https://chromedevtools.github.io/devtools-protocol/tot/Target/#method-getBrowserContexts
         :return:                [ Browser.BrowserContextID, Browser.BrowserContextID, ... ]
         """
-        return (await self._connection.Call("Target.getBrowserContexts"))["browserContextIds"]
+        return (await self._connection.call("Target.getBrowserContexts"))["browserContextIds"]
 
     async def disposeBrowserContext(self, browserContextId: str) -> None:
         """
@@ -50,9 +61,9 @@ class Target:
         :param browserContextId:    Идентификатор контекста браузера.
         :return:
         """
-        await self._connection.Call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
+        await self._connection.call("Target.disposeBrowserContext", {"browserContextId": browserContextId})
 
-    async def getTargetInfo(self, targetId: Optional[str] = None) -> 'TargetType.TargetInfo':
+    async def getTargetInfo(self, targetId: Optional[str] = None) -> TargetInfo:
         """
         (EXPERIMENTAL)
         Возвращает информацию о "target", или о себе, если идентификатор не передан.
@@ -69,17 +80,17 @@ class Target:
                                     }
         """
         if targetId is None: targetId = self._connection.conn_id
-        return TargetType.TargetInfo(
-            **((await self._connection.Call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]))
+        return TargetInfo(
+            **((await self._connection.call("Target.getTargetInfo", {"targetId": targetId}))["targetInfo"]))
 
-    async def getTargets(self) -> List['TargetType.TargetInfo']:
+    async def getTargets(self) -> List[TargetInfo]:
         """
         Возвращает список 'targetInfo' о доступных 'targets'.
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-getTargets
         :return:                [ targetInfo, targetInfo, ... ]
         """
-        result = (await self._connection.Call("Target.getTargets"))["targetInfos"]
-        return [TargetType.TargetInfo(**info) for i, info in enumerate(result)]
+        result = (await self._connection.call("Target.getTargets"))["targetInfos"]
+        return [TargetInfo(**info) for i, info in enumerate(result)]
 
     async def attachToBrowserTarget(self) -> str:
         """
@@ -87,7 +98,7 @@ class Target:
         https://chromedevtools.github.io/devtools-protocol/tot/Target#method-attachToBrowserTarget
         :return:                    sessionId
         """
-        return (await self._connection.Call("Target.attachToBrowserTarget"))["sessionId"]
+        return (await self._connection.call("Target.attachToBrowserTarget"))["sessionId"]
 
     async def attachToTarget(self, targetId: str, flatten: Optional[bool] = None) -> str:
         """
@@ -100,7 +111,7 @@ class Target:
         """
         args = {"targetId": targetId}
         if flatten is not None: args.update({"flatten": flatten})
-        return (await self._connection.Call("Target.attachToTarget", args))["sessionId"]
+        return (await self._connection.call("Target.attachToTarget", args))["sessionId"]
 
     async def detachFromTarget(self, sessionId: str = "", targetId: str = "") -> None:
         """
@@ -114,7 +125,7 @@ class Target:
         if sessionId: args.update({"sessionId": sessionId})
         elif targetId: args.update({"targetId": targetId})
         else: raise ValueError("At least one parameter must be specified 'sessionId' or 'targetId'")
-        await self._connection.Call("Target.detachFromTarget", args)
+        await self._connection.call("Target.detachFromTarget", args)
 
     async def setAutoAttach(
             self, autoAttach: bool, waitForDebuggerOnStart: bool, flatten: Optional[bool] = None) -> None:
@@ -133,7 +144,7 @@ class Target:
         """
         args = {"autoAttach": autoAttach, "waitForDebuggerOnStart": waitForDebuggerOnStart}
         if flatten is not None: args.update(flatten=flatten)
-        await self._connection.Call("Target.setAutoAttach", args)
+        await self._connection.call("Target.setAutoAttach", args)
 
     async def createTarget(
         self,
@@ -170,7 +181,7 @@ class Target:
         if width is not None: args.update(width=width)
         if height is not None: args.update(height=height)
         if browserContextId is not None: args.update(browserContextId=browserContextId)
-        return (await self._connection.Call("Target.createTarget", args))["targetId"]
+        return (await self._connection.call("Target.createTarget", args))["targetId"]
 
     async def closeTarget(self, targetId: Optional[str] = None) -> None:
         """
@@ -181,7 +192,7 @@ class Target:
         :return:                None
         """
         if targetId is None: targetId = self._connection.conn_id
-        await self._connection.Call("Target.closeTarget", {"targetId": targetId})
+        await self._connection.call("Target.closeTarget", {"targetId": targetId})
 
     async def close(self) -> None:
         """
@@ -192,9 +203,9 @@ class Target:
     async def setDiscoverTargets(
         self, discover: bool,
         message:   Optional[Callable[[str, str], Awaitable[None]]] = None,
-        created:   Optional[Callable[['TargetType.TargetInfo'], Awaitable[None]]] = None,
+        created:   Optional[Callable[['TargetInfo'], Awaitable[None]]] = None,
         crashed:   Optional[Callable[[str, str, int], Awaitable[None]]] = None,
-        changed:   Optional[Callable[['TargetType.TargetInfo'], Awaitable[None]]] = None,
+        changed:   Optional[Callable[['TargetInfo'], Awaitable[None]]] = None,
         destroyed: Optional[Callable[[str], Awaitable[None]]] = None
     ) -> None:
         """
@@ -216,36 +227,42 @@ class Target:
             await crashed(params["targetId"], params["status"], params["errorCode"])
 
         async def on_created(params: dict) -> None:
-            await created(TargetType.TargetInfo(**params["targetInfo"]))
+            await created(TargetInfo(**params["targetInfo"]))
 
         async def on_changed(params: dict) -> None:
-            await changed(TargetType.TargetInfo(**params["targetInfo"]))
+            await changed(TargetInfo(**params["targetInfo"]))
 
         async def on_destroyed(params: dict) -> None:
             await destroyed(params["targetId"])
 
-        if discover:
-            if message is not None:
-                await self._connection.AddListenerForEvent(TargetEvent.receivedMessageFromTarget, on_message)
-            if created is not None:
-                await self._connection.AddListenerForEvent(TargetEvent.targetCreated, on_created)
-            if crashed is not None:
-                await self._connection.AddListenerForEvent(TargetEvent.targetCrashed, on_crashed)
-            if changed is not None:
-                await self._connection.AddListenerForEvent(TargetEvent.targetInfoChanged, on_changed)
-            if destroyed is not None:
-                await self._connection.AddListenerForEvent(TargetEvent.targetDestroyed, on_destroyed)
-        else:
-            for event in [
-                'Target.receivedMessageFromTarget',
-                'Target.targetCreated',
-                'Target.targetCrashed',
-                'Target.targetInfoChanged',
-                'Target.targetDestroyed'
-            ]:
-                self._connection.RemoveListenersForEvent(event)
-        self.targets_discovered = discover
-        await self._connection.Call("Target.setDiscoverTargets", {"discover": discover})
+        if self.targets_discovered != discover:
+            if discover:
+                if message is not None:
+                    await self._connection.addListenerForEvent(
+                        TargetEvent.receivedMessageFromTarget, on_message)
+                if created is not None:
+                    await self._connection.addListenerForEvent(
+                        TargetEvent.targetCreated, on_created)
+                if crashed is not None:
+                    await self._connection.addListenerForEvent(
+                        TargetEvent.targetCrashed, on_crashed)
+                if changed is not None:
+                    await self._connection.addListenerForEvent(
+                        TargetEvent.targetInfoChanged, on_changed)
+                if destroyed is not None:
+                    await self._connection.addListenerForEvent(
+                        TargetEvent.targetDestroyed, on_destroyed)
+            else:
+                for event in [
+                    'Target.receivedMessageFromTarget',
+                    'Target.targetCreated',
+                    'Target.targetCrashed',
+                    'Target.targetInfoChanged',
+                    'Target.targetDestroyed'
+                ]:
+                    self._connection.removeListenersForEvent(event)
+            self.targets_discovered = discover
+            await self._connection.call("Target.setDiscoverTargets", {"discover": discover})
 
 
 class TargetEvent(DomainEvent):
@@ -256,19 +273,3 @@ class TargetEvent(DomainEvent):
     targetInfoChanged = "Target.targetInfoChanged"
     attachedToTarget = "Target.attachedToTarget"                        # ! EXPERIMENTAL
     detachedFromTarget = "Target.detachedFromTarget"                    # ! EXPERIMENTAL
-
-
-class TargetType:
-
-    @dataclass
-    class RemoteLocation:
-        host: str; port: int
-
-
-    @dataclass
-    class TargetInfo:
-        targetId: str; type: str; title: str; url: str; attached: bool
-        openerId:         Optional[str] = None
-        canAccessOpener: Optional[bool] = None
-        openerFrameId:    Optional[str] = None
-        browserContextId: Optional[str] = None

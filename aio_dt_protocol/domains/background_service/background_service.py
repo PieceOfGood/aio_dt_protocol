@@ -1,30 +1,20 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Union
-from ..data import DomainEvent
+from ...data import DomainEvent
 
-class BackgroundService(ABC):
+class BackgroundService:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/BackgroundService
     """
-    __slots__ = ("connection",)
+    __slots__ = ("_connection", "observing_started", "recording_started")
 
-    def __init__(self):
+    def __init__(self, conn) -> None:
+
+        from ...connection import Connection
+
+        self._connection: Connection = conn
         self.observing_started = False
         self.recording_started = False
 
-    @property
-    def connected(self) -> bool:
-        return False
-
-    @property
-    def verbose(self) -> bool:
-        return False
-
-    @property
-    def page_id(self) -> str:
-        return ""
-
-    async def BackgroundClearEvents(self, service: str) -> None:
+    async def backgroundClearEvents(self, service: str) -> None:
         """
         Удаляет все сохраненные данные для service.
         https://chromedevtools.github.io/devtools-protocol/tot/BackgroundService/#method-clearEvents
@@ -35,9 +25,9 @@ class BackgroundService(ABC):
                                     paymentHandler,periodicBackgroundSync
         :return:
         """
-        await self.Call("BackgroundService.clearEvents", {"service": service})
+        await self._connection.call("BackgroundService.clearEvents", {"service": service})
 
-    async def BackgroundSetRecording(self, shouldRecord: bool, service: str) -> None:
+    async def backgroundSetRecording(self, shouldRecord: bool, service: str) -> None:
         """
         Включает, или выключает запись для service.
         https://chromedevtools.github.io/devtools-protocol/tot/BackgroundService/#method-setRecording
@@ -45,10 +35,10 @@ class BackgroundService(ABC):
         :param service:         ---------------------
         :return:
         """
-        await self.Call("BackgroundService.clearEvents", {"shouldRecord": shouldRecord, "service": service})
+        await self._connection.call("BackgroundService.clearEvents", {"shouldRecord": shouldRecord, "service": service})
         self.recording_started = shouldRecord
 
-    async def BackgroundStartObserving(self, service: str) -> None:
+    async def backgroundStartObserving(self, service: str) -> None:
         """
         Включает обновления событий для service.
         https://chromedevtools.github.io/devtools-protocol/tot/BackgroundService/#method-startObserving
@@ -56,10 +46,10 @@ class BackgroundService(ABC):
         :return:
         """
         if not self.observing_started:
-            await self.Call("BackgroundService.startObserving", {"service": service})
+            await self._connection.call("BackgroundService.startObserving", {"service": service})
             self.observing_started = True
 
-    async def BackgroundStopObserving(self, service: str) -> None:
+    async def backgroundStopObserving(self, service: str) -> None:
         """
         Выключает обновления событий для service.
         https://chromedevtools.github.io/devtools-protocol/tot/BackgroundService/#method-stopObserving
@@ -67,15 +57,8 @@ class BackgroundService(ABC):
         :return:
         """
         if self.observing_started:
-            await self.Call("BackgroundService.stopObserving", {"service": service})
+            await self._connection.call("BackgroundService.stopObserving", {"service": service})
             self.observing_started = False
-
-    @abstractmethod
-    async def Call(
-            self, domain_and_method: str,
-            params: Optional[dict] = None,
-            wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
 
 class BackgroundServiceEvent(DomainEvent):
     backgroundServiceEventReceived = "BackgroundService.backgroundServiceEventReceived"

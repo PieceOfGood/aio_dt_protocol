@@ -1,7 +1,6 @@
-from typing import Optional, Union, List, Callable, Awaitable
-from ..data import DomainEvent
-from ..domains.Network import NetworkType
-from dataclasses import dataclass, field
+from typing import Optional, List, Callable, Awaitable
+from ...data import DomainEvent
+from .types import EventRequestPaused, EventAuthRequired, HeaderEntry, RequestPattern
 
 
 class Fetch:
@@ -12,29 +11,17 @@ class Fetch:
 
     def __init__(self, conn) -> None:
 
-        from ..connection import Connection
+        from ...connection import Connection
 
         self._connection: Connection = conn
         self.enabled = False
 
-    @property
-    def connected(self) -> bool:
-        return False
-
-    @property
-    def verbose(self) -> bool:
-        return False
-
-    @property
-    def page_id(self) -> str:
-        return ""
-
     async def enable(
         self,
-        patterns: Optional[List["FetchType.RequestPattern"]] = None,
+        patterns: Optional[List[RequestPattern]] = None,
         handleAuthRequests: bool = False,
-        on_pause: Optional[Callable[['FetchType.EventRequestPaused'], Awaitable[None]]] = None,
-        on_auth:  Optional[Callable[['FetchType.EventAuthRequired'], Awaitable[None]]] = None,
+        on_pause: Optional[Callable[[EventRequestPaused], Awaitable[None]]] = None,
+        on_auth:  Optional[Callable[[EventAuthRequired], Awaitable[None]]] = None,
     ) -> None:
         """
         Включает выдачу событий requestPaused. Запрос будет приостановлен до тех пор,
@@ -54,27 +41,29 @@ class Fetch:
         :param on_auth:             (optional) Корутина, которая будет получать все события "authRequired".
         :return:
         """
+
         async def on_pause_decorator(params: dict) -> None:
-            await on_pause(FetchType.EventRequestPaused(**params))
+            await on_pause(EventRequestPaused(**params))
 
         async def on_auth_decorator(params: dict) -> None:
-            await on_auth(FetchType.EventAuthRequired(**params))
+            await on_auth(EventAuthRequired(**params))
 
         if on_pause is not None:
-            await self._connection.AddListenerForEvent(
+            await self._connection.addListenerForEvent(
                 FetchEvent.requestPaused, on_pause_decorator)
 
         if on_auth is not None:
-            await self._connection.AddListenerForEvent(
+            await self._connection.addListenerForEvent(
                 FetchEvent.authRequired, on_auth_decorator)
 
-        args = {}
-        patterns = patterns if patterns is not None else []
-        if patterns:
-            args.update({"patterns": [p.dict() for p in patterns]})
-        if handleAuthRequests: args.update({"handleAuthRequests": handleAuthRequests})
-        await self._connection.Call("Fetch.enable", args)
-        self.enabled = True
+        if not self.enabled:
+            args = {}
+            patterns = patterns if patterns is not None else []
+            if patterns:
+                args.update({"patterns": [p.dict() for p in patterns]})
+            if handleAuthRequests: args.update({"handleAuthRequests": handleAuthRequests})
+            await self._connection.call("Fetch.enable", args)
+            self.enabled = True
 
     async def disable(self) -> None:
         """
@@ -82,8 +71,9 @@ class Fetch:
         https://chromedevtools.github.io/devtools-protocol/tot/Fetch#method-disable
         :return:
         """
-        await self._connection.Call("Fetch.disable")
-        self.enabled = False
+        if self.enabled:
+            await self._connection.call("Fetch.disable")
+            self.enabled = False
 
     async def failRequest(self, requestId: str, errorReason: str) -> None:
         """
@@ -99,12 +89,12 @@ class Fetch:
                                         BlockedByClient, BlockedByResponse
         :return:
         """
-        await self._connection.Call("Fetch.failRequest", {"requestId": requestId, "errorReason": errorReason})
+        await self._connection.call("Fetch.failRequest", {"requestId": requestId, "errorReason": errorReason})
 
     async def fulfillRequest(
             self, requestId: str,
             responseCode:                     int = 200,
-            responseHeaders: Optional[List["FetchType.HeaderEntry"]] = None,
+            responseHeaders: Optional[List[HeaderEntry]] = None,
             binaryResponseHeaders:  Optional[str] = None,
             body:                   Optional[str] = None,
             responsePhrase:         Optional[str] = None,
@@ -141,7 +131,7 @@ class Fetch:
         if body is not None: args.update({"body": body})
         if responsePhrase is not None: args.update({"responsePhrase": responsePhrase})
         # print("fulfillRequest args", json.dumps(args, indent=4))
-        await self._connection.Call("Fetch.fulfillRequest", args, wait_for_response=wait_for_response)
+        await self._connection.call("Fetch.fulfillRequest", args, wait_for_response=wait_for_response)
 
     async def continueRequest(
         self, requestId: str,
@@ -175,7 +165,7 @@ class Fetch:
         if postData is not None: args.update({"postData": postData})
         if headers is not None: args.update({"headers": headers})
         if interceptResponse is not None: args.update({"interceptResponse": interceptResponse})
-        await self._connection.Call("Fetch.continueRequest", args, wait_for_response=wait_for_response)
+        await self._connection.call("Fetch.continueRequest", args, wait_for_response=wait_for_response)
 
     async def continueWithAuth(self, requestId: str, authChallengeResponse: list) -> None:
         """
@@ -201,7 +191,7 @@ class Fetch:
         :return:
         """
         args = {"requestId": requestId, "authChallengeResponse": authChallengeResponse}
-        await self._connection.Call("Fetch.continueWithAuth", args)
+        await self._connection.call("Fetch.continueWithAuth", args)
 
     async def getResponseBody(self, requestId: str) -> dict:
         """
@@ -218,7 +208,7 @@ class Fetch:
                                                                         как base64.
                                         }
         """
-        return await self._connection.Call("Fetch.getResponseBody", {"requestId": requestId})
+        return await self._connection.call("Fetch.getResponseBody", {"requestId": requestId})
 
     async def takeResponseBodyAsStream(self, requestId: str) -> dict:
         """
@@ -238,111 +228,9 @@ class Fetch:
                                                     https://chromedevtools.github.io/devtools-protocol/tot/IO#type-StreamHandle
                                         }
         """
-        return await self._connection.Call("Fetch.takeResponseBodyAsStream", {"requestId": requestId})
+        return await self._connection.call("Fetch.takeResponseBodyAsStream", {"requestId": requestId})
 
 
 class FetchEvent(DomainEvent):
     authRequired = "Fetch.authRequired"
     requestPaused = "Fetch.requestPaused"
-
-
-class FetchType:
-
-    @dataclass
-    class EventRequestPaused:
-        requestId: str
-        frameId: str
-        resourceType: str                               # ! Allowed Values: Document, Stylesheet, Image, Media, Font,
-                                                        # !     Script, TextTrack, XHR, Fetch, EventSource, WebSocket,
-                                                        # !     Manifest, SignedExchange, Ping, CSPViolationReport,
-                                                        # !     Preflight, Other
-        request: NetworkType.Request
-        responseHeaders: list["FetchType.HeaderEntry"]
-        responseErrorReason: Optional[str] = None       # ! Allowed Values: Failed, Aborted, TimedOut, AccessDenied,
-                                                        # !     ConnectionClosed, ConnectionReset, ConnectionRefused,
-                                                        # !     ConnectionAborted, ConnectionFailed, NameNotResolved,
-                                                        # !     InternetDisconnected, AddressUnreachable,
-                                                        # !     BlockedByClient, BlockedByResponse
-        responseStatusCode: Optional[int] = None
-        responseStatusText: Optional[str] = None
-        networkId: Optional[str] = None                 # ! id of request
-        redirectedRequestId: Optional[str] = None       # ! id запроса вызвавшего редирект
-        _request: NetworkType.Request = field(init=False, repr=False, default=None)
-        _responseHeaders: Optional[list["FetchType.HeaderEntry"]] = field(init=False, repr=False, default=None)
-
-        @property
-        def request(self) -> NetworkType.Request:
-            return self._request
-
-        @request.setter
-        def request(self, data: dict) -> None:
-            self._request = NetworkType.Request(**data)
-
-        @property
-        def responseHeaders(self) -> Optional[list["FetchType.HeaderEntry"]]:
-            return self._responseHeaders
-
-        @responseHeaders.setter
-        def responseHeaders(self, data: list[dict[str, str]]) -> None:
-            if not isinstance(data, property):
-                self._responseHeaders = [FetchType.HeaderEntry(**item) for item in data]
-            else:
-                self._responseHeaders = None
-
-
-    @dataclass
-    class EventAuthRequired:
-        requestId: str
-        request: NetworkType.Request
-        frameId: str
-        resourceType: str                               # ! Allowed Values: Document, Stylesheet, Image, Media, Font,
-                                                        # !     Script, TextTrack, XHR, Fetch, EventSource, WebSocket,
-                                                        # !     Manifest, SignedExchange, Ping, CSPViolationReport,
-                                                        # !     Preflight, Other
-        authChallenge: "FetchType.AuthChallenge"
-        _authChallenge: "FetchType.AuthChallenge" = field(init=False, repr=False, default=None)
-
-        @property
-        def authChallenge(self) -> "FetchType.AuthChallenge":
-            return self._authChallenge
-
-        @authChallenge.setter
-        def authChallenge(self, data: dict) -> None:
-            self._authChallenge = FetchType.AuthChallenge(**data)
-
-
-    @dataclass
-    class AuthChallenge:
-        origin: str
-        scheme: str
-        realm: str                                      # ! May be empty.
-        source: Optional[str] = None
-
-
-    @dataclass
-    class HeaderEntry:
-        name: str
-        value: str
-
-
-    @dataclass
-    class RequestPattern:
-        urlPattern: str = "*"                           # ? Подстановочные знаки ( '*'-> ноль или более, '?'-> ровно
-                                                        # ?     один) допускаются. Экранирующий символ — обратная
-                                                        # ?     косая черта(\).
-        resourceType: Optional[str] = None              # ? Если установлено, будут перехватываться только соответствующие
-                                                        # ?     указанным типам.
-                                                        # ! Allowed Values: Document, Stylesheet, Image, Media, Font,
-                                                        # !     Script, TextTrack, XHR, Fetch, EventSource, WebSocket,
-                                                        # !     Manifest, SignedExchange, Ping, CSPViolationReport,
-                                                        # !     Preflight, Other
-        requestStage: Optional[str] = None              # ? Стадия перехвата запроса. Запрос будет перехвачен до того,
-                                                        # ?     как запрос будет отправлен. Ответ будет перехвачен после
-                                                        # ?     получения ответа (но до получения тела ответа).
-                                                        # ! Allowed Values: Request, Response
-
-        def dict(self) -> dict:
-            result = {}
-            for k, v in self.__dict__.items():
-                if v: result[k] = v
-            return result

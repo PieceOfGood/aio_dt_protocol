@@ -275,20 +275,18 @@ class Browser:
         return subprocess.Popen(run_args).pid
 
     def kill(self) -> None:
-        """
-        "Убивает" процесс браузера. Рекомендуется только в крайних случаях.
-            Лучше всего вызывать метод Call("Browser.close") у инстанса страницы
-        :return:
-        """
-        try: os.kill(self.browser_pid, signal.SIGTERM)
-        except PermissionError: pass
+        """  Убивает процесс браузера. """
+        try:
+            os.kill(self.browser_pid, signal.SIGTERM)
+        except PermissionError:
+            pass
 
     async def getTargetConnectionInfoList(self) -> List[TargetConnectionInfo]:
         return [TargetConnectionInfo(**i) for i in await self.getPageList()]
 
     async def getTargetConnectionInfo(
             self, key: str = "type",
-            connection_type: Union[str, TargetConnectionType] = "conn") -> TargetConnectionInfo:
+            connection_type: Union[str, TargetConnectionType] = "page") -> TargetConnectionInfo:
         v = connection_type if type(connection_type) is str else connection_type.value
         for page_data in await self.getPageList():
             data = page_data[key]
@@ -307,12 +305,12 @@ class Browser:
 
         :return: [ {
                     "description": "",
-                    "devtoolsFrontendUrl": "/devtools/inspector.html?ws=localhost:9222/devtools/conn/DAB7FB6187B554E10B0BD18821265734",
+                    "devtoolsFrontendUrl": "/devtools/inspector.html?ws=localhost:9222/devtools/page/DAB7FB6187B554E10B0BD18821265734",
                     "id": "DAB7FB6187B554E10B0BD18821265734",
                     "title": "Yahoo",
-                    "type": "conn",
+                    "type": "page",
                     "url": "https://www.yahoo.com/",
-                    "webSocketDebuggerUrl": "ws://localhost:9222/devtools/conn/DAB7FB6187B554E10B0BD18821265734"
+                    "webSocketDebuggerUrl": "ws://localhost:9222/devtools/page/DAB7FB6187B554E10B0BD18821265734"
                 }, { ... } ]
         """
         result = await async_util_call(
@@ -327,7 +325,7 @@ class Browser:
             match_mode: str = "exact",
             index: int = 0,
             callback: CommonCallback = None
-    ) -> Union[Connection, None]:
+    ) -> Optional[Connection]:
         """
         Организует выбор нужного инстанса из процессов браузера по следующим критериям:
         :param key:                 По ключу из словаря. Список ключей смотри
@@ -345,7 +343,7 @@ class Browser:
                                         включает уведомления домена "Runtime" для общения
                                         со страницей.
 
-        :return:        <Page> - инстанс страницы с подключением по WebSocket или None, если не найдено
+        :return:        <Connection>
         """
 
         if callback is not None and not iscoroutinefunction(callback):
@@ -367,7 +365,8 @@ class Browser:
                         self.verbose,
                         self.browser_name
                     )
-                    await conn.Activate()
+
+                    await conn.activate()
                     return conn
                 counter += 1
         return None
@@ -380,10 +379,10 @@ class Browser:
         """
         Получает страницу браузера по индексу. По умолчанию, первую.
         :param index:       - Желаемый индекс страницы начиная с нуля.
-        :param page_type:   - Тип "Page" | 'background_page' | 'service_worker' | ???
+        :param page_type:   - Тип "page" | 'background_page' | 'service_worker' | ???
         :param callback:    - Корутина, которой будет передаваться контекст абсолютно
                                 всех событий страницы в виде словаря.
-        :return:        <Page>
+        :return:        <Connection>
         """
         return await self.getPageBy("type", page_type, "exact", index, callback)
 
@@ -400,7 +399,7 @@ class Browser:
                                 который используется с этой же целью.
         :param callback:    - Корутина, которой будет передаваться контекст абсолютно
                                 всех событий страницы в виде словаря.
-        :return:        <Page>
+        :return:        <Connection>
         """
         return await self.getPageBy("id", conn_id, "exact", 0, callback)
 
@@ -421,7 +420,7 @@ class Browser:
         :param index:       - Желаемый индекс страницы начиная с нуля.
         :param callback:    - Корутина, которой будет передаваться контекст абсолютно
                                 всех событий страницы в виде словаря.
-        :return:        <Page>
+        :return:        <Connection>
         """
         return await self.getPageBy("title", value, match_mode, index, callback)
 
@@ -442,7 +441,7 @@ class Browser:
         :param index:       - Желаемый индекс страницы начиная с нуля.
         :param callback:    - Корутина, которой будет передаваться контекст абсолютно
                                 всех событий страницы в виде словаря.
-        :return:        <Page>
+        :return:        <Connection>
         """
         return await self.getPageBy("url", value, match_mode, index, callback)
 
@@ -458,7 +457,7 @@ class Browser:
         :param url:                     - (optional) Адрес будет открыт при создании.
         :param newWindow:               - (optional) Если 'True' — страница будет открыта в новом окне.
         :param background:              - (optional) Если 'True' — страница будет открыта в фоне.
-        :return:                    * Инстанс страницы <PageEx>
+        :return:                    * <Connection>
         """
         while not (tmp := await self.getPage(callback=callback)):
             await asyncio.sleep(.5)
@@ -543,14 +542,14 @@ class Browser:
     async def closeAllPagesExcept(self, *except_list: Connection) -> None:
         """ Закрывает все страницы браузера, кроме переданных """
         for conn in await self.getTargetConnectionInfoList():
-            if conn.type == "conn":
+            if conn.type == "page":
                 condition = False
                 for conn in except_list:
-                    condition |= conn.conn_id == conn.id
+                    condition |= conn.conn_id == conn._id
                 if not condition:
                     i = 4
                     try:
-                        while (tab := await self.getPageByID(conn.id)) is None and i:
+                        while (tab := await self.getPageByID(conn._id)) is None and i:
                             await asyncio.sleep(.5)
                             i -= 1
                         if tab: await tab.Target.close()

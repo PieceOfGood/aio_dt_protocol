@@ -1,62 +1,47 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Union
-from ..data import DomainEvent
+from ...data import DomainEvent
 
-class Log(ABC):
+
+class Log:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Log
     #   LogEntry -> https://chromedevtools.github.io/devtools-protocol/tot/Log#type-LogEntry
     """
-    __slots__ = ()
+    __slots__ = ("_connection", "enabled")
 
-    def __init__(self):
-        self.log_domain_enabled = False
+    def __init__(self, conn) -> None:
+        from ...connection import Connection
 
-    @property
-    def connected(self) -> bool:
-        return False
+        self._connection: Connection = conn
+        self.enabled = False
 
-    @property
-    def verbose(self) -> bool:
-        return False
-
-    @property
-    def page_id(self) -> str:
-        return ""
-
-    async def LogEnable(self) -> None:
+    async def enable(self) -> None:
         """
         Включает 'Log' домен, отправляет записи лога, собранные на данный момент, посредством
             события 'entryAdded'.
         https://chromedevtools.github.io/devtools-protocol/tot/Log#method-enable
         :return:
         """
-        await self.Call("Log.enable")
-        self.log_domain_enabled = True
+        if not self.enabled:
+            await self._connection.call("Log.enable")
+            self.enabled = True
 
-    async def LogDisable(self) -> None:
+    async def disable(self) -> None:
         """
         Выключает 'Log' домен, останавливая отправку сообщений.
         https://chromedevtools.github.io/devtools-protocol/tot/Log#method-disable
         :return:
         """
-        await self.Call("Log.disable")
-        self.log_domain_enabled = False
+        if self.enabled:
+            await self._connection.call("Log.disable")
+            self.enabled = False
 
-    async def ClearLog(self) -> None:
+    async def clear(self) -> None:
         """
         Очищает список ранее опубликованных сообщений лога.
         https://chromedevtools.github.io/devtools-protocol/tot/Log#method-clear
         :return:
         """
-        await self.Call("Log.clear")
-
-    @abstractmethod
-    async def Call(
-            self, domain_and_method: str,
-            params: Optional[dict] = None,
-            wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+        await self._connection.call("Log.clear")
 
 class LogEvent(DomainEvent):
     entryAdded = "Log.entryAdded"

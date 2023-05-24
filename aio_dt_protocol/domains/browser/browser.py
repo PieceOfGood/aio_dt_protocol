@@ -1,16 +1,17 @@
-from typing import Optional, Dict, List
-from ..data import WindowBounds, WindowInfo
-from ..data import DomainEvent
+from typing import Optional, List
+from ...data import DomainEvent
+from .types import Version, Bounds, WindowInfo
+
 
 class Browser:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Browser/
     """
-    __slots__ = ("_connection")
+    __slots__ = ("_connection",)
 
     def __init__(self, conn) -> None:
 
-        from ..connection import Connection
+        from ...connection import Connection
 
         self._connection: Connection = conn
 
@@ -52,7 +53,7 @@ class Browser:
             args.update({"origin": origin})
         if browserContextId is not None:
             args.update({"browserContextId": browserContextId})
-        await self._connection.Call("Browser.setPermission", args)
+        await self._connection.call("Browser.setPermission", args)
 
     async def grantPermissions(
             self, permissions: List[str],
@@ -80,7 +81,7 @@ class Browser:
             args.update({"origin": origin})
         if browserContextId is not None:
             args.update({"browserContextId": browserContextId})
-        await self._connection.Call("Browser.grantPermissions", args)
+        await self._connection.call("Browser.grantPermissions", args)
 
     async def resetPermissions(self, browserContextId: Optional[str] = None) -> None:
         """
@@ -93,9 +94,9 @@ class Browser:
         args = {}
         if browserContextId is not None:
             args.update({"browserContextId": browserContextId})
-        await self._connection.Call("Browser.resetPermissions", args)
+        await self._connection.call("Browser.resetPermissions", args)
 
-    async def getVersion(self) -> Dict[str, str]:
+    async def getVersion(self) -> Version:
         """
         Возвращает словарь с информацией о текущем билде браузера.
         https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-getVersion
@@ -107,9 +108,10 @@ class Browser:
                                     "jsVersion":        str( ... )  -> V8 version.
                                 }
         """
-        return await self._connection.Call("Browser.getVersion")
+        return Version(
+            **(await self._connection.call("Browser.getVersion")))
 
-    async def getWindowBounds(self, windowId: int = None) -> WindowBounds:
+    async def getWindowBounds(self, windowId: int = None) -> Bounds:
         """
         (EXPERIMENTAL)
         Возвращает позицию и размер окна.
@@ -128,8 +130,8 @@ class Browser:
         """
         if windowId is None:
             windowId = (await self._connection.Target.getWindowForTarget()).windowId
-        return WindowBounds(
-            **(await self._connection.Call("Browser.getWindowBounds", {"windowId": windowId}))["bounds"])
+        return Bounds(
+            **(await self._connection.call("Browser.getWindowBounds", {"windowId": windowId}))["bounds"])
 
     async def getWindowForTarget(self, targetId: Optional[str] = None) -> WindowInfo:
         """
@@ -145,8 +147,8 @@ class Browser:
         """
         if targetId is None:
             targetId = self._connection.conn_id
-        result = await self._connection.Call("Browser.getWindowForTarget", {"targetId": targetId})
-        return WindowInfo(windowId=result["windowId"], bounds=WindowBounds(**result["bounds"]))
+        result = await self._connection.call("Browser.getWindowForTarget", {"targetId": targetId})
+        return WindowInfo(windowId=result["windowId"], bounds=Bounds(**result["bounds"]))
 
     async def setDockTile(self, badgeLabel: Optional[str] = None, image: Optional[str] = None) -> None:
         """
@@ -164,7 +166,7 @@ class Browser:
             args.update({"image": image})
         if not args:
             return
-        await self._connection.Call("Browser.setDockTile", args)
+        await self._connection.call("Browser.setDockTile", args)
 
     async def setDownloadBehavior(
             self, behavior: str,
@@ -189,7 +191,7 @@ class Browser:
         if browserContextId is not None: args.update(browserContextId=browserContextId)
         if downloadPath is not None: args.update(downloadPath=downloadPath)
         if eventsEnabled is not None: args.update(eventsEnabled=eventsEnabled)
-        await self._connection.Call("Browser.setDownloadBehavior", args)
+        await self._connection.call("Browser.setDownloadBehavior", args)
 
     async def close(self) -> bool:
         """
@@ -198,9 +200,10 @@ class Browser:
         :return:        Закрылся/был закрыт
         """
         if self._connection.connected:
-            await self._connection.Call("Browser.close")
+            await self._connection.call("Browser.close")
             return True
         return False
+
 
 class BrowserEvent(DomainEvent):
     downloadProgress = "Browser.downloadProgress"
