@@ -3,7 +3,7 @@ try:
 except ModuleNotFoundError:
     import json
 import asyncio
-import websockets.client
+from websockets.client import WebSocketClientProtocol, connect
 
 from .exceptions import EvaluateError, get_cdtp_error, highlight_eval_error, PromiseEvaluateError, \
     highlight_promise_error
@@ -15,32 +15,38 @@ from typing import Callable, Awaitable, Optional, Union, Tuple, List, Dict
 from .data import DomainEvent, Sender, Receiver, CommonCallback
 from .extend_connection import Extend
 
+from .domains.background_service import BackgroundService
 from .domains.browser import Browser
 from .domains.css import CSS
-from .domains.page import Page
+from .domains.device_orientation import DeviceOrientation
+from .domains.dom import DOM
+from .domains.emulation import Emulation
 from .domains.fetch import Fetch
+from .domains.input import Input
+from .domains.log import Log
+from .domains.network import Network
+from .domains.overlay import Overlay
+from .domains.page import Page
+from .domains.runtime import Runtime
+from .domains.system_info import SystemInfo
 from .domains.target import Target
 
 
 class Connection:
-    """ Инстанс страницы должен быть активирован после создания вызовом метода Activate(),
-    это создаст подключение по WebSocket и запустит задачи обеспечивающие
-    обратную связь. Метод GetPageBy() инстанса браузера, заботится об этом
-    по умолчанию.
-
-        Если инстанс страницы более не нужен, например, при перезаписи в него нового
+    """ Если инстанс страницы более не нужен, например, при перезаписи в него нового
     инстанса, перед этим [-!-] ОБЯЗАТЕЛЬНО [-!-] - вызовите у него метод
     Detach(), или закройте вкладку/страницу браузера, с которой он связан,
     тогда это будет выполнено автоматом. Иначе в цикле событий останутся
     задачи связанные с поддержанием соединения, которое более не востребовано.
     """
     __slots__ = (
-        "ws_url", "frontend_url", "callback", "id", "extend",
+        "ws_url", "frontend_url", "callback", "_id", "extend",
         "responses", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_event",
-        "runtime_enabled", "on_close_event", "context_manager", "_connected", "_conn_id", "_verbose",
+        "on_close_event", "context_manager", "_connected", "_conn_id", "_verbose",
         "_browser_name", "_is_headless_mode",
 
-        "Browser", "CSS", "Page", "Fetch", "Target",
+        "BackgroundService", "Browser", "CSS", "DeviceOrientation", "DOM", "Emulation", "Fetch", "Input",
+        "Log", "Network", "Overlay", "Page", "Runtime", "SystemInfo", "Target",
     )
 
     def __init__(
@@ -73,23 +79,32 @@ class Connection:
         self._verbose = verbose
         self._browser_name = browser_name
 
-        self.id = 0
+        self._id = 0
         self._connected = False
-        self.ws_session = None
-        self.receiver = None
+        self.ws_session: Optional[WebSocketClientProtocol] = None
+        self.receiver: Optional[asyncio.Task] = None
         self.on_detach_listener: List[Callable[[any], Awaitable[None]], list, dict] = []
         self.listeners = {}
         self.listeners_for_event = {}
-        self.runtime_enabled = False
         self.on_close_event = asyncio.Event()
         self.responses: Dict[int, Optional[Sender[dict]]] = {}
 
         self.extend = Extend(self)
 
+        self.BackgroundService = BackgroundService(self)
         self.Browser = Browser(self)
         self.CSS = CSS(self)
-        self.Page = Page(self)
+        self.DeviceOrientation = DeviceOrientation(self)
+        self.DOM = DOM(self)
+        self.Emulation = Emulation(self)
         self.Fetch = Fetch(self)
+        self.Input = Input(self)
+        self.Log = Log(self)
+        self.Network = Network(self)
+        self.Overlay = Overlay(self)
+        self.Page = Page(self)
+        self.Runtime = Runtime(self)
+        self.SystemInfo = SystemInfo(self)
         self.Target = Target(self)
 
 
@@ -126,13 +141,13 @@ class Connection:
     def __hash__(self) -> int:
         return hash(self.conn_id)
 
-    async def Call(
+    async def call(
         self, domain_and_method: str,
         params:  Optional[dict] = None,
         wait_for_response: bool = True
     ) -> Optional[dict]:
-        self.id += 1
-        _id = self.id
+        self._id += 1
+        _id = self._id
         data = {
             "id": _id,
             "params": params if params else {},
@@ -141,14 +156,14 @@ class Connection:
 
         if not wait_for_response:
             self.responses[_id] = None
-            await self._Send(json.dumps(data))
+            await self._send(json.dumps(data))
             return
 
         que = asyncio.Queue()
         sender, receiver = Sender[dict](que), Receiver[dict](que)
         self.responses[_id] = sender
 
-        await self._Send(json.dumps(data))
+        await self._send(json.dumps(data))
 
         response = await receiver.recv()
         if "error" in response:
@@ -165,7 +180,7 @@ class Connection:
 
         return response["result"]
 
-    async def Eval(
+    async def eval(
         self, expression: str,
         objectGroup:            str = "console",
         includeCommandLineAPI: bool = True,
@@ -174,7 +189,7 @@ class Connection:
         userGesture:           bool = True,
         awaitPromise:          bool = False
     ) -> dict:
-        response = await self.Call(
+        response = await self.call(
             "Runtime.evaluate", {
                 "expression": expression,
                 "objectGroup": objectGroup,
@@ -191,24 +206,24 @@ class Connection:
             )
         return response["result"]
 
-    async def _Send(self, data: str) -> None:
+    async def _send(self, data: str) -> None:
         if self.connected:
             await self.ws_session.send(data)
 
-    async def _Recv(self) -> None:
+    async def _recv(self) -> None:
         while self.connected:
             try:
                 data_msg: dict = json.loads(await self.ws_session.recv())
             # ! Браузер разорвал соединение
             except ConnectionClosedError as e:
                 if self.verbose: log(f"ConnectionClosedError {e!r}")
-                await self.Detach()
+                await self.detach()
                 return
 
             if ("method" in data_msg and data_msg["method"] == "Inspector.detached"
                     and data_msg["params"]["reason"] == "target_closed"):
                 self.on_close_event.set()
-                await self.Detach()
+                await self.detach()
                 return
 
             # Ожидающие ответов вызовы API получают ответ по id входящих сообщений.
@@ -273,18 +288,18 @@ class Connection:
                         )
                     )
 
-    async def EvalPromise(self, script: str) -> dict:
+    async def evalPromise(self, script: str) -> dict:
         """ Выполняет асинхронный код на странице и возвращает результат.
         !!! ВАЖНО !!! Выполняемый код не может возвращать какие-либо JS
         типы, поэтому должен возвращать JSON-сериализованный набор данных.
         """
-        result = await self.Eval(script)
+        result = await self.eval(script)
         args = dict(
             promiseObjectId=result["objectId"],
             returnByValue=False,
             generatePreview=False
         )
-        response = await self.Call("Runtime.awaitPromise", args)
+        response = await self.Runtime.awaitPromise(**args)
         if "exceptionDetails" in response:
             raise PromiseEvaluateError(
                 highlight_promise_error(response["result"]["description"]) +
@@ -292,11 +307,18 @@ class Connection:
             )
         return json.loads(response["result"]["value"])
 
-    async def WaitForClose(self) -> None:
+    async def waitForClose(self) -> None:
         """ Дожидается, пока не будет потеряно соединение со страницей. """
         await self.on_close_event.wait()
 
-    async def Detach(self) -> None:
+    async def activate(self) -> None:
+        self.ws_session = await connect(self.ws_url, ping_interval=None)
+        self._connected = True
+        self.receiver = asyncio.create_task(self._recv())
+        if self.callback is not None:
+            await self.Runtime.enable()
+
+    async def detach(self) -> None:
         """
         Отключается от инстанса страницы. Вызывается автоматически при закрытии браузера,
             или инстанса текущей страницы. Принудительный вызов не закрывает страницу,
@@ -313,10 +335,10 @@ class Connection:
             function, args, kvargs = self.on_detach_listener
             await function(*args, **kvargs)
 
-    def RemoveOnDetach(self) -> None:
+    def removeOnDetach(self) -> None:
         self.on_detach_listener = []
 
-    def SetOnDetach(self, function: Callable[[any], Awaitable[None]], *args, **kvargs) -> bool:
+    def setOnDetach(self, function: Callable[[any], Awaitable[None]], *args, **kvargs) -> bool:
         """
         Регистрирует асинхронный коллбэк, который будет вызван с соответствующими аргументами
             при разрыве соединения со страницей.
@@ -328,15 +350,7 @@ class Connection:
         self.on_detach_listener = [function, args, kvargs]
         return True
 
-    async def Activate(self) -> None:
-        self.ws_session = await websockets.client.connect(self.ws_url, ping_interval=None)
-        self._connected = True
-        self.receiver = asyncio.create_task(self._Recv())
-        if self.callback is not None:
-            await self.Call("Runtime.enable")
-            self.runtime_enabled = True
-
-    async def AddListener(self, listener: Callable[[any], Awaitable[None]], *args: any) -> None:
+    async def addListener(self, listener: Callable[[any], Awaitable[None]], *args: any) -> None:
         """
         Добавляет 'слушателя', который будет ожидать свой вызов по имени функции.
             Вызов слушателей из контекста страницы осуществляется за счёт
@@ -368,11 +382,10 @@ class Connection:
             raise TypeError("Listener must be a async callable object!")
         if listener.__name__ not in self.listeners:
             self.listeners[ listener.__name__ ] = {"function": listener, "args": args}
-            if not self.runtime_enabled:
-                await self.Call("Runtime.enable")
-                self.runtime_enabled = True
+            if not self.Runtime.enabled:
+                await self.Runtime.enable()
 
-    async def AddListeners(
+    async def addListeners(
             self, *list_of_tuple_listeners_and_args: Tuple[Callable[[any], Awaitable[None]], list]) -> None:
         """
         Делает то же самое, что и AddListener(), но может зарегистрировать сразу несколько слушателей.
@@ -386,11 +399,10 @@ class Connection:
                 raise TypeError("Listener must be a async callable object!")
             if listener.__name__ not in self.listeners:
                 self.listeners[listener.__name__] = {"function": listener, "args": args}
-                if not self.runtime_enabled:
-                    await self.Call("Runtime.enable")
-                    self.runtime_enabled = True
+                if not self.Runtime.enabled:
+                    await self.Runtime.enable()
 
-    def RemoveListener(self, listener: Callable[[any], Awaitable[None]]) -> None:
+    def removeListener(self, listener: Callable[[any], Awaitable[None]]) -> None:
         """
         Удаляет слушателя.
         :param listener:        Колбэк-функция.
@@ -401,7 +413,7 @@ class Connection:
         if listener.__name__ in self.listeners:
             del self.listeners[ listener.__name__ ]
 
-    async def AddListenerForEvent(
+    async def addListenerForEvent(
         self, event: Union[str, DomainEvent], listener: Callable[[any], Awaitable[None]], *args) -> None:
         """
         Регистирует слушателя, который будет вызываться при вызове определённых событий
@@ -424,11 +436,10 @@ class Connection:
         if e not in self.listeners_for_event:
             self.listeners_for_event[ e ]: dict = {}
         self.listeners_for_event[ e ][listener] = args
-        if not self.runtime_enabled:
-            await self.Call("Runtime.enable")
-            self.runtime_enabled = True
+        if not self.Runtime.enabled:
+            await self.Runtime.enable()
 
-    def RemoveListenerForEvent(
+    def removeListenerForEvent(
             self, event: Union[str, DomainEvent], listener: Callable[[any], Awaitable[None]]) -> None:
         """
         Удаляет регистрацию слушателя для указанного события.
@@ -443,7 +454,7 @@ class Connection:
             if listener in m: m.pop(listener)
 
 
-    def RemoveListenersForEvent(self, event: Union[str, DomainEvent]) -> None:
+    def removeListenersForEvent(self, event: Union[str, DomainEvent]) -> None:
         """
         Удаляет регистрацию метода и слушателей вместе с ним для указанного события.
         :param event:          Имя метода, для которого была регистрация.

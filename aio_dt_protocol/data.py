@@ -1,4 +1,4 @@
-from typing import Optional, List, TypeVar, Generic, Tuple, Callable, Coroutine
+from typing import Optional, TypeVar, Generic, Tuple, Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
 from asyncio import Queue
@@ -42,32 +42,8 @@ class Channel(Generic[T]):
         return Sender[T](que), Receiver[T](que)
 
 
-class DomainEvent(Enum): pass
-
-
-class ConnectionType(Enum):
-    none = "none"; cellular2g = "cellular2g"; cellular3g = "cellular3g"; cellular4g = "cellular4g"
-    bluetooth = "bluetooth"; ethernet = "ethernet"; wifi = "wifi"; wimax = "wimax"; other = "other"
-
-
-@dataclass
-class Cookie:
-    name: str
-    value: str
-    domain: str
-    path: str
-    expires: float
-    size: int
-    httpOnly: bool
-    secure: bool
-    session: bool
-    priority: str                       # Allowed Values: Low, Medium, High
-    sameParty: bool
-    sourceScheme: str                   # Allowed Values: Unset, NonSecure, Secure
-    sourcePort: int                     # Valid values are {-1, [1, 65535]}, -1 indicates an unspecified port.
-    sameSite: Optional[str] = None      # Allowed status Values: Strict, Lax, None
-    partitionKey: Optional[str] = None
-    partitionKeyOpaque: Optional[bool] = None
+class DomainEvent(Enum):
+    pass
 
 
 @dataclass
@@ -87,98 +63,6 @@ class TargetConnectionType(Enum):
 
 
 @dataclass
-class ProcessInfo:
-    type: str           # Тип процесса
-    id: int             # Идентификатор процесса
-    cpuTime: float      # Совокупное использование ЦП в секундах для всех потоков процесса с момента его запуска.
-
-
-@dataclass
-class GPUInfo:
-    devices: List[dict]
-    driverBugWorkarounds: List[str]
-    videoDecoding: List[dict]
-    videoEncoding: List[dict]
-    imageDecoding: List[dict]
-    auxAttributes: Optional[dict] = None
-    featureStatus: Optional[dict] = None
-
-
-@dataclass
-class SystemData:
-    gpu: GPUInfo
-    modelName: str
-    modelVersion: str
-    commandLine: str
-
-
-@dataclass
-class WindowBounds:
-    """ Описывает положение, размер и состояние окна браузера """
-    left: Optional[int]        = None       # Смещение от левого края экрана до окна в пикселях.
-    top: Optional[int]         = None       # Смещение от верхнего края экрана к окну в пикселях.
-    width: Optional[int]       = None       # Ширина окна в пикселях.
-    height: Optional[int]      = None       # Высота окна в пикселях.
-    windowState: Optional[str] = "normal"   # normal, minimized, maximized, fullscreen
-                                            #   minimized, maximized и fullscreen нельзя сочетать с  left, top,
-                                            #   width или height. Неопределенные поля останутся без изменений.
-
-    def to_dict(self) -> dict:
-        return {k: v for k, v in self.__dict__.items() if v is not None}
-
-
-@dataclass
-class WindowInfo:
-    windowId: int
-    bounds: WindowBounds
-
-
-@dataclass
-class TouchPoint:
-    """ Описывает точку прикосновения стилуса для метода DispatchTouchEvent() """
-    x: float; y: float                          # Координаты точки касания
-    radiusX:            Optional[float] = None  # X-радиус прикосновения(по умолчанию 1.0)
-    radiusY:            Optional[float] = None  # Y-радиус прикосновения(по умолчанию 1.0)
-    rotationAngle:      Optional[float] = None  # Угол вращения(по умолчанию 0.0)
-    force:              Optional[float] = None  # Сила(по умолчанию 1.0)
-    tangentialPressure: Optional[float] = None  # Нормализованное тангенциальное давление в
-                                                #   диапазоне [-1,1](по умолчанию 0.0)
-    tiltX:                Optional[int] = None  # Угол между плоскостью Y-Z и плоскостью,
-                                                #   содержащей ось стилуса и ось Y, в градусах
-                                                #   диапазона [-90,90], положительный tiltX
-                                                #   - наклон вправо (по умолчанию: 0).
-    tiltY:                Optional[int] = None  # Угол между плоскостью X-Z и плоскостью,
-                                                #   содержащей ось стилуса и ось X, в градусах
-                                                #   диапазона [-90,90], положительный tiltY
-                                                #   - наклон вниз (по умолчанию: 0).
-    twist:                Optional[int] = None  # Поворот стилуса пера по часовой стрелке вокруг
-                                                #   своей главной оси в градусах в диапазоне
-                                                #   [0,359] (по умолчанию: 0).
-    id:                 Optional[float] = None  # Идентификатор, используемый для отслеживания
-                                                #   источников касания между событиями, должен
-                                                #   быть уникальным в пределах события.
-
-    def to_dict(self) -> dict:
-        return {k: v for k, v in self.__dict__.items() if v is not None}
-
-
-@dataclass
-class StyleProp:
-    """ Описывает имя и значение стиля """
-    name: str; value: str
-
-
-@dataclass
-class NodeCenter: x: int; y: int
-
-
-@dataclass
-class NodeRect:
-    """ Пространственное положение и размеры узла """
-    x: int; y: int; width: int; height: int; left: int; right: int; top: int; bottom: int
-
-
-@dataclass
 class ViewportRect:
     """ Ширина и высота вьюпорта """
     width: int; height: int
@@ -188,17 +72,6 @@ class ViewportRect:
 class WindowRect:
     """ Ширина и высота окна браузера(outer - свойства) """
     width: int; height: int
-
-
-@dataclass
-class ShapeOutsideInfo:
-    bounds: list; shape: list; marginShape: list
-
-
-@dataclass
-class BoxModel:
-    content: list; padding: list; border: list; margin: list; width: int; height: int
-    shapeOutside: Optional[ShapeOutsideInfo] = None
 
 
 class KeyModifiers(Enum):
@@ -493,15 +366,3 @@ WINDOWS_KEY_SET = {
     'PA1': 253,         #PA1 key
     'OEM_CLEAR': 254,   #
 }
-
-if __name__ == '__main__':
-    s = ""
-    for field in KeyEvents.__dict__:
-        if "__" in field: continue
-        key: dict = getattr(KeyEvents, field)
-        # print(field, key)
-
-        s += f"""    pub {field}: KeyEvent,\n"""
-        # s += f"""    {field}: KeyEvent{{ code: "{key['code']}", text: "{key['text']}", key_identifier: "{key['keyIdentifier']}", key: "{key['key']}", windows_virtual_key_code: {key['windowsVirtualKeyCode']}, native_virtual_key_code: {key['nativeVirtualKeyCode']} }},\n"""
-
-    print(s)

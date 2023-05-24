@@ -1,5 +1,6 @@
 from typing import List
-from ..data import DomainEvent
+from ...data import DomainEvent
+
 
 class CSS:
     """
@@ -10,7 +11,7 @@ class CSS:
 
     def __init__(self, conn) -> None:
 
-        from ..connection import Connection
+        from ...connection import Connection
 
         self._connection: Connection = conn
         self.enabled = False
@@ -39,8 +40,8 @@ class CSS:
         :return:
         """
         if not self.enabled:
-            await self._connection.AddListenerForEvent("CSS.styleSheetAdded", self._CSS_sheet_catcher)
-            await self._connection.Call("CSS.enable")
+            await self._connection.addListenerForEvent("CSS.styleSheetAdded", self._CSS_sheet_catcher)
+            await self._connection.call("CSS.enable")
             self.enabled = True
 
     async def CSSDisable(self) -> None:
@@ -50,8 +51,8 @@ class CSS:
         :return:
         """
         if self.enabled:
-            self._connection.RemoveListenerForEvent("CSS.styleSheetAdded", self._CSS_sheet_catcher)
-            await self._connection.Call("CSS.disable")
+            self._connection.removeListenerForEvent("CSS.styleSheetAdded", self._CSS_sheet_catcher)
+            await self._connection.call("CSS.disable")
             self.style_sheets = []
             self.enabled = False
 
@@ -82,7 +83,7 @@ class CSS:
             "ruleText": ruleText,
             "location": location
         }
-        return (await self._connection.Call("CSS.addRule", args))["rule"]
+        return (await self._connection.call("CSS.addRule", args))["rule"]
 
     async def CollectClassNames(self, styleSheetId: str) -> List[str]:
         """
@@ -91,7 +92,7 @@ class CSS:
         :param styleSheetId:            Идентификатор стилей.
         :return:
         """
-        return (await self._connection.Call("CSS.collectClassNames", {"styleSheetId": styleSheetId}))["classNames"]
+        return (await self._connection.call("CSS.collectClassNames", {"styleSheetId": styleSheetId}))["classNames"]
 
     async def CreateStyleSheet(self, frameId: str = None) -> str:
         """
@@ -103,7 +104,7 @@ class CSS:
         :return:                styleSheetId
         """
         frameId = frameId if frameId else self._connection.conn_id
-        styleSheetId = (await self._connection.Call("CSS.createStyleSheet", {"frameId": frameId}))["styleSheetId"]
+        styleSheetId = (await self._connection.call("CSS.createStyleSheet", {"frameId": frameId}))["styleSheetId"]
         self._style_sheets.append(styleSheetId)
         return styleSheetId
 
@@ -114,7 +115,7 @@ class CSS:
         :param styleSheetId:            Идентификатор стилей.
         :return:
         """
-        return (await self._connection.Call("CSS.getStyleSheetText", {"styleSheetId": styleSheetId}))["text"]
+        return (await self._connection.call("CSS.getStyleSheetText", {"styleSheetId": styleSheetId}))["text"]
 
 class CSSEvent(DomainEvent):
     fontsUpdated = "CSS.fontsUpdated"

@@ -1,76 +1,70 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Union
-from ..data import DomainEvent
+from typing import Optional
+from ...data import DomainEvent
 
-class Emulation(ABC):
+
+class Emulation:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Emulation
     """
-    __slots__ = ()
+    __slots__ = ("_connection",)
 
-    @property
-    def connected(self) -> bool:
-        return False
+    def __init__(self, conn) -> None:
 
-    @property
-    def verbose(self) -> bool:
-        return False
+        from ...connection import Connection
 
-    @property
-    def page_id(self) -> str:
-        return ""
+        self._connection: Connection = conn
 
-    async def CanEmulate(self) -> bool:
+    async def canEmulate(self) -> bool:
         """
         Сообщает, поддерживается ли эмуляция.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-canEmulate
         :return:                result -> True если эмуляция поддерживается
         """
-        return (await self.Call("Emulation.canEmulate"))["result"]
+        return (await self._connection.call("Emulation.canEmulate"))["result"]
 
-    async def ClearDeviceMetricsOverride(self) -> None:
+    async def clearDeviceMetricsOverride(self) -> None:
         """
         Очищает переопределённые метрики устройства.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-clearDeviceMetricsOverride
         :return:
         """
-        await self.Call("Emulation.clearDeviceMetricsOverride")
+        await self._connection.call("Emulation.clearDeviceMetricsOverride")
 
-    async def ClearGeolocationOverride(self) -> None:
+    async def clearGeolocationOverride(self) -> None:
         """
         Очищает переопределённые позицию геолокации и ошибку.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-clearGeolocationOverride
         :return:
         """
-        await self.Call("Emulation.clearGeolocationOverride")
+        await self._connection.call("Emulation.clearGeolocationOverride")
 
-    async def ResetPageScaleFactor(self) -> None:
+    async def resetPageScaleFactor(self) -> None:
         """
         Запрашивает сброс масштабирования страницы до начальных значений.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-resetPageScaleFactor
         :return:
         """
-        await self.Call("Emulation.resetPageScaleFactor")
+        await self._connection.call("Emulation.resetPageScaleFactor")
 
-    async def SetFocusEmulationEnabled(self, enabled: bool) -> None:
+    async def setFocusEmulationEnabled(self, enabled: bool) -> None:
         """
         Включает или отключает симуляцию фокуса(когда страница активна).
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setFocusEmulationEnabled
         :param enabled:         Включает, или отключает эмуляцию фокуса.
         :return:
         """
-        await self.Call("Emulation.setFocusEmulationEnabled", {"enabled": enabled})
+        await self._connection.call("Emulation.setFocusEmulationEnabled", {"enabled": enabled})
 
-    async def SetCPUThrottlingRate(self, rate: float) -> None:
+    async def setCPUThrottlingRate(self, rate: float) -> None:
         """
         Включает CPU "throttling", эмулируя медленный процессор.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setCPUThrottlingRate
         :param rate:            Коэффициент замедления(1 - без замедления; 2 - 2х кратное, и т.д.).
         :return:
         """
-        await self.Call("Emulation.setCPUThrottlingRate", {"rate": rate})
+        await self._connection.call("Emulation.setCPUThrottlingRate", {"rate": rate})
 
-    async def SetDefaultBackgroundColorOverride(self, color: dict) -> None:
+    async def setDefaultBackgroundColorOverride(self, color: dict) -> None:
         """
         Устанавливает или очищает переопределение цвета фона фрейма по умолчанию. Это переопределение
             используется, если в содержимом оно не указано.
@@ -85,9 +79,9 @@ class Emulation(ABC):
                                         }
         :return:
         """
-        await self.Call("Emulation.setDefaultBackgroundColorOverride", {"color": color})
+        await self._connection.call("Emulation.setDefaultBackgroundColorOverride", {"color": color})
 
-    async def SetDeviceMetricsOverride(
+    async def setDeviceMetricsOverride(
             self, width: int, height: int,
             deviceScaleFactor: float = 0,
                         mobile: bool = False,
@@ -171,27 +165,27 @@ class Emulation(ABC):
             args.update({"screenOrientation": screenOrientation})
         if viewport is not None:
             args.update({"viewport": viewport})
-        await self.Call("Emulation.setDeviceMetricsOverride", args)
+        await self._connection.call("Emulation.setDeviceMetricsOverride", args)
 
-    async def SetScrollbarsHidden(self, hidden: bool) -> None:
+    async def setScrollbarsHidden(self, hidden: bool) -> None:
         """
         (EXPERIMENTAL)
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setScrollbarsHidden
         :param hidden:              Должны ли полосы прокрутки быть всегда скрыты.
         :return:
         """
-        await self.Call("Emulation.setScrollbarsHidden", {"hidden": hidden})
+        await self._connection.call("Emulation.setScrollbarsHidden", {"hidden": hidden})
 
-    async def SetDocumentCookieDisabled(self, disabled: bool) -> None:
+    async def s(self, disabled: bool) -> None:
         """
         (EXPERIMENTAL)
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setDocumentCookieDisabled
         :param disabled:            Должен ли API document.cookie быть отключен.
         :return:
         """
-        await self.Call("Emulation.setDocumentCookieDisabled", {"disabled": disabled})
+        await self._connection.call("Emulation.setDocumentCookieDisabled", {"disabled": disabled})
 
-    async def SetEmitTouchEventsForMouse(self, enabled: bool, configuration: Optional[str] = None) -> None:
+    async def setEmitTouchEventsForMouse(self, enabled: bool, configuration: Optional[str] = None) -> None:
         """
         (EXPERIMENTAL)
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setEmitTouchEventsForMouse
@@ -204,9 +198,9 @@ class Emulation(ABC):
         args = {"enabled": enabled}
         if configuration is not None:
             args.update({"configuration": configuration})
-        await self.Call("Emulation.setEmitTouchEventsForMouse", args)
+        await self._connection.call("Emulation.setEmitTouchEventsForMouse", args)
 
-    async def SetEmulatedMedia(self, media: str = "", features: Optional[list] = None) -> None:
+    async def setEmulatedMedia(self, media: str = "", features: Optional[list] = None) -> None:
         """
         Эмулирует переданный тип медиа или медиа-функцию для медиа-запросов CSS.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setEmulatedMedia
@@ -222,9 +216,9 @@ class Emulation(ABC):
         args = {"media": media}
         if features is not None:
             args.update({"features": features})
-        await self.Call("Emulation.setEmulatedMedia", args)
+        await self._connection.call("Emulation.setEmulatedMedia", args)
 
-    async def SetEmulatedVisionDeficiency(self, type_: str = "none") -> None:
+    async def setEmulatedVisionDeficiency(self, type_: str = "none") -> None:
         """
         (EXPERIMENTAL)
         Эмулирует переданный дефицит зрения.
@@ -233,9 +227,9 @@ class Emulation(ABC):
                                         none, achromatopsia, blurredVision, deuteranopia, protanopia, tritanopia
         :return:
         """
-        await self.Call("Emulation.setEmulatedVisionDeficiency", {"type": type_})
+        await self._connection.call("Emulation.setEmulatedVisionDeficiency", {"type": type_})
 
-    async def SetGeolocationOverride(
+    async def setGeolocationOverride(
             self,
              latitude: Optional[float] = None,
             longitude: Optional[float] = None,
@@ -256,9 +250,9 @@ class Emulation(ABC):
             args.update({"longitude": longitude})
         if accuracy is not None:
             args.update({"accuracy": accuracy})
-        await self.Call("Emulation.setGeolocationOverride", args)
+        await self._connection.call("Emulation.setGeolocationOverride", args)
 
-    async def SetPageScaleFactor(self, pageScaleFactor: float) -> None:
+    async def setPageScaleFactor(self, pageScaleFactor: float) -> None:
         """
         (EXPERIMENTAL)
         Устанавливает переданный коэффициент масштабирования страницы.
@@ -266,18 +260,18 @@ class Emulation(ABC):
         :param pageScaleFactor:     Коэффициент масштабирования страницы.
         :return:
         """
-        await self.Call("Emulation.setPageScaleFactor", {"pageScaleFactor": pageScaleFactor})
+        await self._connection.call("Emulation.setPageScaleFactor", {"pageScaleFactor": pageScaleFactor})
 
-    async def SetScriptExecutionDisabled(self, value: bool) -> None:
+    async def setScriptExecutionDisabled(self, value: bool) -> None:
         """
         Переключает выполнение скриптов на странице.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setScriptExecutionDisabled
         :param value:               Должно ли выполнение скриптов быть отключено на странице.
         :return:
         """
-        await self.Call("Emulation.setScriptExecutionDisabled", {"value": value})
+        await self._connection.call("Emulation.setScriptExecutionDisabled", {"value": value})
 
-    async def SetTouchEmulationEnabled(self, enabled: bool, maxTouchPoints: Optional[int] = None) -> None:
+    async def setTouchEmulationEnabled(self, enabled: bool, maxTouchPoints: Optional[int] = None) -> None:
         """
         Включает "касания" для платформ, которые их не поддерживают.
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setTouchEmulationEnabled
@@ -289,9 +283,9 @@ class Emulation(ABC):
         args = {"enabled": enabled}
         if maxTouchPoints is not None:
             args.update({"maxTouchPoints": maxTouchPoints})
-        await self.Call("Emulation.setTouchEmulationEnabled", args)
+        await self._connection.call("Emulation.setTouchEmulationEnabled", args)
 
-    async def SetLocaleOverride(self, locale: Optional[str] = None) -> None:
+    async def setLocaleOverride(self, locale: Optional[str] = None) -> None:
         """
         Не работает.
         https://bugs.chromium.org/p/chromium/issues/detail?id=1073363
@@ -309,9 +303,9 @@ class Emulation(ABC):
         args = {}
         if locale is not None:
             args.update({"locale": locale})
-        await self.Call("Emulation.setLocaleOverride", args)
+        await self._connection.call("Emulation.setLocaleOverride", args)
 
-    async def SetTimezoneOverride(self, timezoneId: str = "") -> None:
+    async def setTimezoneOverride(self, timezoneId: str = "") -> None:
         """
         (EXPERIMENTAL)
         Переопределяет часовой пояс хост-системы на указанный.
@@ -322,9 +316,9 @@ class Emulation(ABC):
                                         https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
         :return:
         """
-        await self.Call("Emulation.setTimezoneOverride", {"timezoneId": timezoneId})
+        await self._connection.call("Emulation.setTimezoneOverride", {"timezoneId": timezoneId})
 
-    async def SetVisibleSize(self, width: int, height: int) -> None:
+    async def setVisibleSize(self, width: int, height: int) -> None:
         """
         (DEPRECATED)
         (EXPERIMENTAL)
@@ -336,9 +330,9 @@ class Emulation(ABC):
         :param height:              Высота фрейма (DIP).
         :return:            None
         """
-        await self.Call("Emulation.setVisibleSize", {"width": width, "height": height})
+        await self._connection.call("Emulation.setVisibleSize", {"width": width, "height": height})
 
-    async def EmulationSetUserAgent(
+    async def setUserAgentOverride(
             self, userAgent: str,
                 acceptLanguage: Optional[str] = None,
                       platform: Optional[str] = None,
@@ -373,14 +367,7 @@ class Emulation(ABC):
             args.update({"platform": platform})
         if userAgentMetadata is not None:
             args.update({"userAgentMetadata": userAgentMetadata})
-        await self.Call("Emulation.setUserAgentOverride", args)
-
-    @abstractmethod
-    async def Call(
-            self, domain_and_method: str,
-            params: Optional[dict] = None,
-            wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+        await self._connection.call("Emulation.setUserAgentOverride", args)
 
 class EmulationEvent(DomainEvent):
     virtualTimeBudgetExpired = "Emulation.virtualTimeBudgetExpired"

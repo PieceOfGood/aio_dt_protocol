@@ -4,11 +4,10 @@ except ModuleNotFoundError:
     import json
 
 from .actions import Actions
-from .dom_element import Node
 from .data import ViewportRect, WindowRect, GeoInfo
 
 import base64, re
-from typing import Optional, Union
+from typing import Optional
 
 from .exceptions import EvaluateError, JavaScriptError, NullProperty
 
@@ -18,21 +17,15 @@ class Extend:
     Расширение для 'Page'. Включает сборку наиболее востребованных методов для работы
         с API 'ChromeDevTools Protocol', а так же дополняет некоторыми полезными методами.
     """
-    __slots__ = ("_connection", "storage", "action", "_root", "style_sheets")
+    __slots__ = ("_connection", "action")
 
     def __init__(self, conn) -> None:
 
         from .connection import Connection
 
         self._connection: Connection = conn
-
-        self.storage = {}
-        self.action = Actions(self)             # Совершает действия на странице. Клики; движения мыши; события клавиш
-        self._root: Union[Node, None] = None
-        self.style_sheets = []                  # Если домен CSS активирован, сюда попадут все 'styleSheetId' страницы
-
-
-
+        self.action = Actions(conn)             # Совершает действия на странице. Клики;
+                                                # движения мыши; события клавиш
 
     # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
     #
@@ -120,7 +113,7 @@ class Extend:
     async def injectJS(self, code: str) -> any:
         """ Выполняет JavaScript-выражение во фрейме верхнего уровня. """
         try:
-            result = await self._connection.Eval(code)
+            result = await self._connection.eval(code)
         except EvaluateError as error:
             error = str(error)
             if "of null" in error:
@@ -147,7 +140,7 @@ class Extend:
 
         promise = """fetch('https://time.gologin.com/').then(res => res.text())"""
 
-        result: dict = await self._connection.EvalPromise(promise)
+        result: dict = await self._connection.evalPromise(promise)
         result.update(
             geo=dict(
                 latitude=float(result["ll"][0]),

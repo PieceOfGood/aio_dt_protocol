@@ -1,51 +1,45 @@
 import re
-from abc import ABC, abstractmethod
 from typing import Optional, Union, List
-from ..dom_element import Node
-from ..domains.Runtime import RuntimeType
-from ..exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
-from ..data import DomainEvent
+from .dom_element import Node
+from ..runtime.types import RemoteObject
+from ...exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
+from ...data import DomainEvent
 
-class DOM(ABC):
+
+class DOM:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/DOM
     """
-    __slots__ = ()
+    __slots__ = ("_connection", "enabled")
 
-    def __init__(self):
-        self.dom_domain_enabled = False
+    def __init__(self, conn) -> None:
 
-    @property
-    def connected(self) -> bool:
-        return False
+        from ...connection import Connection
 
-    @property
-    def verbose(self) -> bool:
-        return False
+        self._connection: Connection = conn
+        self.enabled = False
 
-    @property
-    def page_id(self) -> str:
-        return ""
-
-    async def DOMEnable(self) -> None:
+    async def enable(self) -> None:
         """
         Включает DOM-агент для данной страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-enable
         :return:
         """
-        await self.Call("DOM.enable")
-        self.dom_domain_enabled = True
+        if not self.enabled:
+            await self._connection.call("DOM.enable")
+            self.enabled = True
 
-    async def DOMDisable(self) -> None:
+    async def disable(self) -> None:
         """
         Отключает DOM-агент для данной страницы.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-disable
         :return:
         """
-        await self.Call("DOM.disable")
-        self.dom_domain_enabled = False
+        if self.enabled:
+            await self._connection.call("DOM.disable")
+            self.enabled = False
 
-    async def GetRoot(self, depth: Optional[int] = None, pierce: Optional[bool] = None) -> Node:
+    async def getRoot(self, depth: Optional[int] = None, pierce: Optional[bool] = None) -> Node:
         """
         Возвращает корневой узел документа.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getDocument
@@ -122,10 +116,10 @@ class DOM(ABC):
         args = {}
         if depth is not None: args.update(depth=depth)
         if pierce is not None: args.update(pierce=pierce)
-        node: dict = (await self.Call("DOM.getDocument", args))["root"]
-        return Node(self, **node)
+        node: dict = (await self._connection.call("DOM.getDocument", args))["root"]
+        return Node(self._connection, **node)
 
-    async def QuerySelector(
+    async def querySelector(
             self, selector: str,
             ignore_root_id_exists: bool = False,
             in_frames: bool = False
@@ -141,9 +135,9 @@ class DOM(ABC):
         :return:                <Node>
         """
         args = {} if not in_frames else dict(depth=-1, pierce=True)
-        root_node_id = (await self.Call("DOM.getDocument", args))["root"]["nodeId"]
+        root_node_id = (await self._connection.call("DOM.getDocument", args))["root"]["nodeId"]
         try:
-            node: dict = await self.Call("DOM.querySelector", {
+            node: dict = await self._connection.call("DOM.querySelector", {
                 "nodeId": root_node_id, "selector": selector
             })
         except CouldNotFindNodeWithGivenID as e:
@@ -153,10 +147,10 @@ class DOM(ABC):
                         return None
                     raise RootIDNoLongerExists
             raise
-        return Node(self, **node) if node["nodeId"] > 0 else None
+        return Node(self._connection, **node) if node["nodeId"] > 0 else None
 
 
-    async def QuerySelectorAll(
+    async def querySelectorAll(
             self, selector: str,
             ignore_root_id_exists: bool = False,
             in_frames: bool = False
@@ -173,12 +167,12 @@ class DOM(ABC):
         """
         nodes = []
         args = {} if not in_frames else dict(depth=-1, pierce=True)
-        root_node_id = (await self.Call("DOM.getDocument", args))["root"]["nodeId"]
+        root_node_id = (await self._connection.call("DOM.getDocument", args))["root"]["nodeId"]
         try:
-            for node in (await self.Call("DOM.querySelectorAll", {
+            for node in (await self._connection.call("DOM.querySelectorAll", {
                 "nodeId": root_node_id, "selector": selector
             }))["nodeIds"]:
-                nodes.append(Node(self, node))
+                nodes.append(Node(self._connection, node))
         except CouldNotFindNodeWithGivenID as e:
             if match := re.search(r"nodeId\': (\d+)", str(e)):
                 if match.group(1) == str(root_node_id):
@@ -188,7 +182,7 @@ class DOM(ABC):
             raise
         return nodes
 
-    async def PerformSearch(self, query: str, searchInShadowDOM: Optional[bool] = None) -> dict:
+    async def performSearch(self, query: str, searchInShadowDOM: Optional[bool] = None) -> dict:
         """
         (EXPERIMENTAL)
         Ищет заданную строку в дереве DOM. Используйте 'GetSearchResults()' для доступа к результатам
@@ -204,9 +198,9 @@ class DOM(ABC):
         args = {"query": query}
         if searchInShadowDOM is not None:
             args.update({"includeUserAgentShadowDOM": searchInShadowDOM})
-        return await self.Call("DOM.performSearch", args)
+        return await self._connection.call("DOM.performSearch", args)
 
-    async def GetSearchResults(
+    async def getSearchResults(
             self, searchId: str,
             fromIndex: int = 0,
             toIndex:   int = 0
@@ -223,40 +217,38 @@ class DOM(ABC):
         """
         nodes = []
         args = {"searchId": searchId, "fromIndex": fromIndex, "toIndex": toIndex}
-        for node_id in (await self.Call("DOM.getSearchResults", args))["nodeIds"]:
-            if self.verbose:
-                print("[SearchResults] node_id =", node_id)
-            nodes.append(Node(self, node_id, ""))
+        for node_id in (await self._connection.call("DOM.getSearchResults", args))["nodeIds"]:
+            nodes.append(Node(self._connection, node_id))
         return nodes
 
-    async def Undo(self) -> None:
+    async def undo(self) -> None:
         """
         (EXPERIMENTAL)
         Отменяет последнее выполненное действие.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-undo
         :return:
         """
-        await self.Call("DOM.undo")
+        await self._connection.call("DOM.undo")
 
-    async def Redo(self) -> None:
+    async def redo(self) -> None:
         """
         (EXPERIMENTAL)
         Повторно выполняет последнее отмененное действие.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-redo
         :return:
         """
-        await self.Call("DOM.redo")
+        await self._connection.call("DOM.redo")
 
-    async def MarkUndoableState(self) -> None:
+    async def markUndoableState(self) -> None:
         """
         (EXPERIMENTAL)
         Отмечает последнее состояние, которое нельзя изменить.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-markUndoableState
         :return:
         """
-        await self.Call("DOM.markUndoableState")
+        await self._connection.call("DOM.markUndoableState")
 
-    async def DescribeNode(
+    async def describeNode(
             self, nodeId: Optional[int] = None,
             backendNodeId: Optional[int] = None,
             objectId: Optional[str] = None,
@@ -277,15 +269,15 @@ class DOM(ABC):
         if objectId is not None: args.update(objectId=objectId)
         if depth is not None: args.update(depth=depth)
         if pierce is not None: args.update(pierce=pierce)
-        result = await self.Call("DOM.describeNode", args)
-        return Node(self, **result["node"])
+        result = await self._connection.call("DOM.describeNode", args)
+        return Node(self._connection, **result["node"])
 
-    async def ResolveNode(
+    async def resolveNode(
             self, nodeId: Optional[int] = None,
             backendNodeId: Optional[int] = None,
             objectGroup: Optional[str] = None,
             executionContextId: Optional[str] = None
-    ) -> RuntimeType.RemoteObject:
+    ) -> RemoteObject:
         """
         Создаёт JavaScript-объект для указанной ноды и возвращает его описание.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-resolveNode
@@ -298,10 +290,10 @@ class DOM(ABC):
         if backendNodeId is not None: args.update(backendNodeId=backendNodeId)
         if objectGroup is not None: args.update(objectGroup=objectGroup)
         if executionContextId is not None: args.update(executionContextId=executionContextId)
-        result: dict = await self.Call("DOM.resolveNode", args)
-        return RuntimeType.RemoteObject(**result.get("object"))
+        result: dict = await self._connection.call("DOM.resolveNode", args)
+        return RemoteObject(**result.get("object"))
 
-    async def RequestNode(self, objectId: str) -> Node:
+    async def requestNode(self, objectId: str) -> Node:
         """
         Запрашивает, чтобы узел был отправлен вызывающей стороне с учетом ссылки на объект узла JavaScript.
             Все узлы, формирующие путь от узла к корню, также отправляются клиенту в виде серии
@@ -310,15 +302,8 @@ class DOM(ABC):
         :return:
         """
         args = {"objectId": objectId}
-        result: dict = await self.Call("DOM.requestNode", args)
-        return Node(self, result.get("nodeId"))
-
-    @abstractmethod
-    async def Call(
-            self, domain_and_method: str,
-            params: Optional[dict] = None,
-            wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
+        result: dict = await self._connection.call("DOM.requestNode", args)
+        return Node(self._connection, result.get("nodeId"))
 
 
 class DOMEvent(DomainEvent):

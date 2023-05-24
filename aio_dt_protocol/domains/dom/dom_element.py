@@ -1,9 +1,9 @@
 import re
 import asyncio
 from typing import List, Dict, Optional, Union, Literal
-from .data import NodeCenter, NodeRect, StyleProp, BoxModel
-from .domains.Runtime import RuntimeType, Script
-from .exceptions import (
+from .types import NodeCenter, NodeRect, BoxModel, StyleProp
+from ...domains.runtime.types import Script, RemoteObject
+from ...exceptions import (
     CouldNotFindNodeWithGivenID, RootIDNoLongerExists, NodeNotResolved, NodeNotDescribed,
     StateError
 )
@@ -14,7 +14,7 @@ def to_dict_attrs(a: list) -> Union[dict, None]:
 
 class Node:
     __slots__ = (
-        "page_instance", "nodeId", "parentId", "backendNodeId", "nodeType", "nodeName", "localName", "nodeValue",
+        "_connection", "nodeId", "parentId", "backendNodeId", "nodeType", "nodeName", "localName", "nodeValue",
         "childNodeCount", "children", "attributes", "documentURL", "baseURL", "publicId", "systemId", "internalSubset",
         "xmlVersion", "name", "value", "pseudoType", "frameId", "shadowRootType", "contentDocument", "shadowRoots",
         "templateContent", "pseudoElements", "importedDocument", "distributedNodes", "isSVG", "compatibilityMode",
@@ -22,7 +22,7 @@ class Node:
     )
 
     def __init__(
-        self, page_instance, nodeId: int,
+        self, conn, nodeId: int,
         parentId:              Optional[int] = None,
         backendNodeId:         Optional[int] = None,
         nodeType:              Optional[int] = None,
@@ -52,8 +52,11 @@ class Node:
         isSVG:                Optional[bool] = None,    # является ли элемент SVG-элементом
         compatibilityMode: Optional[Literal["QuirksMode", "LimitedQuirksMode", "NoQuirksMode"]] = None
 
-    ):
-        self.page_instance = page_instance  # PageEx
+    ) -> None:
+
+        from ...connection import Connection
+
+        self._connection: Connection = conn
         self.nodeId = nodeId
         self.backendNodeId = backendNodeId
         self.nodeType = nodeType
@@ -67,7 +70,7 @@ class Node:
         self.internalSubset = internalSubset
 
         self.childNodeCount = childNodeCount
-        self.children = self._AddChildren(children)
+        self.children = self._addChildren(children)
         self.attributes = to_dict_attrs(attributes)
         self.frameId = frameId
         self.documentURL = documentURL
@@ -77,42 +80,42 @@ class Node:
         self.value = value
         self.pseudoType = pseudoType
 
-        self.shadowRoots = self._AddChildren(shadowRoots)
+        self.shadowRoots = self._addChildren(shadowRoots)
         self.shadowRootType = shadowRootType
 
-        self.contentDocument = self._AddChild(contentDocument)
-        self.templateContent = self._AddChild(templateContent)
-        self.pseudoElements = self._AddChildren(pseudoElements)
-        self.importedDocument = self._AddChild(importedDocument)
+        self.contentDocument = self._addChild(contentDocument)
+        self.templateContent = self._addChild(templateContent)
+        self.pseudoElements = self._addChildren(pseudoElements)
+        self.importedDocument = self._addChild(importedDocument)
         self.distributedNodes = distributedNodes
         self.isSVG = isSVG
         self.compatibilityMode = compatibilityMode
 
-        self.remote_object: Optional['RemoteObject'] = None
+        self.remote_object: Optional[RemoteObject] = None
         self.isolated_id = None                                         # идентификатор изолированного контекста
 
     def __str__(self) -> str:
         return f"<Node id={self.nodeId} localName={self.localName} childNodeCount={self.childNodeCount}>"
 
-    def _AddChildren(self, children_list: Optional[List[dict]] = None) -> List["Node"]:
+    def _addChildren(self, children_list: Optional[List[dict]] = None) -> List["Node"]:
         """
         Вызывается рекурсивно всякий раз, когда описание нового узла содержит
             список потомков, а так же, когда уже созданному узлу запрашиваются
-            его потомки посредством метода GetChildNodes().
+            его потомки посредством метода getChildNodes().
         :param children_list:        Список словарей, описывающих свойства потомков.
         :return:        List[Node]
         """
         if not children_list: return []
         list_nodes = []
         for child in children_list:
-            list_nodes.append(Node(self.page_instance, **child))
+            list_nodes.append(Node(self._connection, **child))
         return list_nodes
 
-    def _AddChild(self, child: Union[dict, "Node", None] = None) -> Optional["Node"]:
+    def _addChild(self, child: Union[dict, "Node", None] = None) -> Optional["Node"]:
         if not child: return None
-        return Node(self.page_instance, **child) if type(child) is dict else child
+        return Node(self._connection, **child) if type(child) is dict else child
 
-    async def QuerySelector(self, selector: str, ignore_root_id_exists: bool = False) -> Optional["Node"]:
+    async def querySelector(self, selector: str, ignore_root_id_exists: bool = False) -> Optional["Node"]:
         """
         Выполняет DOM-запрос, возвращая объект найденного узла, или None.
             Эквивалент  === element.querySelector()
@@ -124,7 +127,7 @@ class Node:
         """
         try:
             node_id = (
-                await self.page_instance.Call("DOM.querySelector", {
+                await self._connection.call("DOM.querySelector", {
                     "nodeId": self.nodeId, "selector": selector
                 }))["nodeId"]
         except CouldNotFindNodeWithGivenID as e:
@@ -134,9 +137,9 @@ class Node:
                         return None
                     raise RootIDNoLongerExists
             raise
-        return Node(self.page_instance, node_id) if node_id else None
+        return Node(self._connection, node_id) if node_id else None
 
-    async def QuerySelectorAll(self, selector: str, ignore_root_id_exists: bool = False) -> List["Node"]:
+    async def querySelectorAll(self, selector: str, ignore_root_id_exists: bool = False) -> List["Node"]:
         """
         Выполняет DOM-запрос, возвращая список объектов найденных узлов, или пустой список.
             Эквивалент  === element.querySelectorAll()
@@ -148,10 +151,10 @@ class Node:
         """
         nodes = []
         try:
-            for node_id in (await self.page_instance.Call("DOM.querySelectorAll", {
+            for node_id in (await self._connection.call("DOM.querySelectorAll", {
                         "nodeId": self.nodeId, "selector": selector
                     }))["nodeIds"]:
-                nodes.append(Node(self.page_instance, node_id))
+                nodes.append(Node(self._connection, node_id))
         except CouldNotFindNodeWithGivenID as e:
             if match := re.search(r"nodeId\': (\d+)", str(e)):
                 if match.group(1) == str(self.nodeId):
@@ -161,12 +164,13 @@ class Node:
             raise
         return nodes
 
-    async def GetChildNodes(self, depth: int = -1, pierce: bool = False) -> None:
-        """
-        Запрашивает событие 'DOM.setChildNodes' для собственного узла и устанавливает слушателя.
-            Как только событие будет сгенерировано для текущего идентификатора узла, слушатель
-            будет отменён. Список полученных потомков узла, включая текстовые будет доступен
-            через его свойство 'children'.
+    async def getChildNodes(self, depth: int = -1, pierce: bool = False) -> asyncio.Event:
+        """ Запрашивает событие 'DOM.setChildNodes' для собственного узла и устанавливает
+        слушателя и возвращает ожидаемый объект события, который получит уведомление о том,
+        что ожидаемое событие произошло и все данные уже обработаны.
+        Как только 'DOM.setChildNodes' случится для текущего идентификатора узла, слушатель
+        будет отменён. Список полученных потомков узла, включая текстовые будет доступен
+        через его свойство 'children'.
 
         !ВНИМАНИЕ! Запрос потомков у <input /> не генерирует событие 'DOM.setChildNodes',
             потому как это одиночный тег, внутри которого не может быть потомков.
@@ -174,17 +178,20 @@ class Node:
                                     По умолчанию -1 == все. Чтобы задать конкретное значение,
                                     укажите любое целое число больше нуля.
         :param pierce:          Получать содержимое теневых узлов(shadowRoots, shadowDOM)?
-        :return:        None
+        :return:        asyncio.Event
         """
+        event = asyncio.Event()
         async def catch(data: dict) -> None:
             if data["parentId"] == self.nodeId:
-                self.page_instance.RemoveListenerForEvent("DOM.setChildNodes", catch)
-                self.children = self._AddChildren(data["nodes"])
+                self._connection.removeListenerForEvent("DOM.setChildNodes", catch)
+                self.children = self._addChildren(data["nodes"])
+                event.set()
 
         self.children = None
-        await self.page_instance.AddListenerForEvent("DOM.setChildNodes", catch)
-        await self.RequestChildNodes(depth, pierce)
-        while self.children is None: await asyncio.sleep(.01)
+        await self._connection.addListenerForEvent("DOM.setChildNodes", catch)
+        await self.requestChildNodes(depth, pierce)
+        return event
+
 
     async def ScrollIntoView(self, rect: dict = None) -> None:
         """
@@ -201,82 +208,84 @@ class Node:
         args = {"nodeId": self.nodeId}
         if rect:
             args.update({"rect": rect})
-        await self.page_instance.Call("DOM.scrollIntoViewIfNeeded", args)
+        await self._connection.call("DOM.scrollIntoViewIfNeeded", args)
 
-    async def FocusNode(self) -> bool:
+    async def focusNode(self) -> bool:
         """
         Фокусируется на элементе.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-focus
         :return:            Была ли фокусировка успешной
         """
         try:
-            await self.page_instance.Call("DOM.focus", {"nodeId": self.nodeId})
+            await self._connection.call("DOM.focus", {"nodeId": self.nodeId})
             return True
         except:
             return False
 
-    async def GetAttributes(self) -> Dict[str, str]:
+    async def getAttributes(self) -> Dict[str, str]:
         """
         Возвращает список атрибутов элемента.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getAttributes
         :return:            {'id': 'element-id', 'style': 'position:absolute;...', ...}
         """
-        return to_dict_attrs((await self.page_instance.Call("DOM.getAttributes", {"nodeId": self.nodeId}))["attributes"])
+        return to_dict_attrs(
+            (await self._connection.call("DOM.getAttributes", {"nodeId": self.nodeId}))["attributes"])
 
-    async def RemoveAttribute(self, name: str) -> None:
+    async def removeAttribute(self, name: str) -> None:
         """
         Удаляет атрибут по 'name'.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-removeAttribute
         :param name:        Имя удаляемого атрибута.
         :return:
         """
-        await self.page_instance.Call("DOM.removeAttribute", {"nodeId": self.nodeId, "name": name})
+        await self._connection.call("DOM.removeAttribute", {"nodeId": self.nodeId, "name": name})
 
-    async def RemoveNode(self) -> None:
+    async def removeNode(self) -> None:
         """
         Удаляет себя из документа.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-removeNode
         :return:
         """
-        await self.page_instance.Call("DOM.removeNode", {"nodeId": self.nodeId})
+        await self._connection.call("DOM.removeNode", {"nodeId": self.nodeId})
 
-    async def GetBoxModel(self) -> BoxModel:
+    async def getBoxModel(self) -> BoxModel:
         """
         Возвращает 'box-model' элемента.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getBoxModel
         :return:            <BoxModel>
         """
-        return BoxModel(**(await self.page_instance.Call("DOM.getBoxModel", {"nodeId": self.nodeId}))["model"])
+        return BoxModel(
+            **(await self._connection.call("DOM.getBoxModel", {"nodeId": self.nodeId}))["model"])
 
-    async def GetOuterHTML(self) -> str:
+    async def getOuterHTML(self) -> str:
         """
         Возвращает HTML-разметку элемента включая внешние границы тега.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-getOuterHTML
         :return:            Строка HTML-разметки. '<div>Inner div text</div>'.
         """
-        return (await self.page_instance.Call("DOM.getOuterHTML", {"nodeId": self.nodeId}))["outerHTML"]
+        return (await self._connection.call("DOM.getOuterHTML", {"nodeId": self.nodeId}))["outerHTML"]
 
-    async def GetInnerHTML(self) -> str:
+    async def getInnerHTML(self) -> str:
         """
         Возвращает HTML-разметку элемента НЕ включая внешние границы тега.
         :return:            Строка HTML-разметки. 'Inner div <div>text</div> with HTML'.
         """
-        html = await self.GetOuterHTML()
+        html = await self.getOuterHTML()
         if m := re.match(r"^<.*?>(.*)<.*?>$", html):
             return m.group(1)
         return html
 
-    async def GetInnerText(self, with_new_line_symbols: bool = True) -> str:
+    async def getInnerText(self, with_new_line_symbols: bool = True) -> str:
         """
         Возвращает текстовое содержимое элемента.
         :param with_new_line_symbols:     (optional) — Оставлять символы новой строки?
         :return:                        Текст.
         """
         pattern = r"<.*?>" if with_new_line_symbols else r"(<.*?>)|\n"
-        html = await self.GetOuterHTML()
+        html = await self.getOuterHTML()
         return re.sub(pattern, "", html).strip()
 
-    async def SetOuterHTML(self, outerHTML: str) -> None:
+    async def setOuterHTML(self, outerHTML: str) -> None:
         """
         Устанавливает HTML-разметку для элемента. !Внимание! После этого преобразования, элемент
             получит новый идентификатор и повтороно обратиться к нему уже не получится.
@@ -284,9 +293,9 @@ class Node:
         :param outerHTML:       Строка HTML-разметки. '<div>Inner div text</div>'.
         :return:
         """
-        await self.page_instance.Call("DOM.setOuterHTML", {"nodeId": self.nodeId, "outerHTML": outerHTML})
+        await self._connection.call("DOM.setOuterHTML", {"nodeId": self.nodeId, "outerHTML": outerHTML})
 
-    async def MoveTo(
+    async def moveTo(
             self, targetNodeId: int,
             insertBeforeNodeId: Optional[int] = None
     ) -> None:
@@ -303,9 +312,9 @@ class Node:
         args = {"nodeId": self.nodeId, "targetNodeId": targetNodeId}
         if insertBeforeNodeId:
             args.update({"insertBeforeNodeId": insertBeforeNodeId})
-        self.nodeId = (await self.page_instance.Call("DOM.moveTo", args))["nodeId"]
+        self.nodeId = (await self._connection.call("DOM.moveTo", args))["nodeId"]
 
-    async def CopyTo(
+    async def copyTo(
             self, targetNodeId: int, insertBeforeNodeId: Optional[int] = None
     ) -> "Node":
         """
@@ -321,10 +330,10 @@ class Node:
         args = {"nodeId": self.nodeId, "targetNodeId": targetNodeId}
         if insertBeforeNodeId:
             args.update({"insertBeforeNodeId": insertBeforeNodeId})
-        node_id = (await self.page_instance.Call("DOM.copyTo", args))["nodeId"]
-        return Node(node_id, self.page_instance)
+        node_id = (await self._connection.call("DOM.copyTo", args))["nodeId"]
+        return Node(self._connection, node_id)
 
-    async def GetContentQuads(
+    async def getContentQuads(
             self,
             backendNodeId: Optional[int] = None,
                  objectId: Optional[str] = None
@@ -345,9 +354,9 @@ class Node:
         if not args and objectId is not None:
             args.update({"objectId": objectId})
         if args:
-            return (await self.page_instance.Call("DOM.getContentQuads", args))["quads"]
+            return (await self._connection.call("DOM.getContentQuads", args))["quads"]
 
-    async def SetAttributeValue(self, attributeName: str, value: str) -> None:
+    async def setAttributeValue(self, attributeName: str, value: str) -> None:
         """
         Устанавливает атрибут для элемента с данным идентификатором.
             Например: await node.SetAttributeValue('class', 'class-name')
@@ -356,14 +365,14 @@ class Node:
         :param value:           Attribute value.
         :return:
         """
-        await self.page_instance.Call("DOM.setAttributeValue", {"nodeId": self.nodeId, "name": attributeName, "value": value})
+        await self._connection.call(
+            "DOM.setAttributeValue", {"nodeId": self.nodeId, "name": attributeName, "value": value})
 
-    async def RequestChildNodes(self, depth: int = 1, pierce: bool = False) -> None:
-        """
-        Запрашивает, чтобы дочерние элементы узла с данным идентификатором возвращались
-            вызывающей стороне в форме событий DOM.setChildNodes, при которых извлекаются
-            не только непосредственные дочерние элементы, но и все дочерние элементы до
-            указанной глубины.
+    async def requestChildNodes(self, depth: int = 1, pierce: bool = False) -> None:
+        """ Запрашивает, чтобы дочерние элементы узла с данным идентификатором возвращались
+        вызывающей стороне в форме событий DOM.setChildNodes, при которых извлекаются
+        не только непосредственные дочерние элементы, но и все дочерние элементы до
+        указанной глубины.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-requestChildNodes
         :param depth:           (optional) - Максимальная глубина, на которой должны быть получены
                                     дочерние элементы, по умолчанию равна 1. Используйте -1 для
@@ -373,9 +382,9 @@ class Node:
         :return:
         """
         args = {"nodeId": self.nodeId, "depth": depth, "pierce": pierce}
-        await self.page_instance.Call("DOM.requestChildNodes", args)
+        await self._connection.call("DOM.requestChildNodes", args)
 
-    async def SetAttributesAsText(self, text: str, name: str = "") -> None:
+    async def setAttributesAsText(self, text: str, name: str = "") -> None:
         """
         Устанавливает атрибуты для элемента с заданным идентификатором. Этот метод полезен, когда пользователь
             редактирует некоторые существующие значения и типы атрибутов в нескольких парах имя/значение атрибута.
@@ -389,18 +398,18 @@ class Node:
         args = {"nodeId": self.nodeId, "text": text}
         if name:
             args.update({"name": name})
-        await self.page_instance.Call("DOM.setAttributesAsText", args)
+        await self._connection.call("DOM.setAttributesAsText", args)
 
-    async def SetFileInputFiles(self, files: List[str]) -> None:
+    async def setFileInputFiles(self, files: List[str]) -> None:
         """
         Устанавливает файлы для '<input />'- элемента с заданным идентификатором.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-setFileInputFiles
         :param files:           Список файлов. [ "path", "path", ... ]
         :return:
         """
-        await self.page_instance.Call("DOM.setFileInputFiles", {"nodeId": self.nodeId, "files": files})
+        await self._connection.call("DOM.setFileInputFiles", {"nodeId": self.nodeId, "files": files})
 
-    async def SetNewName(self, name: str) -> None:
+    async def setNodeName(self, name: str) -> None:
         """
         Устанавливает новое имя узла для узла. В результате узел получит новый иденификатор.
             Например: await node.SetNewName('span')
@@ -408,35 +417,35 @@ class Node:
         :param name:            Новое имя элемента(узла).
         :return:
         """
-        self.nodeId = (await self.page_instance.Call("DOM.setNodeName", {"nodeId": self.nodeId, "name": name}))["nodeId"]
+        self.nodeId = (await self._connection.call("DOM.setNodeName", {"nodeId": self.nodeId, "name": name}))["nodeId"]
 
-    async def SetNewValue(self, value: str) -> None:
+    async def setNodeValue(self, value: str) -> None:
         """
         Устанавливает значение.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-setNodeValue
         :param value:           Новое значение элемента(узла).
         :return:
         """
-        await self.page_instance.Call("DOM.setNodeValue", {"nodeId": self.nodeId, "value": value})
+        await self._connection.call("DOM.setNodeValue", {"nodeId": self.nodeId, "value": value})
 
-    async def SetInspectedNode(self) -> None:
+    async def setInspectedNode(self) -> None:
         """
         Позволяет консоли обращаться к этому узлу с через $ x (см. Более подробную
             информацию о функциях $ x в API командной строки).
         https://chromedevtools.github.io/devtools-protocol/tot/DOM#method-setInspectedNode
         :return:        None
         """
-        await self.page_instance.Call("DOM.setInspectedNode", {"nodeId": self.nodeId})
+        await self._connection.call("DOM.setInspectedNode", {"nodeId": self.nodeId})
 
-    async def CollectClassNames(self) -> List[str]:
+    async def collectClassNames(self) -> List[str]:
         """
         Собирает имена классов для выбранного узла и всех его потомков.
         https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-collectClassNamesFromSubtree
         :return:                Список имён классов.
         """
-        return (await self.page_instance.Call("DOM.collectClassNamesFromSubtree", {"nodeId": self.nodeId}))["classNames"]
+        return (await self._connection.call("DOM.collectClassNamesFromSubtree", {"nodeId": self.nodeId}))["classNames"]
 
-    async def GetNodesForSubtreeByStyle(
+    async def getNodesForSubtreeByStyle(
             self, computedStyles: List[dict],
             pierce: bool = False
     ) -> List["Node"]:
@@ -452,20 +461,20 @@ class Node:
         args = {"nodeId": self.nodeId, "computedStyles": computedStyles}
         if pierce: args.update({"pierce": True})
         nodes = []
-        for node_id in (await self.page_instance.Call("DOM.getNodesForSubtreeByStyle", args))["nodeIds"]:
-            nodes.append(Node(node_id, self.page_instance))
+        for node_id in (await self._connection.call("DOM.getNodesForSubtreeByStyle", args))["nodeIds"]:
+            nodes.append(Node(self._connection, node_id))
         return nodes
 
-    async def GetComputedStyle(self) -> List[StyleProp]:
+    async def getComputedStyle(self) -> List[StyleProp]:
         """
         Возвращает список <NodeProp> описывающих свойства указанного Узла.
         https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-getComputedStyleForNode
         :return:            [ <StyleProp>, ... ]
         """
-        r = (await self.page_instance.Call("CSS.getComputedStyleForNode", {"nodeId": self.nodeId}))["computedStyle"]
+        r = (await self._connection.call("CSS.getComputedStyleForNode", {"nodeId": self.nodeId}))["computedStyle"]
         return [StyleProp(**i) for i in r]
 
-    async def GetInlineStyles(self) -> Dict[str, dict]:
+    async def getInlineStyles(self) -> Dict[str, dict]:
         """
         Возвращает стили, определенные встроенными (явно в атрибуте style и неявно, используя атрибуты DOM) для
             узла DOM, идентифицированного с помощью nodeId.
@@ -473,31 +482,31 @@ class Node:
         https://chromedevtools.github.io/devtools-protocol/tot/CSS/#method-getInlineStylesForNode
         :return:            { inlineStyle: {}, attributeStyle: {} }
         """
-        return await self.page_instance.Call("CSS.getInlineStylesForNode", {"nodeId": self.nodeId})
+        return await self._connection.call("CSS.getInlineStylesForNode", {"nodeId": self.nodeId})
 
     # ==================================================================================================================
 
-    async def GetCenter(self) -> NodeCenter:
+    async def getCenter(self) -> NodeCenter:
         """ Возвращает координаты центра узла """
-        quad = (await self.GetContentQuads())[0]
+        quad = (await self.getContentQuads())[0]
         x = (quad[2] - quad[0]) // 2 + quad[0]
         y = (quad[7] - quad[1]) // 2 + quad[1]
         return NodeCenter(x, y)
 
-    async def GetRect(self) -> NodeRect:
+    async def getRect(self) -> NodeRect:
         """ Возвращает <NodeRect> свойств, описывающих пространственное положение узла """
-        q = (await self.GetContentQuads())[0]
+        q = (await self.getContentQuads())[0]
         return NodeRect(q[0], q[1], q[2] - q[0], q[7] - q[1], q[0], q[2], q[1], q[7])
 
-    async def Click(self, delay: float = None, has_link: bool = False) -> None:
+    async def click(self, delay: float = None, has_link: bool = False) -> None:
         """ Кликает в середину себя """
         if has_link:
-            self.page_instance.loading_state = "do_navigate"
-        center = await self.GetCenter()
-        await self.page_instance.action.MouseMoveTo(center.x, center.y)
-        await self.page_instance.action.ClickTo(center.x, center.y, delay)
+            self._connection.Page.loading_state.clear()
+        center = await self.getCenter()
+        await self._connection.extend.action.mouseMoveTo(center.x, center.y)
+        await self._connection.extend.action.clickTo(center.x, center.y, delay)
 
-    async def Describe(self, depth: Optional[int] = None, pierce: Optional[bool] = None) -> None:
+    async def describeNode(self, depth: Optional[int] = None, pierce: Optional[bool] = None) -> None:
         """
         Переописывает себя получая больше подробностей. Не требует включения домена. Не начинает
             отслеживать какие-либо объекты, можно использовать для автоматизации.
@@ -512,35 +521,35 @@ class Node:
         args = dict(nodeId=self.nodeId)
         if depth is not None: args.update(depth=depth)
         if pierce is not None: args.update(pierce=pierce)
-        result = await self.page_instance.Call("DOM.describeNode", args)
+        result = await self._connection.call("DOM.describeNode", args)
         # print("DOM.describeNode", result)
 
         for k, v in result["node"].items():
             if k in ["children", "shadowRoots", "pseudoElements"]:
-                setattr(self, k, self._AddChildren(v))
+                setattr(self, k, self._addChildren(v))
             elif k in ["contentDocument", "templateContent", "importedDocument"]:
-                setattr(self, k, self._AddChild(v))
+                setattr(self, k, self._addChild(v))
             else:
                 setattr(self, k, v)
 
-    async def Resolve(self) -> None:
+    async def resolve(self) -> None:
         """ Получает ссылку на объект JavaScript для ноды. """
         if self.backendNodeId is None:
             raise NodeNotDescribed
         args = dict(backendNodeId=self.contentDocument.backendNodeId)
-        result: dict = await self.page_instance.Call("DOM.resolveNode", args)
+        result: dict = await self._connection.call("DOM.resolveNode", args)
         # print("DOM.resolveNode", result)
-        self.remote_object = RuntimeType.RemoteObject(**result.get("object"))
+        self.remote_object = RemoteObject(**result.get("object"))
 
-    async def Request(self) -> "Node":
+    async def request(self) -> "Node":
         """ Запрашивает ноду по ссылке на её оригинальный JavaScript объект. """
         if self.remote_object is None:
             raise NodeNotResolved
         args = dict(objectId=self.remote_object.objectId)
-        result: dict = await self.page_instance.Call("DOM.requestNode", args)
+        result: dict = await self._connection.call("DOM.requestNode", args)
         # print(result)
         return Node(
-            self.page_instance, result.get("nodeId"),
+            self._connection, result.get("nodeId"),
             frameId=self.frameId,
             nodeName=self.nodeName,
             localName=self.localName,
@@ -548,7 +557,7 @@ class Node:
             contentDocument=self.contentDocument
         )
 
-    async def RequestMirror(self) -> "Node":
+    async def requestMirror(self) -> "Node":
         """
         Создаёт JavaScript-объект для этой ноды и запрашивает ноду по ссылке на этот объект.
             Таким образом можно получать ноды для изолированных DOM-элементов, вроде iframe.
@@ -557,23 +566,21 @@ class Node:
                 resolved_node = await frame_node.RequestMirror()    # получаем доступ к нему
                 needle_node = resolved_node.QuerySelector("#needle-selector-in-iframe")
         """
-        await self.Describe()
-        await self.Resolve()
-        return await self.Request()
+        await self.describeNode()
+        await self.resolve()
+        return await self.request()
 
-    async def BuildScript(self, expression: str) -> "Script":
-        if not self.page_instance.runtime_enabled:
+    async def buildScript(self, expression: str) -> Script:
+        if not self._connection.Runtime.enabled:
             raise StateError("Domain 'Runtime' — must be enabled. Like: "
-                             "await instance.RuntimeEnable(True)")
-        if not self.page_instance.context_manager.is_watch:
+                             "await conn.Runtime.enable(True)")
+        if not self._connection.context_manager.is_watch:
             raise StateError("Watch for execution contexts must be enabled with domain 'Runtime'. Like: "
-                             "await instance.RuntimeEnable(True)")
+                             "await conn.Runtime.enable(True)")
         if not self.frameId:
-            await self.Describe()
-        if not (context := self.page_instance.context_manager.GetDefaultContext(
-                self.frameId or self.page_instance.conn_id)):
+            await self.describeNode()
+        if not (context := self._connection.context_manager.GetDefaultContext(
+                self.frameId or self._connection.conn_id)):
             raise StateError("Something went wrong, or context was not obtained on creation.")
 
-        return Script(self.page_instance, expression, context)
-
-
+        return Script(self._connection, expression, context)

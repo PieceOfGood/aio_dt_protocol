@@ -15,7 +15,7 @@ https://github.com/ultrajson/ultrajson
 
 ```python
 import asyncio
-from aio_dt_protocol import BrowserEx as Browser
+from aio_dt_protocol import Browser
 from aio_dt_protocol import find_instances
 from aio_dt_protocol.data import KeyEvents
 
@@ -41,34 +41,34 @@ async def main() -> None:
     # ? Полезно при разработке.
     # async def action_printer(data: dict) -> None:
     #     print(data)
-    # page = await browser.GetPage(callback=action_printer)
-    page = await browser.getPage()
+    # conn = await browser.getPage(callback=action_printer)
+    conn = await browser.getPage()
 
     print("[- GO TO GOOGLE ... -]")
-    await page.navigate("https://www.google.com")
+    await conn.Page.navigate("https://www.google.com")
 
-    input_node = await page.QuerySelector("input")
-    await input_node.Click()
+    input_node = await conn.DOM.querySelector("[type=search]")
+    await input_node.click()
     await asyncio.sleep(1)
-    await page.action.InsertText("github PieceOfGood")
+    await conn.extend.action.insertText("github PieceOfGood")
     await asyncio.sleep(1)
-    await page.action.SendKeyEvent(KeyEvents.enter)
+    await conn.extend.action.sendKeyEvent(KeyEvents.enter)
     await asyncio.sleep(1)
 
     submit_button_selector = "div:not([jsname])>center>[type=submit]:not([jsaction])"
 
-    submit_button = await page.QuerySelector(submit_button_selector)
-    await submit_button.Click()
+    submit_button = await conn.DOM.querySelector(submit_button_selector)
+    await submit_button.click()
 
     # ? Или выполнить клик используя JS
     # click_code = f"""\
     # document.querySelector("{submit_button_selector}").click();
     # """
-    # await page.InjectJS(click_code)
+    # await conn.extend.injectJS(click_code)
 
     print("[- WAIT FOR CLOSE PAGE ... -]")
     # ? Пока соединение существует, цикл выполняется.
-    await page.WaitForClose()
+    await conn.waitForClose()
     print("[- DONE -]")
 
 
@@ -105,27 +105,27 @@ async def test_func(number: int, text: str, bind_arg: dict) -> None:
     print(f"[- test_func -] Called with args:\n\tnumber: {number}\n\ttext: {text}\n\tbing_arg: {bind_arg}")
 
 
-await page.AddListener(
+await conn.addListener(
     test_func,  # ! слушатель
     {"name": "test", "value": True}  # ! bind_arg
 )
 
 # ? Если ожидается внушительный функционал прикрутить к странице, то это можно
 # ? сделать за один раз.
-# await page.AddListeners(
+# await conn.addListeners(
 #     (test_func, [ {"name": "test", "value": True} ]),
 #     # (any_awaitable1, [1, 2, 3])
 #     # (any_awaitable2, [])
 # )
 
-await page.navigate(html)
+await conn.Page.navigate(html)
 ```
 ### Headless
 Чтобы запустить браузер в `безголовом` режиме, нужно передать аргументу принимающему путь к папке профиля пустую строку.
 
 ```python
 import asyncio
-from aio_dt_protocol import BrowserEx as Browser
+from aio_dt_protocol import Browser
 from aio_dt_protocol.utils import save_img_as, async_util_call
 
 
@@ -133,17 +133,17 @@ async def main() -> None:
     print("[- HEADLESS RUN -]")
     browser = Browser(profile_path="")
     print("[- WAITING PAGE -]")
-    page = await browser.WaitFirstTab()
+    conn = await browser.waitFirstTab()
     print("[- GO TO GOOGLE -]")
-    await page.navigate("https://www.google.com")
+    await conn.Page.navigate("https://www.google.com")
 
     print("[- MAKE SCREENSHOT -]")
     await async_util_call(
-        save_img_as, "google.png", await page.MakeScreenshot()
+        save_img_as, "google.png", await conn.Page.makeScreenshot()
     )
 
     print("[- CLOSE BROWSER -]")
-    await page.CloseBrowser()
+    await conn.Browser.close()
     print("[- DONE -]")
 
 

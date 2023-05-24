@@ -1,31 +1,23 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Union, List
-from dataclasses import dataclass, field
-from ..data import Cookie, ConnectionType, DomainEvent
+from typing import Optional, List
+from ...data import DomainEvent
+from .types import ConnectionType, LoadNetworkResourcePageResult, Cookie
 
 
-class Network(ABC):
+class Network:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/Network
     """
-    __slots__ = ()
+    __slots__ = ("_connection", "enabled")
 
-    def __init__(self):
-        self.network_domain_enabled   = False
+    def __init__(self, conn) -> None:
 
-    @property
-    def connected(self) -> bool:
-        return False
+        from ...connection import Connection
 
-    @property
-    def verbose(self) -> bool:
-        return False
+        self._connection: Connection = conn
+        self.enabled   = False
 
-    @property
-    def page_id(self) -> str:
-        return ""
 
-    async def NetworkEnable(
+    async def enable(
             self,
             maxTotalBufferSize:    Optional[int] = None,
             maxResourceBufferSize: Optional[int] = None,
@@ -43,23 +35,25 @@ class Network(ABC):
                                             который будет включен в уведомление "requestWillBeSent".
         :return:
         """
-        args = {}
-        if maxTotalBufferSize is not None: args.update({"maxTotalBufferSize": maxTotalBufferSize})
-        if maxResourceBufferSize is not None: args.update({"maxResourceBufferSize": maxResourceBufferSize})
-        if maxPostDataSize is not None: args.update({"maxPostDataSize": maxPostDataSize})
-        await self.Call("Network.enable", args)
-        self.network_domain_enabled = True
+        if not self.enabled:
+            args = {}
+            if maxTotalBufferSize is not None: args.update({"maxTotalBufferSize": maxTotalBufferSize})
+            if maxResourceBufferSize is not None: args.update({"maxResourceBufferSize": maxResourceBufferSize})
+            if maxPostDataSize is not None: args.update({"maxPostDataSize": maxPostDataSize})
+            await self._connection.call("Network.enable", args)
+            self.enabled = True
 
-    async def NetworkDisable(self) -> None:
+    async def disable(self) -> None:
         """
         Отключает отслеживание сети, запрещает отправку сетевых событий клиенту.
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-disable
         :return:
         """
-        await self.Call("Network.disable")
-        self.network_domain_enabled = False
+        if self.enabled:
+            await self._connection.call("Network.disable")
+            self.enabled = False
 
-    async def EmulateNetworkConditions(
+    async def emulateNetworkConditions(
         self, latency: int,
         downloadThroughput: int = -1,
         uploadThroughput:   int = -1,
@@ -86,25 +80,25 @@ class Network(ABC):
         if downloadThroughput > -1: args.update({"downloadThroughput": downloadThroughput})
         if uploadThroughput > -1: args.update({"uploadThroughput": uploadThroughput})
         if connectionType: args.update({"connectionType": connectionType.value})
-        await self.Call("Network.emulateNetworkConditions", args)
+        await self._connection.call("Network.emulateNetworkConditions", args)
 
-    async def ClearBrowserCache(self) -> None:
+    async def clearBrowserCache(self) -> None:
         """
         Clears browser cache.
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-clearBrowserCache
         :return:
         """
-        await self.Call("Network.clearBrowserCache")
+        await self._connection.call("Network.clearBrowserCache")
 
-    async def ClearBrowserCookies(self) -> None:
+    async def clearBrowserCookies(self) -> None:
         """
         Clears browser cookies.
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-clearBrowserCookies
         :return:
         """
-        await self.Call("Network.clearBrowserCookies")
+        await self._connection.call("Network.clearBrowserCookies")
 
-    async def SetBlockedURLs(self, urls: List[str]) -> None:
+    async def setBlockedURLs(self, urls: List[str]) -> None:
         """
         (EXPERIMENTAL)
         Блокирует загрузку URL-адресов.
@@ -113,20 +107,20 @@ class Network(ABC):
         :param urls:            Шаблоны URL для блокировки. Подстановочные знаки ('*') разрешены.
         :return:
         """
-        if not self.network_domain_enabled:
-            await self.NetworkEnable()
-        await self.Call("Network.setBlockedURLs", {"urls": urls})
+        if not self.enabled:
+            await self.enable()
+        await self._connection.call("Network.setBlockedURLs", {"urls": urls})
 
-    async def SetCacheDisabled(self, cacheDisabled: bool = True) -> None:
+    async def setCacheDisabled(self, cacheDisabled: bool = True) -> None:
         """
         Включает игнорирование кеша для каждого запроса. Если 'true', кеш не будет использоваться.
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-setCacheDisabled
         :param cacheDisabled:    Состояние.
         :return:
         """
-        await self.Call("Network.setCacheDisabled", {"cacheDisabled": cacheDisabled})
+        await self._connection.call("Network.setCacheDisabled", {"cacheDisabled": cacheDisabled})
 
-    async def GetAllCookies(self) -> List[Cookie]:
+    async def getAllCookies(self) -> List[Cookie]:
         """
         Возвращает все куки браузера. В зависимости от поддержки бэкэнда, вернет подробную
             информацию о куки в поле куки.
@@ -134,11 +128,11 @@ class Network(ABC):
         :return: cookies -> (array Cookie) Array of cookie objects.
         """
         cookies = []
-        for c in (await self.Call("Network.getAllCookies"))["cookies"]:
+        for c in (await self._connection.call("Network.getAllCookies"))["cookies"]:
             cookies.append(Cookie(**c))
         return cookies
 
-    async def GetCookies(self, urls: Optional[list] = None) -> List[Cookie]:
+    async def getCookies(self, urls: Optional[list] = None) -> List[Cookie]:
         """
         Возвращает все куки браузера для текущего URL. В зависимости от поддержки бэкэнда,
             вернет подробную информацию о куки в поле куки.
@@ -149,11 +143,11 @@ class Network(ABC):
         args = {}
         if urls: args.update({"urls": urls})
         cookies = []
-        for c in (await self.Call("Network.getCookies", args))["cookies"]:
+        for c in (await self._connection.call("Network.getCookies", args))["cookies"]:
             cookies.append(Cookie(**c))
         return cookies
 
-    async def DeleteCookies(
+    async def deleteCookies(
             self, name: str,
             url:    str = "",
             domain: str = "",
@@ -173,9 +167,9 @@ class Network(ABC):
         if url: args.update({"url": url})
         if domain: args.update({"domain": domain})
         if path: args.update({"path": path})
-        await self.Call("Network.deleteCookies", args)
+        await self._connection.call("Network.deleteCookies", args)
 
-    async def SetCookie(
+    async def setCookie(
             self, name: str, value: str,
             url:       str = "",
             domain:    str = "",
@@ -217,18 +211,18 @@ class Network(ABC):
         if sameSite: args.update({"sameSite": sameSite})
         if expires > -1: args.update({"expires": expires})
         if priority: args.update({"priority": priority})
-        return (await self.Call("Network.setCookie", args))["success"]
+        return (await self._connection.call("Network.setCookie", args))["success"]
 
-    async def SetCookies(self, list_cookies: list) -> None:
+    async def setCookies(self, list_cookies: list) -> None:
         """
         Устанавливает сразу список кук
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-setCookies
         :param list_cookies:        список куки-параметров
         :return:
         """
-        await self.Call("Network.setCookies", {"cookies": list_cookies})
+        await self._connection.call("Network.setCookies", {"cookies": list_cookies})
 
-    async def SetExtraHeaders(self, headers: dict) -> None:
+    async def setExtraHTTPHeaders(self, headers: dict) -> None:
         """
         Устанавливает дополнительные заголовки, которые всегда будут отправляться в запросах
             от инстанса текущей страницы.
@@ -236,9 +230,9 @@ class Network(ABC):
         :param headers:        Заголовки запроса / ответа в виде ключей / значений объекта JSON.
         :return:
         """
-        await self.Call("Network.setExtraHTTPHeaders", {"headers": headers})
+        await self._connection.call("Network.setExtraHTTPHeaders", {"headers": headers})
 
-    async def NetworkSetUserAgent(
+    async def setUserAgentOverride(
         self, userAgent: str,
         acceptLanguage:     Optional[str] = None,
         platform:           Optional[str] = None,
@@ -270,14 +264,14 @@ class Network(ABC):
         if acceptLanguage: args.update({"acceptLanguage": acceptLanguage})
         if platform: args.update({"platform": platform})
         if userAgentMetadata: args.update({"userAgentMetadata": userAgentMetadata})
-        await self.Call("Network.setUserAgentOverride", args)
+        await self._connection.call("Network.setUserAgentOverride", args)
 
-    async def LoadNetworkResource(
+    async def loadNetworkResource(
         self,
         url:      Optional[str] = None,
         options: Optional[dict] = None,
         frameId:  Optional[str] = None
-    ) -> "NetworkType.LoadNetworkResourcePageResult":
+    ) -> LoadNetworkResourcePageResult:
         """
         Выбирает ресурс и возвращает контент.
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-loadNetworkResource
@@ -286,87 +280,13 @@ class Network(ABC):
         :param frameId:         (optional) Идентификатор фрейма
         :return:
         """
-        if url is None: url = await self.GetUrl()
+        if url is None: url = await self._connection.extend.getUrl()
         if options is None: options = {"disableCache": False, "includeCredentials": True}
-        if frameId is None: frameId = self.page_id
+        if frameId is None: frameId = self._connection.conn_id
         args = { "url": url, "options": options, "frameId": frameId }
-        resource = (await self.Call("Network.loadNetworkResource", args))["resource"]
-        return NetworkType.LoadNetworkResourcePageResult(**resource)
+        resource = (await self._connection.call("Network.loadNetworkResource", args))["resource"]
+        return LoadNetworkResourcePageResult(**resource)
 
-    @abstractmethod
-    async def GetUrl(self) -> str:
-        raise NotImplementedError("async method GetUrl() — is not implemented")
-
-    @abstractmethod
-    async def Call(
-        self, domain_and_method: str,
-        params:            Optional[dict] = None,
-        wait_for_response: bool = True
-    ) -> Union[dict, None]: raise NotImplementedError("async method Call() — is not implemented")
-
-
-class NetworkType:
-
-    @dataclass
-    class LoadNetworkResourcePageResult:
-        success: bool
-        netError: Optional[int] = None
-        netErrorName: Optional[str] = None
-        httpStatusCode: Optional[int] = None
-        stream: Optional[str] = None                # ! IO.StreamHandle
-        headers: Optional[dict] = None
-
-
-    @dataclass
-    class Request:
-        url: str
-        method: str
-        headers: dict
-        initialPriority: str                        # ! Allowed Values: VeryLow, Low, Medium, High, VeryHigh
-        referrerPolicy: str                         # ! Allowed Values: unsafe-url, no-referrer-when-downgrade,
-                                                    # !     no-referrer, origin, origin-when-cross-origin, same-origin,
-                                                    # !     strict-origin, strict-origin-when-cross-origin
-        trustTokenParams: Optional["NetworkType.TrustTokenParams"]
-        postDataEntries: Optional[list["NetworkType.PostDataEntry"]]
-        urlFragment: Optional[str] = None
-        postData: Optional[str] = None
-        hasPostData: Optional[bool] = None          # ! true if postData is present
-        _postDataEntries: Optional[list["NetworkType.PostDataEntry"]] = field(init=False, repr=False, default=None)
-        mixedContentType: Optional[str] = None      # ! Allowed Values: blockable, optionally-blockable, none
-        isLinkPreload: Optional[bool] = None
-        _trustTokenParams: Optional["NetworkType.TrustTokenParams"] = field(init=False, repr=False, default=None)
-        isSameSite: Optional[bool] = None
-
-        @property
-        def postDataEntries(self) -> list["NetworkType.PostDataEntry"]:
-            return self._postDataEntries
-
-        @postDataEntries.setter
-        def postDataEntries(self, data: list[dict[str, Union[str, None]]]) -> None:
-            if not isinstance(data, property):
-                self._postDataEntries = [NetworkType.PostDataEntry(**item) for item in data]
-            else:
-                self._postDataEntries = None
-
-        @property
-        def trustTokenParams(self) -> "NetworkType.TrustTokenParams":
-            return self._trustTokenParams
-
-        @trustTokenParams.setter
-        def trustTokenParams(self, data: dict) -> None:
-            self._trustTokenParams = NetworkType.TrustTokenParams(**data) if not isinstance(data, property) else None
-
-
-    @dataclass
-    class PostDataEntry:
-        bytes: Optional[str] = None
-
-
-    @dataclass
-    class TrustTokenParams:
-        type: str                                   # ! Allowed Values: Issuance, Redemption, Signing
-        refreshPolicy: str                          # ! Allowed Values: UseCached, Refresh
-        issuers: Optional[list[str]] = None
 
 class NetworkEvent(DomainEvent):
     dataReceived = "Network.dataReceived"
