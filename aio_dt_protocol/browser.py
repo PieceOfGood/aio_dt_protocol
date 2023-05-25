@@ -282,13 +282,13 @@ class Browser:
             pass
 
     async def getTargetConnectionInfoList(self) -> List[TargetConnectionInfo]:
-        return [TargetConnectionInfo(**i) for i in await self.getPageList()]
+        return [TargetConnectionInfo(**i) for i in await self.getConnectionList()]
 
     async def getTargetConnectionInfo(
             self, key: str = "type",
             connection_type: Union[str, TargetConnectionType] = "page") -> TargetConnectionInfo:
         v = connection_type if type(connection_type) is str else connection_type.value
-        for page_data in await self.getPageList():
+        for page_data in await self.getConnectionList():
             data = page_data[key]
             if v in data: return TargetConnectionInfo(**page_data)
         raise ValueError(f"No have value {v} for key {key} in active target list")
@@ -298,7 +298,7 @@ class Browser:
         t = connection_type if type(connection_type) is str else connection_type.value
         return [ti for ti in await self.getTargetConnectionInfoList() if ti.type == t]
 
-    async def getPageList(self) -> List[dict]:
+    async def getConnectionList(self) -> List[dict]:
         """
         Запрашивает у браузера список всех его дочерних процессов,
         включая табы(вкладки/страницы), воркеры, расширения, сервисы и прочее.
@@ -319,7 +319,7 @@ class Browser:
         if self.verbose: log("GetPageList() => " + result)
         return json.loads(result)
 
-    async def getPageBy(
+    async def getConnectionBy(
             self, key: Union[str, int],
             value: Union[str, int],
             match_mode: str = "exact",
@@ -350,7 +350,7 @@ class Browser:
             raise TypeError("Argument 'callback' must be a coroutine")
 
         counter = 0; v = value.lower()
-        for page_data in await self.getPageList():
+        for page_data in await self.getConnectionList():
             data = page_data[key]
             if ((match_mode == "exact" and data == v)
                 or (match_mode == "contains" and data.find(v) > -1 )
@@ -371,11 +371,11 @@ class Browser:
                 counter += 1
         return None
 
-    async def getPage(
+    async def getConnection(
             self,
             index: int = 0, page_type: str = "page",
             callback: CommonCallback = None
-    ) -> "Connection":
+    ) -> Connection:
         """
         Получает страницу браузера по индексу. По умолчанию, первую.
         :param index:       - Желаемый индекс страницы начиная с нуля.
@@ -384,12 +384,12 @@ class Browser:
                                 всех событий страницы в виде словаря.
         :return:        <Connection>
         """
-        return await self.getPageBy("type", page_type, "exact", index, callback)
+        return await self.getConnectionBy("type", page_type, "exact", index, callback)
 
-    async def getPageByID(
+    async def getConnectionByID(
             self, conn_id: str,
             callback: CommonCallback = None
-    ) -> "Connection":
+    ) -> Connection:
         """
         Получает страницу браузера по уникальному идентификатору.
         :param conn_id:     - Желаемый идентификатор страницы. Метод GetPageList()
@@ -401,14 +401,14 @@ class Browser:
                                 всех событий страницы в виде словаря.
         :return:        <Connection>
         """
-        return await self.getPageBy("id", conn_id, "exact", 0, callback)
+        return await self.getConnectionBy("id", conn_id, "exact", 0, callback)
 
-    async def getPageByTitle(
+    async def getConnectionByTitle(
             self, value: str,
             match_mode: str = "startswith",
             index: int = 0,
             callback: CommonCallback = None
-    ) -> "Connection":
+    ) -> Connection:
         """
         Получает страницу браузера по заголовку. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -422,14 +422,14 @@ class Browser:
                                 всех событий страницы в виде словаря.
         :return:        <Connection>
         """
-        return await self.getPageBy("title", value, match_mode, index, callback)
+        return await self.getConnectionBy("title", value, match_mode, index, callback)
 
-    async def getPageByURL(
+    async def getConnectionByURL(
             self, value: str,
             match_mode: str = "startswith",
             index: int = 0,
             callback: CommonCallback = None
-    ) -> "Connection":
+    ) -> Connection:
         """
         Получает страницу браузера по её URL. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -443,9 +443,9 @@ class Browser:
                                 всех событий страницы в виде словаря.
         :return:        <Connection>
         """
-        return await self.getPageBy("url", value, match_mode, index, callback)
+        return await self.getConnectionBy("url", value, match_mode, index, callback)
 
-    async def createPage(
+    async def createTab(
             self, url: str = "about:blank",
             newWindow: bool = False,
             background: bool = False,
@@ -459,14 +459,14 @@ class Browser:
         :param background:              - (optional) Если 'True' — страница будет открыта в фоне.
         :return:                    * <Connection>
         """
-        while not (tmp := await self.getPage(callback=callback)):
+        while not (tmp := await self.getConnection(callback=callback)):
             await asyncio.sleep(.5)
         page_id = await tmp.Target.createTarget(url, newWindow=newWindow, background=background)
         if wait_for_create:
-            while not (page := await self.getPageByID(page_id)):
+            while not (page := await self.getConnectionByID(page_id)):
                 await asyncio.sleep(.5)
         else:
-            page = await self.getPageByID(page_id)
+            page = await self.getConnectionByID(page_id)
         return page
     
     async def showInspector(self, conn: Connection, new_window: bool = True,
@@ -477,7 +477,7 @@ class Browser:
         :param new_window:      - Создать target в отдельном окне?
         :return:        <Connection>
         """
-        return await self.createPage(
+        return await self.createTab(
             "http://127.0.0.1:" + str(self.debug_port) + conn.frontend_url, new_window, callback=callback
         )
 
@@ -490,9 +490,9 @@ class Browser:
         :return:        Connection or None
         """
         await conn.extend.injectJS(f'window.open("{url}", "blank_window_name", "popup,noopener,noreferrer");')
-        return await self.getPageByOpener(conn, callback=callback)
+        return await self.getConnectionByOpener(conn, callback=callback)
 
-    async def getPageByOpener(self, conn: Connection, callback: CommonCallback = None) -> Optional[Connection]:
+    async def getConnectionByOpener(self, conn: Connection, callback: CommonCallback = None) -> Optional[Connection]:
         """
         Возвращает последний созданный инстанс страницы, открытие которого инициировано с конкретной страницы.
             Например, при использовании JavaScript "window.open()".
@@ -501,10 +501,10 @@ class Browser:
         """
         for target_info in await conn.Target.getTargets():
             if target_info.openerId == conn.conn_id:
-                return await self.getPageByID(target_info.targetId, callback=callback)
+                return await self.getConnectionByID(target_info.targetId, callback=callback)
         return None
 
-    async def getPagesByOpener(self, conn: Connection, callback: CommonCallback = None) -> List[Connection]:
+    async def getConnectionsByOpener(self, conn: Connection, callback: CommonCallback = None) -> List[Connection]:
         """
         Возвращает список всех инстансов страниц, открытие которых инициировано с конкретной страницы.
             Например, при использовании JavaScript "window.open()".
@@ -514,7 +514,7 @@ class Browser:
         pages = []
         for target_info in await conn.Target.getTargets():
             if target_info.openerId == conn.conn_id:
-                pages.append(await self.getPageByID(target_info.targetId, callback=callback))
+                pages.append(await self.getConnectionByID(target_info.targetId, callback=callback))
         return pages
 
     async def waitFirstTab(self, timeout: float = 20.0, callback: CommonCallback = None) -> Connection:
@@ -529,27 +529,27 @@ class Browser:
         """
         while True:
             try:
-                while (conn := await self.getPage(callback=callback)) is None:
+                while (conn := await self.getConnection(callback=callback)) is None:
                     await asyncio.sleep(.5)
                 return conn
             except URLError: await asyncio.sleep(1)
 
     async def close(self) -> None:
         """ Корректно закрывает браузер если остались ещё его инстансы """
-        if conn := await self.getPage():
+        if conn := await self.getConnection():
             await conn.Browser.close()
 
-    async def closeAllPagesExcept(self, *except_list: Connection) -> None:
+    async def closeAllTabsExcept(self, *except_list: Connection) -> None:
         """ Закрывает все страницы браузера, кроме переданных """
-        for conn in await self.getTargetConnectionInfoList():
-            if conn.type == "page":
+        for conn_info in await self.getTargetConnectionInfoList():
+            if conn_info.type == "page":
                 condition = False
                 for conn in except_list:
-                    condition |= conn.conn_id == conn._id
+                    condition |= conn.conn_id == conn_info.id
                 if not condition:
                     i = 4
                     try:
-                        while (tab := await self.getPageByID(conn._id)) is None and i:
+                        while (tab := await self.getConnectionByID(conn_info.id)) is None and i:
                             await asyncio.sleep(.5)
                             i -= 1
                         if tab: await tab.Target.close()
@@ -559,9 +559,9 @@ class Browser:
     async def getFramesFor(self, conn: Connection) -> List[Connection]:
         """ Возвращает список iFrame для указанного инстанса """
         result = []
-        for data in await self.getPageList():
+        for data in await self.getConnectionList():
             if data["type"] == "iframe" and data["parentId"] == conn.conn_id:
-                result.append(await self.getPageByID(data["id"]))
+                result.append(await self.getConnectionByID(data["id"]))
         return result
 
     def __eq__(self, other: "Browser") -> bool:
@@ -608,13 +608,16 @@ class FlagBuilder:
         self._flags[flag] = tuple()
 
     def flags(self) -> List[str]:
-        result: List[str] = []
-        for cmd_flag, args in self._flags.items():
-            result.append(cmd_flag + ",".join(args))
-        return result
+        """ Возвращает форматированный список флагов
+        для запуска процесса браузера.
+        """
+        return [
+            cmd_flag + ",".join(args)
+            for cmd_flag, args in self._flags.items()
+        ]
 
     def __str__(self) -> str:
-        return str(self.flags())
+        return "[\n" + ",\n\t".join(self.flags()) + "\n]"
 
     def __add__(self, other: "FlagBuilder") -> "FlagBuilder":
         if not isinstance(other, FlagBuilder):

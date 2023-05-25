@@ -8,7 +8,7 @@ pip install aio-dt-protocol
 Имеет одну зависимость:
 https://github.com/aaugustin/websockets
 
-И так как всё общение через протокол основано на формате JSON, по желанию можно установить ujson:
+И так как всё общение через протокол основано на формате JSON, по желанию можно установить в окружение ujson:
 https://github.com/ultrajson/ultrajson
 
 ### Примеры:
@@ -26,7 +26,9 @@ BROWSER_NAME: str = "chrome"
 async def main() -> None:
     # ? Если на указанном порту есть запущенный браузер, происходит подключение.
     if browser_instances := find_instances(DEBUG_PORT, BROWSER_NAME):
-        browser = Browser(debug_port=DEBUG_PORT, browser_pid=browser_instances[DEBUG_PORT])
+        browser = Browser(
+            debug_port=DEBUG_PORT,
+            browser_pid=browser_instances[DEBUG_PORT])
         msg = f"[- CONNECT TO EXIST BROWSER ON {DEBUG_PORT} PORT -]"
 
     # ? Иначе, запуск нового браузера.
@@ -41,27 +43,34 @@ async def main() -> None:
     # ? Полезно при разработке.
     # async def action_printer(data: dict) -> None:
     #     print(data)
-    # conn = await browser.getPage(callback=action_printer)
-    conn = await browser.getPage()
+    # conn = await browser.getConnection(callback=action_printer)
+    conn = await browser.getConnection()
 
     print("[- GO TO GOOGLE ... -]")
     await conn.Page.navigate("https://www.google.com", )
     print("[- EMULATE INPUT TEXT ... -]")
 
     input_node = await conn.DOM.querySelector("[type=search]")
+    
+    # ? Эмуляция клика в поисковую строку
     await input_node.click()
     await asyncio.sleep(1)
+    
+    # ? Вставка текста
     await conn.Input.insertText("github PieceOfGood")
     await asyncio.sleep(1)
 
+    # ? Эмуляция нажатия клавиши Enter
     await conn.extend.action.sendKeyEvent(KeyEvents.enter)
     await asyncio.sleep(1)
-
+    
+    # ? Нажатие Enter можно заменить кликом по кнопке
+    # ? используя протокол
     # submit_button_selector = "div:not([jsname])>center>[type=submit]:not([jsaction])"
     # submit_button = await conn.DOM.querySelector(submit_button_selector)
     # await submit_button.click()
 
-    # ? Или выполнить клик используя JS
+    # ? Или выполнить клик используя JavaScript
     # click_code = f"""\
     # document.querySelector("{submit_button_selector}").click();
     # """
@@ -103,7 +112,8 @@ if __name__ == '__main__':
 
 # ? number и text будут переданы из браузера, а bind_arg указан при регистрации
 async def test_func(number: int, text: str, bind_arg: dict) -> None:
-    print(f"[- test_func -] Called with args:\n\tnumber: {number}\n\ttext: {text}\n\tbing_arg: {bind_arg}")
+    print(f"[- test_func -] Called with args:\n\tnumber: {number}"
+          f"\n\ttext: {text}\n\tbing_arg: {bind_arg}")
 
 
 await conn.addListener(
