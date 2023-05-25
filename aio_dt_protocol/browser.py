@@ -12,7 +12,7 @@ import re, os, sys, signal, subprocess
 from urllib.parse import quote
 from os.path import expanduser
 from inspect import iscoroutinefunction
-from typing import List, Dict, Union, Optional, Tuple
+from typing import List, Dict, Union, Optional, Tuple, Literal
 from collections.abc import Sequence
 from enum import Enum
 from .connection import Connection
@@ -281,22 +281,20 @@ class Browser:
         except PermissionError:
             pass
 
-    async def getTargetConnectionInfoList(self) -> List[TargetConnectionInfo]:
+    async def getAllTargetsConnectionInfo(self) -> List[TargetConnectionInfo]:
+        """ Возвращает список описаний соединений со всеми
+        существующими типами соединений.
+        """
         return [TargetConnectionInfo(**i) for i in await self.getConnectionList()]
 
-    async def getTargetConnectionInfo(
-            self, key: str = "type",
-            connection_type: Union[str, TargetConnectionType] = "page") -> TargetConnectionInfo:
-        v = connection_type if type(connection_type) is str else connection_type.value
-        for page_data in await self.getConnectionList():
-            data = page_data[key]
-            if v in data: return TargetConnectionInfo(**page_data)
-        raise ValueError(f"No have value {v} for key {key} in active target list")
-
     async def getConnectionsByType(
-            self, connection_type: Union[str, TargetConnectionType]) -> List[TargetConnectionInfo]:
-        t = connection_type if type(connection_type) is str else connection_type.value
-        return [ti for ti in await self.getTargetConnectionInfoList() if ti.type == t]
+            self, conn_type: Union[str, TargetConnectionType]) -> List[TargetConnectionInfo]:
+        """ Возвращает список описаний соединений, удовлетворяющих
+        запрошенному типу соединения.
+        :param conn_type:     Тип соединения. Например: "page"
+        """
+        t = conn_type if type(conn_type) is str else conn_type.value
+        return [ti for ti in await self.getAllTargetsConnectionInfo() if ti.type == t]
 
     async def getConnectionList(self) -> List[dict]:
         """
@@ -322,12 +320,11 @@ class Browser:
     async def getConnectionBy(
             self, key: Union[str, int],
             value: Union[str, int],
-            match_mode: str = "exact",
+            match_mode: Literal["exact", "contains", "startswith"] = "exact",
             index: int = 0,
-            callback: CommonCallback = None
-    ) -> Optional[Connection]:
+            callback: CommonCallback = None) -> Optional[Connection]:
         """
-        Организует выбор нужного инстанса из процессов браузера по следующим критериям:
+        Организует выбор нужного соединения из процессов браузера по следующим критериям:
         :param key:                 По ключу из словаря. Список ключей смотри
                                         в возвращаемых значениях GetPageList()
         :param value:               Значение ключа, которому должен соответствовать выбор
@@ -335,7 +332,7 @@ class Browser:
                                         "exact"      - полностью совпадает с value,
                                         "contains"   - содержит value,
                                         "startswith" - начинается с value
-        :param index:               Поскольку открытых страниц с одинаковым ключём может
+        :param index:               Поскольку открытых страниц с одинаковым ключом может
                                         быть несколько, предоставляется возможность выбрать
                                         по индексу. По умолчанию = 0
         :param callback:            Корутина, которой будет передаваться контекст абсолютно
@@ -372,31 +369,25 @@ class Browser:
         return None
 
     async def getConnection(
-            self,
-            index: int = 0, page_type: str = "page",
-            callback: CommonCallback = None
-    ) -> Connection:
+            self, index: int = 0,
+            conn_type: str = "page",
+            callback: CommonCallback = None) -> Connection:
         """
         Получает страницу браузера по индексу. По умолчанию, первую.
         :param index:       - Желаемый индекс страницы начиная с нуля.
-        :param page_type:   - Тип "page" | 'background_page' | 'service_worker' | ???
+        :param conn_type:   - Тип "page" | 'background_page' | 'service_worker' | ???
         :param callback:    - Корутина, которой будет передаваться контекст абсолютно
                                 всех событий страницы в виде словаря.
         :return:        <Connection>
         """
-        return await self.getConnectionBy("type", page_type, "exact", index, callback)
+        return await self.getConnectionBy("type", conn_type, "exact", index, callback)
 
     async def getConnectionByID(
             self, conn_id: str,
-            callback: CommonCallback = None
-    ) -> Connection:
+            callback: CommonCallback = None) -> Connection:
         """
         Получает страницу браузера по уникальному идентификатору.
-        :param conn_id:     - Желаемый идентификатор страницы. Метод GetPageList()
-                                возвращает список доступных инстансов и словарь
-                                каждого из них содержит 'id'. Так же создание инстансов
-                                страниц через домен 'Target' возвращает 'targetId',
-                                который используется с этой же целью.
+        :param conn_id:     - Желаемый идентификатор страницы. Он же 'targetId'.
         :param callback:    - Корутина, которой будет передаваться контекст абсолютно
                                 всех событий страницы в виде словаря.
         :return:        <Connection>
@@ -405,10 +396,9 @@ class Browser:
 
     async def getConnectionByTitle(
             self, value: str,
-            match_mode: str = "startswith",
+            match_mode: Literal["exact", "contains", "startswith"] = "startswith",
             index: int = 0,
-            callback: CommonCallback = None
-    ) -> Connection:
+            callback: CommonCallback = None) -> Connection:
         """
         Получает страницу браузера по заголовку. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -426,10 +416,9 @@ class Browser:
 
     async def getConnectionByURL(
             self, value: str,
-            match_mode: str = "startswith",
+            match_mode: Literal["exact", "contains", "startswith"] = "startswith",
             index: int = 0,
-            callback: CommonCallback = None
-    ) -> Connection:
+            callback: CommonCallback = None) -> Connection:
         """
         Получает страницу браузера по её URL. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -450,8 +439,7 @@ class Browser:
             newWindow: bool = False,
             background: bool = False,
             wait_for_create: bool = True,
-            callback: CommonCallback = None
-    ) -> Optional[Connection]:
+            callback: CommonCallback = None) -> Optional[Connection]:
         """
         Создаёт новую вкладку в браузере.
         :param url:                     - (optional) Адрес будет открыт при создании.
@@ -469,8 +457,10 @@ class Browser:
             page = await self.getConnectionByID(page_id)
         return page
     
-    async def showInspector(self, conn: Connection, new_window: bool = True,
-                            callback: CommonCallback = None) -> Optional[Connection]:
+    async def showInspector(
+            self, conn: Connection,
+            new_window: bool = True,
+            callback: CommonCallback = None) -> Optional[Connection]:
         """
         Открывает новую вкладку с дебаггером для инспектируемой страницы.
         :param conn:            - Инспектируемая страница. Может принадлежать любому браузеру.
@@ -481,21 +471,25 @@ class Browser:
             "http://127.0.0.1:" + str(self.debug_port) + conn.frontend_url, new_window, callback=callback
         )
 
-    async def createPopupWindow(self, conn: Connection, url: str = "about:blank",
-                                callback: CommonCallback = None) -> Optional[Connection]:
-        """
-        Создаёт всплывающее окно с минимумом интерфейса браузера".
+    async def createPopupWindow(
+            self, conn: Connection,
+            url: str = "about:blank",
+            callback: CommonCallback = None) -> Optional[Connection]:
+        """ Создаёт всплывающее окно с минимумом интерфейса браузера".
         :param url:             - Адрес, ресурс которого будет загружен
         :param conn:            - Родительская страница, инициатор
         :return:        Connection or None
         """
-        await conn.extend.injectJS(f'window.open("{url}", "blank_window_name", "popup,noopener,noreferrer");')
+        await conn.extend.injectJS(
+            f'window.open("{url}", "blank_window_name", "popup,noopener,noreferrer");')
         return await self.getConnectionByOpener(conn, callback=callback)
 
-    async def getConnectionByOpener(self, conn: Connection, callback: CommonCallback = None) -> Optional[Connection]:
-        """
-        Возвращает последний созданный инстанс страницы, открытие которого инициировано с конкретной страницы.
-            Например, при использовании JavaScript "window.open()".
+    async def getConnectionByOpener(
+            self, conn: Connection,
+            callback: CommonCallback = None) -> Optional[Connection]:
+        """ Возвращает последнее созданное соединение со страницей, открытие которого
+        инициировано с конкретной страницы. Например, при использовании JavaScript
+        "window.open()".
         :param conn:            - Родительская страница, инициатор
         :return:        Connection or None
         """
@@ -504,22 +498,26 @@ class Browser:
                 return await self.getConnectionByID(target_info.targetId, callback=callback)
         return None
 
-    async def getConnectionsByOpener(self, conn: Connection, callback: CommonCallback = None) -> List[Connection]:
-        """
-        Возвращает список всех инстансов страниц, открытие которых инициировано с конкретной страницы.
-            Например, при использовании JavaScript "window.open()".
+    async def getConnectionsByOpener(
+            self, conn: Connection,
+            callback: CommonCallback = None) -> List[Connection]:
+        """ Возвращает список всех соединений, открытие которых инициировано с конкретной
+        страницы. Например, при использовании JavaScript "window.open()".
         :param conn:            - Родительская страница, инициатор открытых окон
         :return:        List[Connection]
         """
-        pages = []
+        connections = []
         for target_info in await conn.Target.getTargets():
             if target_info.openerId == conn.conn_id:
-                pages.append(await self.getConnectionByID(target_info.targetId, callback=callback))
-        return pages
+                connections.append(await self.getConnectionByID(
+                    target_info.targetId, callback=callback))
+        return connections
 
-    async def waitFirstTab(self, timeout: float = 20.0, callback: CommonCallback = None) -> Connection:
-        """
-        Вызывает исключение 'asyncio.exceptions.TimeoutError' по истечении таймаута, или возвращает инстанс.
+    async def waitFirstTab(
+            self, timeout: float = 20.0,
+            callback: CommonCallback = None) -> Connection:
+        """ Дожидается получения соединения или вызывает исключение
+        'asyncio.exceptions.TimeoutError' по истечении таймаута.
         """
         return await asyncio.wait_for(self.getFirstTab(callback), timeout)
 
@@ -540,8 +538,8 @@ class Browser:
             await conn.Browser.close()
 
     async def closeAllTabsExcept(self, *except_list: Connection) -> None:
-        """ Закрывает все страницы браузера, кроме переданных """
-        for conn_info in await self.getTargetConnectionInfoList():
+        """ Закрывает все страницы браузера, кроме переданных. """
+        for conn_info in await self.getAllTargetsConnectionInfo():
             if conn_info.type == "page":
                 condition = False
                 for conn in except_list:
@@ -557,12 +555,12 @@ class Browser:
                         pass
 
     async def getFramesFor(self, conn: Connection) -> List[Connection]:
-        """ Возвращает список iFrame для указанного инстанса """
-        result = []
-        for data in await self.getConnectionList():
-            if data["type"] == "iframe" and data["parentId"] == conn.conn_id:
-                result.append(await self.getConnectionByID(data["id"]))
-        return result
+        """ Возвращает список iFrame для указанного соединения. """
+        return [
+            await self.getConnectionByID(data["id"])
+            for data in await self.getConnectionList()
+            if data["type"] == "iframe" and data["parentId"] == conn.conn_id
+        ]
 
     def __eq__(self, other: "Browser") -> bool:
         return self.debug_port == other.debug_port
