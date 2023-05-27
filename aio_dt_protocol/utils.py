@@ -1,11 +1,9 @@
 import asyncio
 import subprocess
-import sys, re
+import re
+import sys
 import urllib.request
-from typing import Optional, Dict
-
-if sys.platform == "win32":
-    import winreg
+from typing import Optional, Dict, Callable
 
 
 def get_request(url: str) -> str:
@@ -13,9 +11,23 @@ def get_request(url: str) -> str:
         return response.read().decode('utf-8')
 
 
-def registry_read_key(exe="chrome") -> str:
-    """ Возвращает путь до EXE.
-    """
+def find_browser_executable_path(exe="chrome") -> str:
+    """ Возвращает путь до EXE. """
+    if not sys.platform == "win32":
+        raise OSError("registry_read_key() is only available on Windows")
+
+    if exe == "chromium":
+        import os
+        from pathlib import Path
+
+        app_data = Path(os.getenv('APPDATA')).parent
+        browser_path = app_data / "Local/Chromium/Application/chrome.exe"
+        if not browser_path.exists():
+            return ""
+        return browser_path.as_posix()
+
+    import winreg
+
     reg_path = f"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\{exe}.exe"
     key, path = re.findall(r"(^[^\\/]+)[\\/](.*)", reg_path)[0]
     connect_to = eval(f"winreg.{key}")
@@ -38,7 +50,7 @@ def save_img_as(path: str, data: bytes) -> None:
         f.write(data)
 
 
-async def async_util_call(function: callable, *args) -> any:
+async def async_util_call(function: Callable, *args) -> any:
     """ Позволяет выполнять неблокирующий вызов блокирующих функций. Например:
     await async_util_call(
         save_img_as, "ScreenShot.png", await page_instance.MakeScreenshot()
@@ -50,19 +62,20 @@ async def async_util_call(function: callable, *args) -> any:
 
 
 def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> Dict[int, int]:
-    """
-    Используется для обнаружения уже запущенных инстансов браузера в режиме отладки.
-    Более быстрая альтернатива для win32 систем FindInstances() есть в aio_dt_utils.Utils,
-        но она требует установленный пакет pywin32 для использования COM.
+    """ !!! ВНИМАНИЕ !!! На Windows 11 может быть отключен компонент WMI("Windows Management
+    Instrumentation"), его нужно либо включить в разделе “Программы и компоненты” панели
+    управления, либо установить из официальных источников.
+
+    Используется для обнаружения уже запущенных браузеров в режиме отладки.
     Например:
-            if browser_instances := Browser.FindInstances():
+            if browser_instances := find_instances():
                 port, pid = [(k, v) for k, v in browser_instances.items()][0]
                 browser_instance = Browser(debug_port=port, chrome_pid=pid)
             else:
                 browser_instance = Browser()
 
             # Или для конкретного, известного порта:
-            if browser_instances := Browser.FindInstances(port):
+            if browser_instances := find_instances(port):
                 pid = browser_instances[port]
                 browser_instance = Browser(debug_port=port, chrome_pid=pid)
             else:
@@ -76,10 +89,10 @@ def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> D
     """
     result = {}
     if sys.platform == "win32":
-        if "chrome" in browser: browser = "chrome.exe"
+        if "chrom" in browser: browser = "chrome.exe"
         elif "brave" in browser: browser = "brave.exe"
         elif "edge" in browser: browser = "msedge.exe"
-        else: ValueError("Not support browser: " + browser)
+        # else: ValueError("Not support browser: " + browser)
         cmd = f"WMIC PROCESS WHERE NAME='{browser}' GET Commandline,Processid"
         for line in subprocess.Popen(cmd, stdout=subprocess.PIPE).stdout:
             if b"--type=renderer" not in line and b"--remote-debugging-port=" in line:
@@ -87,11 +100,12 @@ def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> D
                 port, pid = int(port), int(pid)
                 if for_port == port: return {port: pid}
                 result[port] = pid
+
     elif sys.platform == "linux":
-        if "chrome" in browser: browser = "google-chrome"
+        if "chrom" in browser: browser = "chrome"
         elif "brave" in browser: browser = "brave"
-        elif "edge" in browser: browser = "edge"
-        else: ValueError("Not support browser: " + browser)
+        elif "edge" in browser: browser = "msedge"
+        # else: ValueError("Not support browser: " + browser)
         try: itr = map(int, subprocess.check_output(["pidof", browser]).split())
         except subprocess.CalledProcessError: itr = []
         for pid in itr:
@@ -100,5 +114,6 @@ def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> D
                 port = int(re.findall(r"--remote-debugging-port=(\d+)", cmd_line)[0])
                 if for_port == port: return {port: pid}
                 result[port] = pid
-    else: raise OSError(f"Platform '{sys.platform}' — not supported")
+    else:
+        raise OSError(f"Platform '{sys.platform}' — not supported")
     return {} if for_port else result

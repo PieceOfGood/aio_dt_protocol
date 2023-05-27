@@ -16,11 +16,13 @@ https://github.com/ultrajson/ultrajson
 ```python
 import asyncio
 from aio_dt_protocol import Browser
+from aio_dt_protocol import BrowserName
 from aio_dt_protocol import find_instances
 from aio_dt_protocol.data import KeyEvents
 
 DEBUG_PORT: int = 9222
-BROWSER_NAME: str = "chrome"
+BROWSER_NAME: str = BrowserName.CHROME
+PROFILE_NAME: str = BROWSER_NAME.capitalize() + "_Profile"
 
 
 async def main() -> None:
@@ -34,7 +36,8 @@ async def main() -> None:
     # ? Иначе, запуск нового браузера.
     else:
         browser = Browser(
-            debug_port=DEBUG_PORT, browser_exe=BROWSER_NAME
+            debug_port=DEBUG_PORT, browser_exe=BROWSER_NAME,
+            profile_path=PROFILE_NAME
         )
         msg = f"[- LAUNCH NEW BROWSER ON {DEBUG_PORT} PORT -]"
     print(msg)
@@ -43,8 +46,8 @@ async def main() -> None:
     # ? Полезно при разработке.
     # async def action_printer(data: dict) -> None:
     #     print(data)
-    # conn = await browser.getConnection(callback=action_printer)
-    conn = await browser.getConnection()
+    # conn = await browser.waitFirstTab(callback=action_printer)
+    conn = await browser.waitFirstTab()
 
     print("[- GO TO GOOGLE ... -]")
     await conn.Page.navigate("https://www.google.com", )
@@ -89,7 +92,7 @@ if __name__ == '__main__':
 На страницу можно легко зарегистрировать слушателей, которые будут вызываться на стороне клиентского(Python) кода. Для этого необходимо выполнить в браузере JavaScript, передав в `console.info()` JSON-строку из JavaScript-объекта с двумя обязательными полями `func_name` - имя вызываемой python-функции и `args` - список аргументов, которые будут ей переданы. Например:
 
 ```python
-    html = """
+    html = """\
     <html lang="ru">
     <head>
         <meta charset="utf-8" />
@@ -101,48 +104,64 @@ if __name__ == '__main__':
     <script>
         const btn = document.querySelector('#knopka');
         btn.addEventListener('click', () => {
-            console.info(JSON.stringify({
-                 func_name: "test_func",
-                 args: [1, "test"]
-            }))
+            py_call("test_func", 1, "test")
         });
     </script>
     </html>"""
-
-
-# ? number и text будут переданы из браузера, а bind_arg указан при регистрации
-async def test_func(number: int, text: str, bind_arg: dict) -> None:
-    print(f"[- test_func -] Called with args:\n\tnumber: {number}"
-          f"\n\ttext: {text}\n\tbing_arg: {bind_arg}")
-
-
-await conn.addListener(
-    test_func,  # ! слушатель
-    {"name": "test", "value": True}  # ! bind_arg
-)
-
-# ? Если ожидается внушительный функционал прикрутить к странице, то это можно
-# ? сделать за один раз.
-# await conn.addListeners(
-#     (test_func, [ {"name": "test", "value": True} ]),
-#     # (any_awaitable1, [1, 2, 3])
-#     # (any_awaitable2, [])
-# )
-
-await conn.Page.navigate(html)
+    
+    # ? Добавляем на страницу `py_call()`
+    await conn.extend.pyCallAddOnload()
+    
+    # ? number и text будут переданы из браузера, а bind_arg указан при регистрации
+    async def test_func(number: int, text: str, bind_arg: dict) -> None:
+        print(f"[- test_func -] Called with args:\n\tnumber: {number}"
+              f"\n\ttext: {text}\n\tbing_arg: {bind_arg}")
+    
+    
+    await conn.bindFunction(
+        test_func,  # ! слушатель
+        {"name": "test", "value": True}  # ! bind_arg
+    )
+    
+    # ? Если ожидается внушительный функционал прикрутить к странице, то это можно
+    # ? сделать за один раз.
+    # await conn.addListeners(
+    #     (test_func, [ {"name": "test", "value": True} ]),
+    #     # (any_awaitable1, [1, 2, 3])
+    #     # (any_awaitable2, [])
+    # )
+    
+    await conn.Page.navigate(html)
 ```
 ### Headless
-Чтобы запустить браузер в `безголовом` режиме, нужно передать аргументу принимающему путь к папке профиля пустую строку.
+Чтобы запустить браузер в безголовом(`headless`) режиме, передайте пустую строку аргументу(`profile_path`) принимающему путь к папке профиля.
 
 ```python
 import asyncio
-from aio_dt_protocol import Browser
+from aio_dt_protocol import Browser, BrowserName, find_instances
 from aio_dt_protocol.utils import save_img_as, async_util_call
+
+DEBUG_PORT: int = 9222
+BROWSER_NAME: str = BrowserName.CHROME
 
 
 async def main() -> None:
-    print("[- HEADLESS RUN -]")
-    browser = Browser(profile_path="")
+    # ? Если на указанном порту есть запущенный браузер, происходит подключение.
+    if browser_instances := find_instances(DEBUG_PORT, BROWSER_NAME):
+        browser = Browser(
+            debug_port=DEBUG_PORT,
+            browser_pid=browser_instances[DEBUG_PORT])
+        msg = f"[- HEADLESS CONNECT TO EXIST BROWSER ON {DEBUG_PORT} PORT -]"
+
+    # ? Иначе, запуск нового браузера.
+    else:
+        browser = Browser(
+            debug_port=DEBUG_PORT, browser_exe=BROWSER_NAME,
+            profile_path=""
+        )
+        msg = f"[- HEADLESS LAUNCH NEW BROWSER ON {DEBUG_PORT} PORT -]"
+    print(msg)
+    
     print("[- WAITING PAGE -]")
     conn = await browser.waitFirstTab()
     print("[- GO TO GOOGLE -]")
@@ -150,7 +169,7 @@ async def main() -> None:
 
     print("[- MAKE SCREENSHOT -]")
     await async_util_call(
-        save_img_as, "google.png", await conn.Page.makeScreenshot()
+        save_img_as, "google.png", await conn.extend.makeScreenshot()
     )
 
     print("[- CLOSE BROWSER -]")

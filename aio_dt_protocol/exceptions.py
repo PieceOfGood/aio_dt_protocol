@@ -39,6 +39,8 @@ class NoScriptWithGivenId(MyBaseException): pass
 
 class UniqueContextIdNotFound(MyBaseException): pass
 
+class InvalidRemoteObjectId(MyBaseException): pass
+
 class AnotherLocaleOverrideIsAlreadyInEffect(MyBaseException): pass     # ! при установке той же локали
 
 class FontFamiliesCanOnlyBeSetOnce(MyBaseException): pass               # ! при установке тех же шрифтов
@@ -55,6 +57,7 @@ exception_store = {
     "No target with given id found": NoTargetWithGivenIdFound,
     "No script with given id": NoScriptWithGivenId,
     "uniqueContextId not found": UniqueContextIdNotFound,
+    "Invalid remote object id": InvalidRemoteObjectId,
     "Another locale override is already in effect": AnotherLocaleOverrideIsAlreadyInEffect,
     "Font families can only be set once": FontFamiliesCanOnlyBeSetOnce,
     "Can only get response body on requests captured after headers received": GetRequestBodyBeforeRequestReceived,
@@ -71,6 +74,13 @@ def get_cdtp_error(error_text: str) -> Optional[Type[MyBaseException]]:
 def highlight_eval_error(error_text: str, expression: str) -> str:
     """ Подсвечивает место в JS-коде ставшее причиной исключения.
     """
+    if "SyntaxError" in error_text:
+        return "\n".join([
+            "\nIn your code:"
+            f"\x1b[37m{expression}\x1b[0m\n"
+            f"\x1b[36mSyntaxError: \x1b[91m\x1b[4m{error_text[13:]}\x1b[0m",
+        ])
+
     line, pos = tuple(map(int, error_text.split(":")[-2:]))
     lines = expression.split("\n")
     l = lines[line - 1]

@@ -18,7 +18,7 @@ from enum import Enum
 from .connection import Connection
 from .data import TargetConnectionInfo, TargetConnectionType, CommonCallback
 from .exceptions import FlagArgumentContainError, NoTargetWithGivenIdFound
-from .utils import get_request, registry_read_key, log, async_util_call
+from .utils import get_request, find_browser_executable_path, log, async_util_call
 
 
 class Browser:
@@ -56,36 +56,35 @@ class Browser:
 
         :param dev_tool_profiles:   Если 'profile_path' указан как имя папки, а не путь,
                                     профиль с указанным именем будет создан/получен в домашней
-                                    дирректории пользователя, из каталога 'DevTools_Profiles',
+                                    директории пользователя, из каталога 'DevTools_Profiles',
                                     если значение установлено в True. (Linux, Windows)
 
         :param url:             Адрес, которым будет инициирован старт браузера.
                                     Со значением по умолчанию, будет открыта пустая страница.
 
-        :param flags:           Список аргументов командной строки. Например:
-                                    [ "--no-first-run", "--no-default-browser-check", "--browser-test",
-                                    "--window-position=400,100", "--window-size=800,600", ... ]
+        :param flags:           Экземпляр `FlagBuilder()` напичканный `CMDFlags()`.
                                     https://peter.sh/experiments/chromium-command-line-switches/
 
-        :param browser_path:    Путь до исполняемого файла браузера. Если не указан, в реестре
-                                    будет произведён поиск установленного браузера Chrome.
+        :param browser_path:    Путь до исполняемого файла браузера. Имеет приоритет над
+                                    аргументом `browser_exe`.
 
         :param debug_port:      Используется порт по умолчанию 9222.
 
-        :param browser_pid:     ProcessID браузера. Используется методом KillChrome(). Если
+        :param browser_pid:     ProcessID браузера. Используется методом kill(). Если
                                     передано значение большее нуля, считается, что производится
-                                    подключение к уже существующему инстансу браузера. Подробнее
-                                    в описании статического метода FindInstances().
+                                    подключение к уже существующему экземпляру браузера. Чтобы
+                                    найти запущенный браузер в режиме отладки, воспользуйтесь
+                                    `find_instances()`.
 
         :param app:             Запускает браузер в окне без пользовательского интерфейса,
                                     вроде адресной строки, кнопок навигации и прочих атрибутов.
-                                    Распространяется только на первый инстанс страниц браузера,
-                                    что означает, что все следующие инстансы будут открываться
-                                    в интерфейсе страниц браузера, в отдельном от первого окне.
+                                    Распространяется только на первую страницу браузера. Прочие
+                                    страницы будут открываться в обычном виде и в отдельном
+                                    от первого окне.
 
         :param browser_exe:     Имя исполняемого файла браузера, который будет автоматизирован.
                                     Например: chrome, brave. Если 'browser_path' окажется пустым,
-                                    путь до исполняемого файла будет найден в реестре.
+                                    будет произведена попытка найти его в системе по этому имени.
 
         :param proxy_port:      Если установлено, браузер будет запущен с флагом 'proxy' и
                                     все его запросы будут перенаправляться на этот порт, на
@@ -94,10 +93,8 @@ class Browser:
         :param verbose:         Печатать некие подробности процесса?
 
         :param position:        Кортеж с иксом и игреком, в которых откроется окно браузера.
-                                    Не имеет смысла для Headless.
 
         :param sizes:           Кортеж с длиной и шириной в которые будет установлено окно браузера.
-                                    Не имеет смысла для Headless.
 
         :param prevent_restore: Предотвращать восстановление предыдущей сессии после крашей.
         """
@@ -150,10 +147,10 @@ class Browser:
             browser_exe = "brave" if sys.platform == "win32" else "brave-browser"
         elif browser_exe == "chromium":
             self.browser_name = "chrome"
-            browser_exe = "chrome" if sys.platform == "win32" else "chromium-browser"
+            browser_exe = "chromium" if sys.platform == "win32" else "chromium-browser"
         elif "edge" in browser_exe:
             self.browser_name = "edge"
-            browser_exe = "msedge" if sys.platform == "win32" else "msedge" # !?
+            browser_exe = "msedge" if sys.platform == "win32" else "microsoft-edge"
 
         # ? Константы URL соответствующих вкладок
         self.NEW_TAB:       str = self.browser_name + "://newtab/"          # дефолтная вкладка
@@ -167,7 +164,7 @@ class Browser:
         self.FLAGS:         str = self.browser_name + "://flags/"           # экспериментальные технологии
 
         if sys.platform == "win32":
-            browser_path = browser_path if browser_path else registry_read_key(browser_exe)
+            browser_path = browser_path if browser_path else find_browser_executable_path(browser_exe)
         else:   #  ! sys.platform == "linux"
             browser_path = browser_path if browser_path else os.popen("which " + browser_exe).read().strip()
 
@@ -216,10 +213,10 @@ class Browser:
         )
 
         self.is_headless_mode = False
-        self.browser_pid = browser_pid if browser_pid > 0 else self._RunBrowser(_url_, flags, position, sizes)
+        self.browser_pid = browser_pid if browser_pid > 0 else self._run_browser(_url_, flags, position, sizes)
 
-    def _RunBrowser(self, url: str, flags: "FlagBuilder", position: Optional[Tuple[int, int]] = None,
-                    sizes: Optional[Tuple[int, int]] = None) -> int:
+    def _run_browser(self, url: str, flags: "FlagBuilder", position: Optional[Tuple[int, int]] = None,
+                     sizes: Optional[Tuple[int, int]] = None) -> int:
         """
         Запускает браузер с переданными флагами.
         :param url:             Адрес. Если передан, будет загружен в первой вкладке.
@@ -272,7 +269,9 @@ class Browser:
             flag_box += flags
 
         run_args += flag_box.flags()
-        return subprocess.Popen(run_args).pid
+
+        pipe = subprocess.PIPE if not self.verbose else None
+        return subprocess.Popen(run_args, stdout=pipe, stderr=pipe).pid
 
     def kill(self) -> None:
         """  Убивает процесс браузера. """
@@ -573,7 +572,7 @@ class FlagBuilder:
     """ Обеспечивает последовательность неповторяющихся флагов
     для запуска браузера.
     """
-    def __init__(self):
+    def __init__(self) -> None:
         self._flags: Dict[str, Tuple[str]] = {}
 
     def add(self, flag: "CMDFlag", *args: Union[str, int, float]) -> None:

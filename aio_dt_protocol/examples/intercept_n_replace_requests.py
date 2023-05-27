@@ -90,12 +90,12 @@ async def replace() -> None:
         print("[- test_func -] Called with args:\n\tnumber: "
               f"{number}\n\ttext: {text}\n\tbind_arg: {bind_arg}")
 
-    await conn.addListener(
+    await conn.bindFunction(
         test_func,  # ! слушатель
         {"name": "test", "value": True}  # ! bind_arg
     )
 
-    await conn.extend.pyExecAddOnload()
+    await conn.extend.pyCallAddOnload()
 
     async def catch_data_for_response(data: EventRequestPaused) -> None:
 
@@ -118,7 +118,7 @@ async def replace() -> None:
 
     await conn.Page.navigate("https://www.python.org/")
 
-    # await conn.CloseBrowser()
+    # await conn.Browser.close()
     await conn.waitForClose()
 
 
@@ -178,7 +178,7 @@ async def re_proxy() -> None:
 
     await conn.Page.navigate("https://www.python.org/")
 
-    # await conn.CloseBrowser()
+    # await conn.Browser.close()
     await conn.waitForClose()
 
 

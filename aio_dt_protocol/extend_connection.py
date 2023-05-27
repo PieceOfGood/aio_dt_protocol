@@ -13,9 +13,7 @@ from .exceptions import EvaluateError, JavaScriptError, NullProperty
 
 
 class Extend:
-    """
-    Расширение для 'Page'. Включает сборку наиболее востребованных методов для работы
-        с API 'ChromeDevTools Protocol', а так же дополняет некоторыми полезными методами.
+    """ Расширение для 'Page' некоторыми полезными методами.
     """
     __slots__ = ("_connection", "action")
 
@@ -26,32 +24,29 @@ class Extend:
         self._connection: Connection = conn
         self.action = Actions(conn)             # Совершает действия на странице. Клики;
                                                 # движения мыши; события клавиш
-
-    # region [ |>*<|=== Domains ===|>*<| ] Other [ |>*<|=== Domains ===|>*<| ]
-    #
-
-    async def pyExecAddOnload(self) -> None:
+    async def pyCallAddOnload(self) -> None:
         """ Включает автоматически добавляющийся JavaScript, вызывающий слушателей
-        клиента, добавленных на страницу с помощью await <Page>.AddListener(...) и
-        await <Page>.AddListeners(...).
+        клиента, добавленных на страницу с помощью await <Connection>.bindFunction(...)
+        и await <Connection>.bindFunctions(...).
 
-        Например, `test_func()` объявленная и добавленная следующим образом:
-
+        Например, `test_func()` объявленная следующим образом:
         async def test_func(number: int, text: str, bind_arg: dict) -> None:
             print("[- test_func -] Called with args:\n\tnumber: "
                   f"{number}\n\ttext: {text}\n\tbind_arg: {bind_arg}")
 
-        await page.AddListener(
+        И добавленная  следующим образом:
+        await conn.bindFunction(
             test_func,                          # ! слушатель
             {"name": "test", "value": True}     # ! bind_arg
         )
 
         Может быть вызвана со страницы браузера, так:
-        py_exec("test_func", 1, "testtt");
+        py_call("test_func", 1, "testtt");
         """
-        py_exec_js = """function py_exec(funcName, ...args) {
-            console.info(JSON.stringify({ func_name: funcName, args: args })); }"""
-        await self._connection.Page.addScriptOnLoad(py_exec_js)
+        py_call_js = """\
+        function py_call(funcName,...args){eval(funcName+"(`"+JSON.stringify(args)+"`)");}"""
+        await self._connection.Page.addScriptOnLoad(py_call_js)
+        await self.injectJS(py_call_js)
 
     async def getViewportRect(self) -> ViewportRect:
         """
@@ -100,20 +95,54 @@ class Extend:
         shot = await self._connection.Page.captureScreenshot(format_, quality, clip, fromSurface)
         return base64.b64decode(shot.encode("utf-8"))
 
-    async def selectInputContentBy(self, css: str) -> None:
-        await self.injectJS(f"let _i_ = document.querySelector('{css}'); _i_.focus(); _i_.select();")
+    async def selectOption(self, css: str) -> None:
+        """ Создаёт фокус и делает выбранным опцию тега <select>
+        при помощи JavaScript.
+        """
+        await self.injectJS(f"let _i_ = document.querySelector(`{css}`); _i_.focus(); _i_.select();")
 
     async def scrollIntoViewJS(self, selector: str) -> None:
+        """ Выполняет плавную прокрутку страницы до выбранного селектора. """
         await self.injectJS(
-            "document.querySelector(\"" +
+            "document.querySelector(`" +
             selector +
-            "\").scrollIntoView({'behavior':'smooth', 'block': 'center'});"
+            "`).scrollIntoView({'behavior':'smooth', 'block': 'center'});"
         )
 
-    async def injectJS(self, code: str) -> any:
+    async def evalPromise(self, expression: str) -> dict:
+        """ Выполняет асинхронный код на странице и дожидается
+        получения результата.
+        """
+        result = await self._connection.Runtime.evaluate(
+            expression=expression,
+            objectGroup="console",
+            includeCommandLineAPI=True,
+            silent=False,
+            returnByValue=False,
+            userGesture=True,
+            awaitPromise=False
+        )
+
+        response = await self._connection.Runtime.awaitPromise(
+            promiseObjectId=result.objectId,
+            returnByValue=False,
+            generatePreview=False
+        )
+
+        return json.loads(response.value)
+
+    async def injectJS(self, expression: str) -> any:
         """ Выполняет JavaScript-выражение во фрейме верхнего уровня. """
         try:
-            result = await self._connection.eval(code)
+            response = await self._connection.Runtime.evaluate(
+                expression=expression,
+                objectGroup="console",
+                includeCommandLineAPI=True,
+                silent=False,
+                returnByValue=False,
+                userGesture=True,
+                awaitPromise=False
+            )
         except EvaluateError as error:
             error = str(error)
             if "of null" in error:
@@ -121,15 +150,17 @@ class Extend:
                     prop = match.group(1)
                 else:
                     prop = "unmatched error: " + error
-                raise NullProperty(f"InjectJS() Exception with injected code:\n'{code}'\nNull property:\n{prop}")
+                raise NullProperty("InjectJS() Exception with injected code:"
+                                   f"\n'{expression}'\nNull property:\n{prop}")
 
-            raise JavaScriptError(f"JavaScriptError: InjectJS() Exception with injected code:\n'{code}'\nDescription:\n{error}")
+            raise JavaScriptError("JavaScriptError: InjectJS() Exception with "
+                                  f"injected code:\n'{expression}'\nDescription:\n{error}")
 
-        return result.get('value')
+        return response.value
 
     async def getGeoInfo(self) -> GeoInfo:
-        """
-        Возвращает информацию о Вашем местоположении, вычисленному по IP.
+        """ Возвращает информацию о местоположении точки выхода браузера в сеть,
+        вычисленному по IP.
         """
         async_fn_js = """\
         async function get_geo_info() {
@@ -140,7 +171,7 @@ class Extend:
 
         promise = """fetch('https://time.gologin.com/').then(res => res.text())"""
 
-        result: dict = await self._connection.evalPromise(promise)
+        result: dict = await self._connection.extend.evalPromise(promise)
         result.update(
             geo=dict(
                 latitude=float(result["ll"][0]),
@@ -157,6 +188,3 @@ class Extend:
         if pt is not None:
             del result["proxyType"]
         return GeoInfo(**result)
-
-
-    # endregion
