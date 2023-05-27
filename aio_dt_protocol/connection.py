@@ -4,14 +4,13 @@ except ModuleNotFoundError:
     import json
 import asyncio
 from websockets.client import WebSocketClientProtocol, connect
-
-from .exceptions import EvaluateError, get_cdtp_error, highlight_eval_error, PromiseEvaluateError, \
-    highlight_promise_error
-from .utils import log
-
 from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
-from typing import Callable, Awaitable, Optional, Union, Tuple, List, Dict
+from typing import Callable, Optional, Union, Tuple, Dict, Any, Iterable, Coroutine
+
+from .exceptions import get_cdtp_error
+from .utils import log
+
 from .data import DomainEvent, Sender, Receiver, CommonCallback
 from .extend_connection import Extend
 
@@ -31,6 +30,8 @@ from .domains.runtime import Runtime
 from .domains.system_info import SystemInfo
 from .domains.target import Target
 
+CoroTypeNone = Coroutine[None, None, None]
+
 
 class Connection:
     """ Если инстанс страницы более не нужен, например, при перезаписи в него нового
@@ -40,8 +41,8 @@ class Connection:
     задачи связанные с поддержанием соединения, которое более не востребовано.
     """
     __slots__ = (
-        "ws_url", "frontend_url", "callback", "_id", "extend",
-        "responses", "ws_session", "receiver", "on_detach_listener", "listeners", "listeners_for_event",
+        "ws_url", "frontend_url", "callback", "_id", "extend", "_bindings",
+        "responses", "_ws_session", "_receiver_loop", "_on_detach_listener", "_listeners_for_event",
         "on_close_event", "context_manager", "_connected", "_conn_id", "_verbose",
         "_browser_name", "_is_headless_mode",
 
@@ -71,21 +72,24 @@ class Connection:
         """
 
         self.ws_url = ws_url
-        self._conn_id = conn_id
         self.frontend_url = frontend_url
         self.callback = callback
         self._is_headless_mode = is_headless_mode
-
+        self._conn_id = conn_id
         self._verbose = verbose
         self._browser_name = browser_name
-
         self._id = 0
         self._connected = False
-        self.ws_session: Optional[WebSocketClientProtocol] = None
-        self.receiver: Optional[asyncio.Task] = None
-        self.on_detach_listener: List[Callable[[any], Awaitable[None]], list, dict] = []
-        self.listeners = {}
-        self.listeners_for_event = {}
+        self._ws_session: Optional[WebSocketClientProtocol] = None
+        self._receiver_loop: Optional[asyncio.Task] = None
+        self._on_detach_listener: Tuple[Callable[[any], CoroTypeNone], list, dict] = tuple()
+        self._bindings: Dict[str, Tuple[Callable[[any], CoroTypeNone], Tuple[Any, ...]]] = {}
+        self._listeners_for_event: Dict[
+            str, Dict[
+                Callable[[dict, tuple], CoroTypeNone],
+                Tuple[Any, ...]
+            ]
+        ] = {}
         self.on_close_event = asyncio.Event()
         self.responses: Dict[int, Optional[Sender[dict]]] = {}
 
@@ -168,61 +172,30 @@ class Connection:
         response = await receiver.recv()
         if "error" in response:
 
-            if ex := get_cdtp_error(response['error']['message']):
+            if ex := get_cdtp_error((e := response['error'])['message']):
                 raise ex(f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'")
 
             raise Exception(
-                "Browser detect error:\n" +
-                f"error code -> '{response['error']['code']}';\n" +
-                f"error message -> '{response['error']['message']}'\n"+
-                f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'"
+                "\x1b[36mBrowser detect error:\n" +
+                f"\x1b[37mError code: '\x1b[91m{e['code']}\n" +
+                f"\x1b[37mError message: '\x1b[91m{e['message']}\n" +
+                f"\x1b[37mdomain_and_method: '\x1b[91m{domain_and_method}\n" +
+                f"\x1b[37mparams: '\x1b[91m{params}\x1b[0m\n"
             )
 
-        return response["result"]
-
-    async def eval(
-        self, expression: str,
-        objectGroup:            str = "console",
-        includeCommandLineAPI: bool = True,
-        silent:                bool = False,
-        returnByValue:         bool = False,
-        userGesture:           bool = True,
-        awaitPromise:          bool = False
-    ) -> dict:
-        response = await self.call(
-            "Runtime.evaluate", {
-                "expression": expression,
-                "objectGroup": objectGroup,
-                "includeCommandLineAPI": includeCommandLineAPI,
-                "silent": silent,
-                "returnByValue": returnByValue,
-                "userGesture": userGesture,
-                "awaitPromise": awaitPromise
-            }
-        )
-        if "exceptionDetails" in response:
-            raise EvaluateError(
-                highlight_eval_error(response["result"]["description"], expression)
-            )
         return response["result"]
 
     async def _send(self, data: str) -> None:
         if self.connected:
-            await self.ws_session.send(data)
+            await self._ws_session.send(data)
 
     async def _recv(self) -> None:
         while self.connected:
             try:
-                data_msg: dict = json.loads(await self.ws_session.recv())
+                data_msg: dict = json.loads(await self._ws_session.recv())
             # ! Браузер разорвал соединение
             except ConnectionClosedError as e:
                 if self.verbose: log(f"ConnectionClosedError {e!r}")
-                await self.detach()
-                return
-
-            if ("method" in data_msg and data_msg["method"] == "Inspector.detached"
-                    and data_msg["params"]["reason"] == "target_closed"):
-                self.on_close_event.set()
                 await self.detach()
                 return
 
@@ -230,198 +203,124 @@ class Connection:
             if sender := self.responses.pop(data_msg.get("id"), None):
                 await sender.send(data_msg)
 
+            if ((method := data_msg.get("method")) == "Inspector.detached"
+                    and data_msg["params"]["reason"] == "target_closed"):
+                await self.detach()
+                self.on_close_event.set()
+                return
+
             # Если коллбэк функция была определена, она будет получать все
             #   уведомления из инстанса страницы.
             if self.callback is not None:
                 asyncio.create_task(self.callback(data_msg))
 
-            # Достаточно вызвать в контексте страницы следующее:
-            # console.info(JSON.stringify({
-            #     func_name: "test_func",
-            #     args: [1, "test"]
-            # }))
-            # и если среди зарегистрированных слушателей есть с именем "test_func",
-            #   то он немедленно получит распакованный список args[ ... ], вместе
-            #   с переданными ему аргументами, если таковые имеются.
-            if (method := data_msg.get("method")) == "Runtime.consoleAPICalled":
-                # ? Был вызван домен "info"
-                if data_msg["params"].get("type") == "info":
+            # ? Был вызов из контекста страницы
+            if method == "Runtime.bindingCalled":
+                name: str = data_msg["params"]["name"]
+                payload: str = data_msg["params"]["payload"]
 
-                    str_value = data_msg["params"]["args"][0].get("value")
-                    try:
-                        value: dict = json.loads(str_value)
-                    except ValueError as e:
-                        if self.verbose:
-                            log(f"ValueError {e!r}")
-                            log(f"Msg from browser {str_value!r}")
-                        raise
-
-                    # ? Есть ожидающие слушатели
-                    if self.listeners:
-
-                        # ? Если есть ожидающая корутина
-                        if listener := self.listeners.get( value.get("func_name") ):
-                            asyncio.create_task(
-                                listener["function"](                               # корутина
-                                    *(value["args"] if "args" in value else []),    # её список аргументов вызова
-                                    *listener["args"]                               # список bind-агрументов
-                                )
-                            )
-
-            # По этой же схеме будут вызваны все слушатели для обработки
-            #   определённого метода, вызванного в контексте страницы,
-            #   если для этого метода они зарегистрированы.
-            if (    # =============================================================
-                    self.listeners_for_event
-                            and
-                    method in self.listeners_for_event
-            ):      # =============================================================
-                # Получаем словарь слушателей, в котором ключи — слушатели,
-                #   значения — их аргументы.
-                listeners: dict = self.listeners_for_event[ method ]
-                p = data_msg.get("params")
-                for listener, args in listeners.items():
+                # ? Есть вызываемый объект с таким именем
+                if handle := self._bindings.get(name):
+                    function, args = handle
                     asyncio.create_task(
-                        listener(                                           # корутина
-                            p if p is not None else {},                     # её "params" — всегда передаётся
-                            *args                                           # список bind-агрументов
+                        function(
+                            *json.loads(payload),
+                            *args
                         )
                     )
 
-    async def evalPromise(self, script: str) -> dict:
-        """ Выполняет асинхронный код на странице и возвращает результат.
-        !!! ВАЖНО !!! Выполняемый код не может возвращать какие-либо JS
-        типы, поэтому должен возвращать JSON-сериализованный набор данных.
-        """
-        result = await self.eval(script)
-        args = dict(
-            promiseObjectId=result["objectId"],
-            returnByValue=False,
-            generatePreview=False
-        )
-        response = await self.Runtime.awaitPromise(**args)
-        if "exceptionDetails" in response:
-            raise PromiseEvaluateError(
-                highlight_promise_error(response["result"]["description"]) +
-                "\n" + json.dumps(response["exceptionDetails"])
-            )
-        return json.loads(response["result"]["value"])
+            if listeners := self._listeners_for_event.get(method):
+                p = data_msg.get("params") or {}
+                for listener, largs in listeners.items():
+                    asyncio.create_task(
+                        listener(       # корутина
+                            p,          # её "params" — всегда передаётся
+                            *largs      # список bind-агрументов
+                        )
+                    )
+
+
 
     async def waitForClose(self) -> None:
         """ Дожидается, пока не будет потеряно соединение со страницей. """
         await self.on_close_event.wait()
 
     async def activate(self) -> None:
-        self.ws_session = await connect(self.ws_url, ping_interval=None)
+        self._ws_session = await connect(self.ws_url, ping_interval=None)
         self._connected = True
-        self.receiver = asyncio.create_task(self._recv())
-        if self.callback is not None:
-            await self.Runtime.enable()
+        self._receiver_loop = asyncio.create_task(self._recv())
+        await self.Runtime.enable()
 
     async def detach(self) -> None:
-        """
-        Отключается от инстанса страницы. Вызывается автоматически при закрытии браузера,
-            или инстанса текущей страницы. Принудительный вызов не закрывает страницу,
-            а лишь разрывает с ней соединение.
+        """  Отключается от страницы. Вызывается автоматически при закрытии браузера,
+        или текущей страницы. Принудительный вызов не закрывает страницу,
+        а лишь разрывает с ней соединение.
         """
         if not self.connected:
             return
 
-        self.receiver.cancel()
+        self._receiver_loop.cancel()
         if self.verbose: log(f"[ DETACH ] {self.conn_id}")
         self._connected = False
 
-        if self.on_detach_listener:
-            function, args, kvargs = self.on_detach_listener
+        if self._on_detach_listener:
+            function, args, kvargs = self._on_detach_listener
             await function(*args, **kvargs)
 
-    def removeOnDetach(self) -> None:
-        self.on_detach_listener = []
+    def clearOnDetach(self) -> None:
+        self._on_detach_listener = tuple()
 
-    def setOnDetach(self, function: Callable[[any], Awaitable[None]], *args, **kvargs) -> bool:
-        """
-        Регистрирует асинхронный коллбэк, который будет вызван с соответствующими аргументами
-            при разрыве соединения со страницей.
+    def setOnDetach(self, function: Callable[[any], CoroTypeNone], *args, **kvargs) -> bool:
+        """  Регистрирует асинхронный коллбэк, который будет вызван с соответствующими аргументами
+        при разрыве соединения со страницей.
         """
         if not iscoroutinefunction(function):
             raise TypeError("OnDetach-listener must be a async callable object!")
         if not self.connected:
             return False
-        self.on_detach_listener = [function, args, kvargs]
+        self._on_detach_listener = function, args, kvargs
         return True
 
-    async def addListener(self, listener: Callable[[any], Awaitable[None]], *args: any) -> None:
+    async def bindFunction(self, function: Callable[[any], CoroTypeNone], *args: Any) -> None:
+        """ Регистрирует имя в глобальном контексте страницы. Это имя затем используется
+        в вызове функции, принимающей ровно один, строковый аргумент, который передаётся
+        в тело события `Runtime.bindingCalled`.
         """
-        Добавляет 'слушателя', который будет ожидать свой вызов по имени функции.
-            Вызов слушателей из контекста страницы осуществляется за счёт
-            JSON-сериализованного объекта, отправленного сообщением в консоль,
-            через домен 'info'. Объект должен содержать два обязательных свойства:
-                funcName — имя вызываемого слушателя
-                args:    — массив аргументов
-
-            Например, вызов javascript-кода:
-                console.info(JSON.stringify({
-                    funcName: "test_func",
-                    args: [1, "test"]
-                }))
-            Вызовет следующего Python-слушателя:
-                async def test_func(id, text, action):
-                    print(id, text, action)
-            Зарегистрированного следующим образом:
-                await page.AddListener(test_func, "test-action")
-
-            !!! ВНИМАНИЕ !!! В качестве слушателя может выступать ТОЛЬКО асинхронная
-                функция, или метод.
-
-        :param listener:        Асинхронная функция.
-        :param args:            (optional) любое кол-во аргументов, которые будут переданы
-                                    в функцию последними.
-        :return:        None
-        """
-        if not iscoroutinefunction(listener):
+        if not iscoroutinefunction(function):
             raise TypeError("Listener must be a async callable object!")
-        if listener.__name__ not in self.listeners:
-            self.listeners[ listener.__name__ ] = {"function": listener, "args": args}
-            if not self.Runtime.enabled:
-                await self.Runtime.enable()
 
-    async def addListeners(
-            self, *list_of_tuple_listeners_and_args: Tuple[Callable[[any], Awaitable[None]], list]) -> None:
-        """
-        Делает то же самое, что и AddListener(), но может зарегистрировать сразу несколько слушателей.
-            Принимает список кортежей с двумя элементами, вида (async_func_or_method, list_args), где:
-                async_func_or_method    - асинхронная фукция или метод
-                list_args               - список её аргументов(может быть пустым)
-        """
-        for action in list_of_tuple_listeners_and_args:
-            listener, args = action
-            if not iscoroutinefunction(listener):
-                raise TypeError("Listener must be a async callable object!")
-            if listener.__name__ not in self.listeners:
-                self.listeners[listener.__name__] = {"function": listener, "args": args}
-                if not self.Runtime.enabled:
-                    await self.Runtime.enable()
+        self._bindings[function.__name__] = function, args
+        await self.Runtime.addBinding(function.__name__)
 
-    def removeListener(self, listener: Callable[[any], Awaitable[None]]) -> None:
+    async def bindFunctions(
+            self, *handlers_n_args: Tuple[Callable[[any], CoroTypeNone], Iterable]) -> None:
+        """ Выполняет множественную регистрацию.
+        :param handlers_n_args:     Список двухэлементных последовательностей,
+        в которых:
+            - первый элемент: awaitable-объект
+            - второй элемент: последовательность аргументов любой длины, которая
+                будет передана первому элементу в последнюю очередь.
         """
-        Удаляет слушателя.
-        :param listener:        Колбэк-функция.
-        :return:        None
+        for function, args in handlers_n_args:
+            await self.bindFunction(function, *args)
+
+    async def unbindFunctions(self, *functions: Union[Callable[[any], CoroTypeNone], str]) -> None:
+        """ Прекращает генерацию событий `Runtime.bindingCalled` для указанных имён.
+        :param functions:  Список функций, или их имён.
         """
-        if not iscoroutinefunction(listener):
-            raise TypeError("Listener must be a async callable object!")
-        if listener.__name__ in self.listeners:
-            del self.listeners[ listener.__name__ ]
+        for function in functions:
+            name = function if type(function) is str else function.__name__
+            self._bindings.pop(name)
+            await self.Runtime.removeBinding(name)
 
     async def addListenerForEvent(
-        self, event: Union[str, DomainEvent], listener: Callable[[any], Awaitable[None]], *args) -> None:
-        """
-        Регистирует слушателя, который будет вызываться при вызове определённых событий
-            в браузере. Список таких событий можно посмотреть в разделе "Events" почти
-            у каждого домена по адресу: https://chromedevtools.github.io/devtools-protocol/
-            Например: 'DOM.attributeModified'
-        !Внимание! Каждый такой слушатель должен иметь один обязательный 'data'-аргумент,
-            в который будут передаваться параметры случившегося события в виде словаря(dict).
+        self, event: Union[str, DomainEvent], listener: Callable[[dict, tuple], CoroTypeNone], *args) -> None:
+        """ Регистрирует слушателя, который будет вызываться при генерации определённых событий
+        в браузере. Список таких событий можно посмотреть в разделе "Events" почти
+        у каждого домена по адресу: https://chromedevtools.github.io/devtools-protocol/
+        Например: 'DOM.attributeModified'
+            !Внимание! Каждый такой слушатель должен иметь один обязательный 'data'-аргумент,
+        в который будут передаваться параметры случившегося события в виде словаря(dict).
 
         :param event:           Имя события, для которого регистируется слушатель. Например:
                                     'DOM.attributeModified'.
@@ -430,19 +329,17 @@ class Connection:
                                     в функцию последними.
         :return:        None
         """
-        e = event if type(event) is str else event.value
         if not iscoroutinefunction(listener):
             raise TypeError("Listener must be a async callable object!")
-        if e not in self.listeners_for_event:
-            self.listeners_for_event[ e ]: dict = {}
-        self.listeners_for_event[ e ][listener] = args
-        if not self.Runtime.enabled:
-            await self.Runtime.enable()
+
+        e: str = event if type(event) is str else event.value
+        if e not in self._listeners_for_event:
+            self._listeners_for_event[e]: dict = {}
+        self._listeners_for_event[e][listener] = args
 
     def removeListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable[[any], Awaitable[None]]) -> None:
-        """
-        Удаляет регистрацию слушателя для указанного события.
+            self, event: Union[str, DomainEvent], listener: Callable[[dict, tuple], CoroTypeNone]) -> None:
+        """  Удаляет регистрацию слушателя для указанного события.
         :param event:           Имя метода, для которого была регистрация.
         :param listener:        Колбэк-функция, которую нужно удалить.
         :return:        None
@@ -450,7 +347,7 @@ class Connection:
         e = event if type(event) is str else event.value
         if not iscoroutinefunction(listener):
             raise TypeError("Listener must be a async callable object!")
-        if m := self.listeners_for_event.get( e ):
+        if m := self._listeners_for_event.get(e):
             if listener in m: m.pop(listener)
 
 
@@ -461,8 +358,8 @@ class Connection:
         :return:        None
         """
         e = event if type(event) is str else event.value
-        if e in self.listeners_for_event:
-            self.listeners_for_event.pop(e)
+        if e in self._listeners_for_event:
+            self._listeners_for_event.pop(e)
 
     def __del__(self) -> None:
         if self.verbose: log(f"[ DELETED ] {self.conn_id}")

@@ -3,10 +3,22 @@ try:
 except ModuleNotFoundError:
     import json
 
-from typing import Optional, List
-from .types import PropertyDescriptor, ContextManager, ContextDescription, Script
+from typing import Optional, List, Dict, Union
+from .types import (
+    PropertyDescriptor,
+    ContextManager,
+    ContextDescription,
+    Script,
+    SerializationOptions,
+    RemoteObject,
+)
 from ...data import DomainEvent
-from ...exceptions import PromiseEvaluateError, highlight_promise_error
+from ...exceptions import (
+    PromiseEvaluateError,
+    highlight_promise_error,
+    EvaluateError,
+    highlight_eval_error
+)
 
 
 class Runtime:
@@ -69,22 +81,109 @@ class Runtime:
             result.append(PropertyDescriptor(**p))
         return result
 
+    async def evaluate(
+            self, expression: str,
+            objectGroup: Optional[str] = None,
+            includeCommandLineAPI: Optional[bool] = None,
+            silent: Optional[bool] = None,
+            contextId: Optional[int] = None,
+            returnByValue: Optional[bool] = None,
+            generatePreview: Optional[bool] = None,
+            userGesture: Optional[bool] = None,
+            awaitPromise: Optional[bool] = None,
+            throwOnSideEffect: Optional[bool] = None,
+            timeout: Optional[float] = None,
+            disableBreaks: Optional[bool] = None,
+            replMode: Optional[bool] = None,
+            allowUnsafeEvalBlockedByCSP: Optional[bool] = None,
+            uniqueContextId: Optional[str] = None,
+            serializationOptions: Optional[SerializationOptions] = None,
+    ) -> RemoteObject:
+        """ Выполняет JavaScript-выражение в глобальном контексте.
+        https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#method-evaluate
+        :param expression:  JavaScript-выражение.
+        :param objectGroup: Символическое имя группы, которое можно использовать
+            для освобождения нескольких объектов.
+        :param includeCommandLineAPI:   Определяет, должен ли быть доступен API
+            командной строки во время выполнения выражения.
+        :param silent:  В автоматическом режиме исключения, возникающие во время
+            выполнения выражения, не сообщаются и не приостанавливают выполнение.
+            Переопределяет setPauseOnException состояние.
+        :param contextId:   Указывает, в каком контексте выполнения выполнять выражение.
+            Если параметр опущен, оценка будет выполняться в контексте проверяемой
+            страницы. Это взаимоисключающее свойство uniqueContextId, которое предлагает
+            альтернативный способ определения контекста выполнения, более надежный в
+            многопроцессорной среде.
+        :param returnByValue:   Ожидается ли, что результат будет объектом JSON, который
+            должен быть отправлен по значению.
+        :param generatePreview: Должен ли быть создан предварительный просмотр для результата.
+        :param userGesture: Следует ли рассматривать выполнение как инициированное
+            пользователем в пользовательском интерфейсе.
+        :param awaitPromise:    Должно ли выполнение выражения ожидать результирующего
+            значения и возвращаться после завершения промиса.
+        :param throwOnSideEffect:   Выбрасывать ли исключение, если во время выполнения
+            выражения нельзя исключить побочный эффект. Это подразумевает использование
+             disableBreaks аргумента.
+        :param timeout: Прервать выполнение по истечении времени ожидания (количество миллисекунд).
+        :param disableBreaks:   Отключите точки останова во время выполнения выражения.
+        :param replMode:    Установка этого флага в значение true разрешает повторное
+            объявление переменных используя 'let', а так же вызов awaitable инструкций
+            в top-level контекста. Обратите внимание, что переменные let могут быть
+            повторно объявлены только в том случае, если они сами происходят из replMode.
+        :param allowUnsafeEvalBlockedByCSP: Политика безопасности содержимого (CSP)
+            для target может блокировать «unsafe-eval», который включает eval(),
+            Function(), setTimeout() и setInterval() при вызове с аргументами, которые
+            нельзя вызывать. Этот флаг обходит CSP для этой оценки и разрешает
+            небезопасную оценку. По умолчанию true.
+        :param uniqueContextId: Альтернативный способ указать контекст выполнения
+            для выполнения выражения. По сравнению с contextId, который может повторно
+            использоваться в процессах, он гарантированно уникален для системы, поэтому
+            его можно использовать для предотвращения случайного вычисления выражения
+            в контексте, отличном от предполагаемого (например, в результате навигации
+            через границы процесса). Это взаимоисключающее значение с contextId.
+        :param serializationOptions:    Указывает сериализацию результата. Если указано,
+            переопределяет generatePreview, returnByValue.
+        :return:
+        """
+        args = {"expression": expression}
+        if objectGroup is not None: args.update(objectGroup=objectGroup)
+        if includeCommandLineAPI is not None:
+            args.update(includeCommandLineAPI=includeCommandLineAPI)
+        if silent is not None: args.update(silent=silent)
+        if contextId is not None: args.update(contextId=contextId)
+        if returnByValue is not None: args.update(returnByValue=returnByValue)
+        if generatePreview is not None: args.update(generatePreview=generatePreview)
+        if userGesture is not None: args.update(userGesture=userGesture)
+        if awaitPromise is not None: args.update(awaitPromise=awaitPromise)
+        if throwOnSideEffect is not None: args.update(throwOnSideEffect=throwOnSideEffect)
+        if timeout is not None: args.update(timeout=timeout)
+        if disableBreaks is not None: args.update(disableBreaks=disableBreaks)
+        if replMode is not None: args.update(replMode=replMode)
+        if allowUnsafeEvalBlockedByCSP is not None:
+            args.update(allowUnsafeEvalBlockedByCSP=allowUnsafeEvalBlockedByCSP)
+        if uniqueContextId is not None: args.update(uniqueContextId=uniqueContextId)
+        if serializationOptions is not None:
+            args.update(serializationOptions=serializationOptions.as_dict())
+
+        response = await self._connection.call("Runtime.evaluate", args)
+        if "exceptionDetails" in response:
+            raise EvaluateError(
+                highlight_eval_error(response["result"]["description"], expression)
+            )
+
+        return RemoteObject(**response["result"])
 
     async def awaitPromise(
             self, promiseObjectId: str, returnByValue: bool = False, generatePreview: bool = False
-    ) -> dict:
-        """
-        Добавляет обработчик к промису с переданным идентификатором.
+    ) -> RemoteObject:
+        """ Дожидается выполнения промиса с указанным promiseObjectId.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-awaitPromise
         :param promiseObjectId:     Идентификатор промиса.
         :param returnByValue:       (optional) Ожидается ли результат в виде объекта JSON,
                                         который должен быть отправлен по значению.
         :param generatePreview:     (optional) Должен ли предварительный просмотр
                                         генерироваться для результата.
-        :return:                    {
-                                        "result": dict(https://chromedevtools.github.io/devtools-protocol/tot/Runtime#type-RemoteObject)
-                                        "exceptionDetails": dict(https://chromedevtools.github.io/devtools-protocol/tot/Runtime#type-ExceptionDetails)
-                                    }
+        :return:
         """
         args = {"promiseObjectId": promiseObjectId, "returnByValue": returnByValue, "generatePreview": generatePreview}
         response = await self._connection.call("Runtime.awaitPromise", args)
@@ -93,7 +192,7 @@ class Runtime:
                 highlight_promise_error(response["result"]["description"]) +
                 "\n" + json.dumps(response["exceptionDetails"])
             )
-        return response["result"]
+        return RemoteObject(**response["result"])
 
     async def callFunctionOn(
             self, functionDeclaration: str,
@@ -105,8 +204,11 @@ class Runtime:
             userGesture: Optional[bool] = None,
             awaitPromise: Optional[bool] = None,
             executionContextId: Optional[int] = None,
-            objectGroup: Optional[str] = None
-    ) -> dict:
+            objectGroup: Optional[str] = None,
+            throwOnSideEffect: Optional[bool] = None,
+            uniqueContextId: Optional[str] = None,
+            serializationOptions: Optional[SerializationOptions] = None
+    ) -> RemoteObject:
         """
         Вызывает функцию с заданным объявлением для данного объекта. Группа объектов результата
             наследуется от целевого объекта.
@@ -135,7 +237,17 @@ class Runtime:
                                             использовать для освобождения нескольких объектов. Если
                                             objectGroup не указан, а objectId равен, objectGroup
                                             будет унаследован от объекта.
-        :return:                        { ... } - https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#type-RemoteObject
+        :param throwOnSideEffect:   Выбрасывать ли исключение, если во время выполнения функции
+            нельзя исключить побочный эффект.
+        :param uniqueContextId: Альтернативный способ указать контекст выполнения
+            для выполнения выражения. По сравнению с contextId, который может повторно
+            использоваться в процессах, он гарантированно уникален для системы, поэтому
+            его можно использовать для предотвращения случайного вычисления выражения
+            в контексте, отличном от предполагаемого (например, в результате навигации
+            через границы процесса). Это взаимоисключающее значение с contextId.
+        :param serializationOptions:    Указывает сериализацию результата. Если указано,
+            переопределяет generatePreview, returnByValue.
+        :return:
         """
         args = {"functionDeclaration": functionDeclaration}
         if objectId is not None:
@@ -156,10 +268,18 @@ class Runtime:
             args.update({"executionContextId": executionContextId})
         if objectGroup is not None:
             args.update({"objectGroup": objectGroup})
+        if throwOnSideEffect is not None:
+            args.update(throwOnSideEffect=throwOnSideEffect)
+        if uniqueContextId is not None:
+            args.update(uniqueContextId=uniqueContextId)
+        if serializationOptions is not None:
+            args.update(serializationOptions=serializationOptions.as_dict())
         response = await self._connection.call("Runtime.callFunctionOn", args)
         if "exceptionDetails" in response:
-            raise Exception(response["result"]["description"] + "\n" + json.dumps(response["exceptionDetails"]))
-        return response["result"]
+            raise EvaluateError(
+                highlight_eval_error(response["result"]["description"], functionDeclaration)
+            )
+        return RemoteObject(**response["result"])
 
     async def enable(self, watch_for_execution_contexts: bool = False) -> None:
         """
@@ -222,21 +342,27 @@ class Runtime:
             self.context_manager.is_watch = False
 
     async def discardConsoleEntries(self) -> None:
-        """
-        Отбрасывает собранные исключения и вызовы API консоли.
+        """ Отбрасывает собранные исключения и вызовы API консоли.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-discardConsoleEntries
         :return:
         """
         await self._connection.call("Runtime.discardConsoleEntries")
 
     async def releaseObjectGroup(self, objectGroup: str) -> None:
-        """
-        Освобождает все удаленные объекты, принадлежащие данной группе.
+        """ Освобождает все удаленные объекты, принадлежащие данной группе.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-releaseObjectGroup
         :param objectGroup:             Символическое имя группы.
         :return:
         """
-        await self._connection.call("Runtime.releaseObjectGroup", {"objectGroup": objectGroup})
+        await self._connection.call("Runtime.releaseObjectGroup", dict(objectGroup=objectGroup))
+
+    async def releaseObject(self, objectId: str) -> None:
+        """  Освобождает удаленный объект, с указанным objectId.
+        https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-releaseObject
+        :param objectId:             Символическое имя группы.
+        :return:
+        """
+        await self._connection.call("Runtime.releaseObject", dict(objectId=objectId))
 
     async def compileScript(
             self, expression: str,
@@ -244,8 +370,7 @@ class Runtime:
             persistScript: bool = True,
             executionContextId: Optional[int] = None
     ) -> str:
-        """
-        Компилирует выражение.
+        """ Компилирует выражение.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-compileScript
         :param expression:              Выражение для компиляции.
         :param sourceURL:               Исходный URL для скрипта.
@@ -253,27 +378,26 @@ class Runtime:
         :param executionContextId:      (optional) Указывает, в каком контексте выполнения выполнять сценарий.
                                             Если параметр не указан, выражение будет выполняться в контексте
                                             проверяемой страницы.
-        :return:                        {
-                                            "scriptId": str()
-                                            "exceptionDetails": dict(https://chromedevtools.github.io/devtools-protocol/tot/Runtime#type-ExceptionDetails)
-                                        }
+        :return:
         """
-        args = {"expression": expression, "sourceURL": sourceURL, "persistScript": persistScript}
+        args: Dict[str, Union[int, str, bool]] = dict(
+            expression=expression, sourceURL=sourceURL, persistScript=persistScript)
         if executionContextId is not None:
-            args.update({"executionContextId": executionContextId})
+            args.update(executionContextId=executionContextId)
 
         response = await self._connection.call("Runtime.compileScript", args)
         if "exceptionDetails" in response:
-            raise Exception(response["exceptionDetails"]["text"] + "\n" + json.dumps(response["exceptionDetails"]))
+            raise EvaluateError(
+                highlight_eval_error(response["result"]["description"], expression)
+            )
         return response["scriptId"]
 
     async def buildScript(self, expression: str, context: Optional[ContextDescription] = None) -> Script:
         return Script(self._connection, expression, context)
 
     async def runIfWaitingForDebugger(self) -> None:
-        """
-        Сообщает инспектируемой странице, что можно запуститься, если она ожидает этого после
-            Target.setAutoAttach.
+        """ Сообщает инспектируемой странице, что можно запуститься, если она ожидает этого после
+        Target.setAutoAttach.
         """
         await self._connection.call("Runtime.runIfWaitingForDebugger")
 
@@ -286,7 +410,7 @@ class Runtime:
             returnByValue: bool = False,
             generatePreview: bool = False,
             awaitPromise: bool = True
-    ) -> dict:
+    ) -> RemoteObject:
         """
         Запускает скрипт с заданным идентификатором в заданном контексте.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-runScript
@@ -321,21 +445,20 @@ class Runtime:
 
         response = await self._connection.call("Runtime.runScript", args)
         if "exceptionDetails" in response:
-            raise Exception(response["result"]["description"] + "\n" + json.dumps(response["exceptionDetails"]))
-        return response["result"]
+            raise EvaluateError(
+                highlight_eval_error(response["result"]["description"], "scriptId: " + scriptId)
+            )
+        return RemoteObject(**response["result"])
 
-    async def addBinding(self, name: str, executionContextName: Optional[int] = None) -> None:
-        """
-        (EXPERIMENTAL)
-        Если executeContextId пуст, добавляет привязку с заданным именем к глобальным объектам всех
-            проверенных контекстов, включая созданные позже, привязки переживают перезагрузки. Если
-            указан executeContextId, добавляет привязку только к глобальному объекту данного
-            контекста выполнения. Функция привязки принимает ровно один аргумент, этот аргумент
-            должен быть строкой, в случае любого другого ввода функция выдает исключение. Каждый
-            вызов функции привязки создает уведомление Runtime.bindingCalled.
+    async def addBinding(self, name: str, executionContextName: Optional[str] = None) -> None:
+        """ Делает доступным переданное имя в качестве имени функции, доступной глобально. Вызов
+        такой функции принимает ровно один аргумент типа `string`, иначе возбуждается исключение
+        с текстом `Invalid arguments: should be exactly one string.`. Каждый вызов функции по
+        этому имени создает уведомление Runtime.bindingCalled, в теле которого, поле `payload`
+        будет содержать строку, переданную в качестве аргумента вызванной функции.
         https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-addBinding
-        :param name:                    Имя привязки.
-        :param executionContextName:      (optional) Идентификатор контекста исполнения.
+        :param name:                    Имя вызываемой функции.
+        :param executionContextName:    (optional) Имя контекста исполнения.
         :return:
         """
         args = {"name": name}
@@ -343,6 +466,15 @@ class Runtime:
             args.update({"executionContextName": executionContextName})
 
         await self._connection.call("Runtime.addBinding", args)
+
+    async def removeBinding(self, name: str) -> None:
+        """ Удаляет привязку по имени. Функцию всё ещё можно будет вызвать, но событие
+        'Runtime.bindingCalled' возбуждаться  не будет.
+        https://chromedevtools.github.io/devtools-protocol/tot/Runtime#method-removeBinding
+        :param name:                    Имя вызываемой функции.
+        :return:
+        """
+        await self._connection.call("Runtime.removeBinding", dict(name=name))
 
 
 class RuntimeEvent(DomainEvent):

@@ -1,5 +1,24 @@
 from dataclasses import dataclass, field
-from typing import Literal, Optional, List, Union
+from typing import Literal, Optional, List, Union, Dict
+
+
+@dataclass
+class BindingCalledData:
+    name: str
+    payload: str
+    executionContextId: int
+
+
+@dataclass
+class SerializationOptions:
+    serialization: Literal["deep", "json", "idOnly"]
+    maxDepth: Optional[int] = None
+
+    def as_dict(self) -> Dict[str, Union[str, int]]:
+        result = {"serialization": self.serialization}
+        if self.maxDepth is not None:
+            result.update({"maxDepth": self.maxDepth})
+        return result
 
 
 @dataclass
@@ -86,8 +105,8 @@ class RemoteObject:
     # https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#type-RemoteObject
     """
     type: Literal["object", "function", "undefined", "string", "number", "boolean", "symbol", "bigint"]
-    preview: Optional['ObjectPreview']
-    customPreview: Optional['CustomPreview']
+    preview: Optional["ObjectPreview"]
+    customPreview: Optional["CustomPreview"]
     subtype: Optional[Literal[
         "array", "null", "node", "regexp", "date", "map", "set", "weakmap", "weakset", "iterator", "generator",
         "error", "proxy", "promise", "typedarray", "arraybuffer", "dataview", "webassemblymemory", "wasmvalue"]] = None
