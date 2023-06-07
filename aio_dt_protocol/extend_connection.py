@@ -15,15 +15,23 @@ from .exceptions import EvaluateError, JavaScriptError, NullProperty
 class Extend:
     """ Расширение для 'Page' некоторыми полезными методами.
     """
-    __slots__ = ("_connection", "action")
+    __slots__ = ("_connection", "action", "_py_call_script_id")
 
     def __init__(self, conn) -> None:
 
         from .connection import Connection
 
         self._connection: Connection = conn
+        self._py_call_script_id: str = ""
         self.action = Actions(conn)             # Совершает действия на странице. Клики;
                                                 # движения мыши; события клавиш
+
+    @property
+    def py_call_enabled(self) -> bool:
+        """ Был ли обработчик `py_call()` зарегистрирован на страницу.
+        """
+        return bool(self._py_call_script_id)
+
     async def pyCallAddOnload(self) -> None:
         """ Включает автоматически добавляющийся JavaScript, вызывающий слушателей
         клиента, добавленных на страницу с помощью await <Connection>.bindFunction(...)
@@ -43,22 +51,32 @@ class Extend:
         Может быть вызвана со страницы браузера, так:
         py_call("test_func", 1, "testtt");
         """
+        if self.py_call_enabled:
+            return
+
         py_call_js = """\
         function py_call(funcName,...args){eval(funcName+"(`"+JSON.stringify(args)+"`)");}"""
-        await self._connection.Page.addScriptOnLoad(py_call_js)
+        self._py_call_script_id = await self._connection.Page.addScriptOnLoad(py_call_js)
         await self.injectJS(py_call_js)
 
-    async def getViewportRect(self) -> ViewportRect:
+    async def pyCallRemoveOnLoad(self) -> None:
+        """ Удаляет автоматическое добавление JavaScript, установленного
+        pyCallAddOnload().
         """
-        Возвращает список с длиной и шириной вьюпорта браузера.
+        if self.py_call_enabled:
+            await self._connection.Page.removeScriptOnLoad(self._py_call_script_id)
+            self._py_call_script_id = ""
+
+
+    async def getViewportRect(self) -> ViewportRect:
+        """ Возвращает список с длиной и шириной вьюпорта браузера.
         """
         code = "(()=>{return JSON.stringify([window.innerWidth,window.innerHeight]);})();"
         data = json.loads(await self.injectJS(code))
         return ViewportRect(int(data[0]), int(data[1]))
 
     async def getWindowRect(self) -> WindowRect:
-        """
-        Возвращает список с длиной и шириной окна браузера.
+        """ Возвращает список с длиной и шириной окна браузера.
         """
         code = "(()=>{return JSON.stringify([window.outerWidth,window.outerHeight]);})();"
         data = json.loads(await self.injectJS(code))
@@ -77,8 +95,7 @@ class Extend:
                    clip: Optional[dict] = None,
             fromSurface: bool = True
     ) -> bytes:
-        """
-        Сделать скриншот. Возвращает набор байт, представляющий скриншот.
+        """  Сделать скриншот. Возвращает набор байт, представляющий скриншот.
         :param format_:         jpeg или png (по умолчанию png).
         :param quality:         Качество изображения в диапазоне [0..100] (только для jpeg).
         :param clip:            {

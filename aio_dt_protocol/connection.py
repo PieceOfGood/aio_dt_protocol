@@ -291,6 +291,7 @@ class Connection:
 
         self._bindings[function.__name__] = function, args
         await self.Runtime.addBinding(function.__name__)
+        await self.extend.pyCallAddOnload()
 
     async def bindFunctions(
             self, *handlers_n_args: Tuple[Callable[[any], CoroTypeNone], Iterable]) -> None:
@@ -303,6 +304,7 @@ class Connection:
         """
         for function, args in handlers_n_args:
             await self.bindFunction(function, *args)
+        await self.extend.pyCallAddOnload()
 
     async def unbindFunctions(self, *functions: Union[Callable[[any], CoroTypeNone], str]) -> None:
         """ Прекращает генерацию событий `Runtime.bindingCalled` для указанных имён.
