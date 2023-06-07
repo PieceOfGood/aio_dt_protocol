@@ -3,7 +3,8 @@ import subprocess
 import re
 import sys
 import urllib.request
-from typing import Optional, Dict, Callable
+from pathlib import Path
+from typing import Optional, Dict, Callable, Union
 
 
 def get_request(url: str) -> str:
@@ -14,7 +15,7 @@ def get_request(url: str) -> str:
 def find_browser_executable_path(exe="chrome") -> str:
     """ Возвращает путь до EXE. """
     if not sys.platform == "win32":
-        raise OSError("registry_read_key() is only available on Windows")
+        raise OSError("find_browser_executable_path() is only available on Windows")
 
     if exe == "chromium":
         import os
@@ -42,9 +43,10 @@ def log(data: any = "", lvl: str = "[<- V ->]", eol: str = "\n") -> None:
     print(f"\x1b[32m{lvl} \x1b[38m\x1b[3m{data}\x1b[0m", end=eol)
 
 
-def save_img_as(path: str, data: bytes) -> None:
-    """ Сохраняет по пути 'path' набор байт 'data', которые можно прислать
-    из метода страницы MakeScreenshot()
+def save_img_as(path: Union[str, Path], data: bytes) -> None:
+    """ Сохраняет набор байт возвращаемый из conn.extend.makeScreenshot(), как изображение.
+    :param path:    Путь, или имя файла сохраняемого изображения.
+    :param data:    Данные изображения.
     """
     with open(path, "wb") as f:
         f.write(data)
@@ -53,7 +55,7 @@ def save_img_as(path: str, data: bytes) -> None:
 async def async_util_call(function: Callable, *args) -> any:
     """ Позволяет выполнять неблокирующий вызов блокирующих функций. Например:
     await async_util_call(
-        save_img_as, "ScreenShot.png", await page_instance.MakeScreenshot()
+        save_img_as, "ScreenShot.png", await conn.extend.makeScreenshot()
     )
     """
     return await asyncio.get_running_loop().run_in_executor(

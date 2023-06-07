@@ -90,9 +90,9 @@ class Extend:
 
     async def makeScreenshot(
             self,
-                 format_: str = "",
-                 quality: int = -1,
-                   clip: Optional[dict] = None,
+            format_: str = "",
+            quality: int = -1,
+            clip: Optional[dict] = None,
             fromSurface: bool = True
     ) -> bytes:
         """  Сделать скриншот. Возвращает набор байт, представляющий скриншот.
