@@ -13,7 +13,7 @@ from .exceptions import EvaluateError, JavaScriptError, NullProperty
 
 
 class Extend:
-    """ Расширение для 'Page' некоторыми полезными методами.
+    """ Расширение для 'Connection' некоторыми полезными методами.
     """
     __slots__ = ("_connection", "action", "_py_call_script_id")
 
