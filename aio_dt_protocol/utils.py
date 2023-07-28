@@ -5,6 +5,7 @@ import sys
 import urllib.request
 from pathlib import Path
 from typing import Optional, Dict, Callable, Union
+from urllib.parse import quote
 
 
 def get_request(url: str) -> str:
@@ -119,3 +120,32 @@ def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> D
     else:
         raise OSError(f"Platform '{sys.platform}' — not supported")
     return {} if for_port else result
+
+
+def prepare_url(url: Union[str, bytes, None], browser_name: str, app: bool = False) -> Optional[str]:
+    """ Подготавливает строку для передачи в navigate(), или в конструкторе Browser."""
+
+    # Если url == None
+    if url is None:
+        return "--app=data:text/html," if app else None
+
+    # Если передали строку
+    if type(url) is str:
+
+        # И эта строка - пустая
+        if url == "":
+            return "--app=data:text/html," if app else "about:blank"
+
+        # Но если строка не содержит признаков url-адреса, то
+        # считаем это HTML-разметкой
+        if not url.startswith(("http", browser_name)):
+            url = "data:text/html," + quote(url)
+            return "--app=" + url if app else url
+
+        # Иначе - это адрес
+        return "--app=" + url if app else url
+
+    # Иначе считаем, что это не конвертированный набор байт
+    # из base64, в котором HTML-разметка
+    url = "data:text/html;Base64," + url.decode()
+    return "--app=" + url if app else url

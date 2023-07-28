@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from enum import Enum
 from asyncio import Queue
 
-
 CommonCallback = Optional[Callable[[dict], Coroutine[None, None, None]]]
 T = TypeVar("T")
 

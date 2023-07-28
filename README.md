@@ -2,16 +2,20 @@
 
 Запуски проводятся только в ОС Windows и Linux.
 
-### Установка
-```shell
-pip install aio-dt-protocol
-```
-
 Имеет одну зависимость:
 https://github.com/aaugustin/websockets
 
 И так как всё общение через протокол основано на формате JSON, по желанию можно установить в окружение ujson:
 https://github.com/ultrajson/ultrajson
+
+### Установка
+```shell
+pip install aio-dt-protocol
+```
+Или установить сразу вместе с [ujson](https://github.com/ultrajson/ultrajson)
+```shell
+pip install aio-dt-protocol[ujson]
+```
 
 ### Примеры:
 
@@ -19,7 +23,6 @@ https://github.com/ultrajson/ultrajson
 import asyncio
 from aio_dt_protocol import Browser
 from aio_dt_protocol import BrowserName
-from aio_dt_protocol import find_instances
 from aio_dt_protocol.data import KeyEvents
 
 DEBUG_PORT: int = 9222
@@ -28,29 +31,20 @@ PROFILE_NAME: str = BROWSER_NAME.capitalize() + "_Profile"
 
 
 async def main() -> None:
-    # ? Если на указанном порту есть запущенный браузер, происходит подключение.
-    if browser_instances := find_instances(DEBUG_PORT, BROWSER_NAME):
-        browser = Browser(
-            debug_port=DEBUG_PORT,
-            browser_pid=browser_instances[DEBUG_PORT])
-        msg = f"[- CONNECT TO EXIST BROWSER ON {DEBUG_PORT} PORT -]"
-
-    # ? Иначе, запуск нового браузера.
-    else:
-        browser = Browser(
-            debug_port=DEBUG_PORT, browser_exe=BROWSER_NAME,
-            profile_path=PROFILE_NAME
-        )
-        msg = f"[- LAUNCH NEW BROWSER ON {DEBUG_PORT} PORT -]"
-    print(msg)
-
     # ? Будет печатать в консоль всё, что приходит по соединению со страницей.
     # ? Полезно при разработке.
     # async def action_printer(data: dict) -> None:
     #     print(data)
-    # conn = await browser.waitFirstTab(callback=action_printer)
-    conn = await browser.waitFirstTab()
-
+    # browser, conn = await Browser.run(callback=action_printer)
+    
+    # ? Если на указанном порту есть запущенный браузер, происходит подключение.
+    # ? Иначе, запуск нового браузера.
+    browser, conn = await Browser.run(
+        debug_port=DEBUG_PORT,
+        browser_name=BROWSER_NAME,
+        profile_path=PROFILE_NAME
+    )
+    
     print("[- GO TO GOOGLE ... -]")
     await conn.Page.navigate("https://www.google.com", )
     print("[- EMULATE INPUT TEXT ... -]")
@@ -95,7 +89,7 @@ if __name__ == '__main__':
 1. Вручную передав методу `addBinding()` домена `Runtime` имя функции в виде строки.
 2. Воспользоваться более функциональной обёрткой первого способа, выраженной в методе `bindFunction()` соединения.
 
-Второй способ менее многословен. Под капотом он добавляет в контекст страницы утилиту `py_call()`, первым аргументом принимающую имя функции, после чего, любое кол-во позиционных аргументов, которые ожидает эта функция, а так же позволяет прикрепить любое кол-во аргументов, передаваемых в функцию последними. Например:
+Второй способ менее многословен. Под капотом он добавляет в контекст страницы утилиту `py_call()`, первым аргументом принимающую имя функции(слушателя), после чего, любое кол-во позиционных аргументов, которые ожидает эта функция, а так же позволяет прикрепить любое кол-во аргументов, передаваемых в функцию последними. Например:
 
 ```python
     html = """\
@@ -141,7 +135,7 @@ if __name__ == '__main__':
 
 ```python
 import asyncio
-from aio_dt_protocol import Browser, BrowserName, find_instances
+from aio_dt_protocol import Browser, BrowserName
 from aio_dt_protocol.utils import save_img_as, async_util_call
 
 DEBUG_PORT: int = 9222
@@ -150,20 +144,12 @@ BROWSER_NAME: str = BrowserName.CHROME
 
 async def main() -> None:
     # ? Если на указанном порту есть запущенный браузер, происходит подключение.
-    if browser_instances := find_instances(DEBUG_PORT, BROWSER_NAME):
-        browser = Browser(
-            debug_port=DEBUG_PORT,
-            browser_pid=browser_instances[DEBUG_PORT])
-        msg = f"[- HEADLESS CONNECT TO EXIST BROWSER ON {DEBUG_PORT} PORT -]"
-
     # ? Иначе, запуск нового браузера.
-    else:
-        browser = Browser(
-            debug_port=DEBUG_PORT, browser_exe=BROWSER_NAME,
-            profile_path=""
-        )
-        msg = f"[- HEADLESS LAUNCH NEW BROWSER ON {DEBUG_PORT} PORT -]"
-    print(msg)
+    browser, conn = await Browser.run(
+        debug_port=DEBUG_PORT,
+        browser_name=BROWSER_NAME,
+        profile_path=""
+    )
     
     print("[- WAITING PAGE -]")
     conn = await browser.waitFirstTab()

@@ -41,11 +41,19 @@ class UniqueContextIdNotFound(MyBaseException): pass
 
 class InvalidRemoteObjectId(MyBaseException): pass
 
+class NotAllowedError(MyBaseException): pass
+
 class AnotherLocaleOverrideIsAlreadyInEffect(MyBaseException): pass     # ! при установке той же локали
 
 class FontFamiliesCanOnlyBeSetOnce(MyBaseException): pass               # ! при установке тех же шрифтов
 
 class GetRequestBodyBeforeRequestReceived(MyBaseException): pass        # ! получение тела до получения ответа
+
+class NoSessionWithGivenId(MyBaseException): pass        # !
+
+class NoSessionForGivenTargetId(MyBaseException): pass        # !
+
+class InvalidURLError(MyBaseException): pass        # !
 
 
 exception_store = {
@@ -58,9 +66,13 @@ exception_store = {
     "No script with given id": NoScriptWithGivenId,
     "uniqueContextId not found": UniqueContextIdNotFound,
     "Invalid remote object id": InvalidRemoteObjectId,
+    "Not allowed": NotAllowedError,
     "Another locale override is already in effect": AnotherLocaleOverrideIsAlreadyInEffect,
     "Font families can only be set once": FontFamiliesCanOnlyBeSetOnce,
     "Can only get response body on requests captured after headers received": GetRequestBodyBeforeRequestReceived,
+    "No session with given id": NoSessionWithGivenId,
+    "No session for given target id": NoSessionForGivenTargetId,
+    "Cannot navigate to invalid URL": InvalidURLError,
 }
 
 

@@ -92,14 +92,6 @@ class Target:
         result = (await self._connection.call("Target.getTargets"))["targetInfos"]
         return [TargetInfo(**info) for i, info in enumerate(result)]
 
-    async def attachToBrowserTarget(self) -> str:
-        """
-        Присоединяется к target браузера, использует только режим flat sessionId.
-        https://chromedevtools.github.io/devtools-protocol/tot/Target#method-attachToBrowserTarget
-        :return:                    sessionId
-        """
-        return (await self._connection.call("Target.attachToBrowserTarget"))["sessionId"]
-
     async def attachToTarget(self, targetId: str, flatten: Optional[bool] = None) -> str:
         """
         Присоединяется к 'target' по указанному 'targetId'.

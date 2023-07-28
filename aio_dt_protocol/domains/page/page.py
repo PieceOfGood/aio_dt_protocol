@@ -2,6 +2,7 @@ import asyncio
 from urllib.parse import quote
 from typing import Optional, Union, Callable, Awaitable
 from ...data import DomainEvent
+from ...utils import prepare_url
 from .types import FrameTree, LifecycleEventData
 
 
@@ -89,7 +90,6 @@ class Page:
         result = await self._connection.call("Page.getFrameTree")
         return FrameTree(**result.get("frameTree"))
 
-    # async def GetFrameFor
 
     async def handleJavaScriptDialog(self, accept: bool, promptText: str = "") -> None:
         """
@@ -120,30 +120,9 @@ class Page:
         :param wait_for_network_idle:   (optional) Если 'True' - ожидает прекращения активности сети
         :return:
         """
-        b_name_len = len(self._connection.browser_name)
-        is_url = (
-            "http" == url[:4] or
-            "chrome" == url[:6] or
-            self._connection.browser_name == url[:b_name_len] or
-            url == "about:blank"
-        )
+        url = prepare_url(url, self._connection.browser_name)
 
-        if self.enabled:
-            self.loading_state.clear()
-        if self.lifecycle_events_enabled:
-            self.network_idle_state.clear()
-
-        _url_ = ("data:text/html," + quote(url)
-             # передать разметку как data-url, если начало этой строки
-             # не содержит признаков url-адреса или передать "как есть",
-             if type(url) is str and not is_url else url
-                 # раз это строка содержащая url, или переход на пустую страницу
-                 if type(url) is str and is_url else
-                     # иначе декодировать и установить её как Base64
-                     "data:text/html;Base64," + url.decode()
-             )
-
-        await self._connection.call("Page.navigate", {"url": _url_})
+        await self._connection.call("Page.navigate", {"url": url})
         if wait_for_load or wait_for_network_idle:
             await self.waitForLoad(wait_for_load, wait_for_network_idle)
 

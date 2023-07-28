@@ -173,14 +173,17 @@ class Connection:
         if "error" in response:
 
             if ex := get_cdtp_error((e := response['error'])['message']):
-                raise ex(f"domain_and_method = '{domain_and_method}' | params = '{str(params)}'")
+                raise ex(
+                    f"\n\t\x1b[37mdomain_and_method: '\x1b[91m{domain_and_method}\x1b[37m'"
+                    f"\n\tparams: '\x1b[91m{str(params)}\x1b[37m'\x1b[0m"
+                )
 
             raise Exception(
-                "\x1b[36mBrowser detect error:\n" +
-                f"\x1b[37mError code: '\x1b[91m{e['code']}\n" +
-                f"\x1b[37mError message: '\x1b[91m{e['message']}\n" +
-                f"\x1b[37mdomain_and_method: '\x1b[91m{domain_and_method}\n" +
-                f"\x1b[37mparams: '\x1b[91m{params}\x1b[0m\n"
+                "\x1b[36mBrowser detect error:\x1b[37m\t\n" +
+                f"Error code: '\x1b[91m{e['code']}\x1b[37m'\t\n" +
+                f"Error message: '\x1b[91m{e['message']}\x1b[37m'\t\n" +
+                f"domain_and_method: '\x1b[91m{domain_and_method}\x1b[37m'\t\n" +
+                f"params: '\x1b[91m{params}\x1b[37m'\x1b[0m"
             )
 
         return response["result"]
@@ -196,7 +199,7 @@ class Connection:
             # ! Браузер разорвал соединение
             except ConnectionClosedError as e:
                 if self.verbose: log(f"ConnectionClosedError {e!r}")
-                await self.detach()
+                await self._detach()
                 return
 
             # Ожидающие ответов вызовы API получают ответ по id входящих сообщений.
@@ -205,8 +208,7 @@ class Connection:
 
             if ((method := data_msg.get("method")) == "Inspector.detached"
                     and data_msg["params"]["reason"] == "target_closed"):
-                await self.detach()
-                self.on_close_event.set()
+                await self._detach()
                 return
 
             # Если коллбэк функция была определена, она будет получать все
@@ -235,15 +237,15 @@ class Connection:
                     asyncio.create_task(
                         listener(       # корутина
                             p,          # её "params" — всегда передаётся
-                            *largs      # список bind-агрументов
+                            *largs      # список bind-аргументов
                         )
                     )
 
-
-
     async def waitForClose(self) -> None:
         """ Дожидается, пока не будет потеряно соединение со страницей. """
+        if self.verbose: log(f"Wait wor close connection {self.conn_id}")
         await self.on_close_event.wait()
+        if self.verbose: log(f"Wait for close connection done {self.conn_id}")
 
     async def activate(self) -> None:
         self._ws_session = await connect(self.ws_url, ping_interval=None)
@@ -251,7 +253,16 @@ class Connection:
         self._receiver_loop = asyncio.create_task(self._recv())
         await self.Runtime.enable()
 
-    async def detach(self) -> None:
+    async def disconnect(self) -> None:
+        """ Принудительно разрывает соединение. """
+        if not self.connected:
+            return
+        if self.verbose: log(f"[ DISCONNECT ] {self.conn_id}")
+        if not self._ws_session.closed:
+            await self._ws_session.close()
+
+
+    async def _detach(self) -> None:
         """  Отключается от страницы. Вызывается автоматически при закрытии браузера,
         или текущей страницы. Принудительный вызов не закрывает страницу,
         а лишь разрывает с ней соединение.
@@ -266,6 +277,8 @@ class Connection:
         if self._on_detach_listener:
             function, args, kvargs = self._on_detach_listener
             await function(*args, **kvargs)
+
+        self.on_close_event.set()
 
     def clearOnDetach(self) -> None:
         self._on_detach_listener = tuple()
@@ -321,8 +334,6 @@ class Connection:
         в браузере. Список таких событий можно посмотреть в разделе "Events" почти
         у каждого домена по адресу: https://chromedevtools.github.io/devtools-protocol/
         Например: 'DOM.attributeModified'
-            !Внимание! Каждый такой слушатель должен иметь один обязательный 'data'-аргумент,
-        в который будут передаваться параметры случившегося события в виде словаря(dict).
 
         :param event:           Имя события, для которого регистируется слушатель. Например:
                                     'DOM.attributeModified'.

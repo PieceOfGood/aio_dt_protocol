@@ -92,12 +92,13 @@ class Emulation:
                       positionY: Optional[int] = None,
             dontSetVisibleSize: Optional[bool] = None,
              screenOrientation: Optional[dict] = None,
-                      viewport: Optional[dict] = None
+                      viewport: Optional[dict] = None,
+                displayFeature: Optional[dict] = None,
     ) -> None:
         """
-        Переопределяет значения размеров экрана устройства (результаты мультимедийного запроса CSS,
-            относящиеся к «device-width» / «device-height», связанные с window.screen.width,
-            window.screen.height, window.innerWidth, window.innerHeight).
+        Переопределяет значения размеров экрана устройства (window.screen.width, window.screen.height,
+            window.innerWidth, window.innerHeight и результаты медиа-запросов CSS, связанные с
+            "device-width"/"device-height").
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setDeviceMetricsOverride
         :param width:               Переопределяет значение ширины viewport в пикселях(от 0 до 10_000_000).
                                         window.innerWidth
@@ -146,6 +147,8 @@ class Emulation:
                                                                 пикселях (dip).
                                             "scale": float  -> Коэффициент масштабирования страницы.
                                         }
+        :param displayFeature:       (optional, EXPERIMENTAL) Если установлено, отображается функция многосегментного
+                                        экрана. Если не установлено, поддержка нескольких сегментов отключена.
         :return:
         """
         args = {"width": width, "height": height, "deviceScaleFactor": deviceScaleFactor, "mobile": mobile}
@@ -165,6 +168,8 @@ class Emulation:
             args.update({"screenOrientation": screenOrientation})
         if viewport is not None:
             args.update({"viewport": viewport})
+        if displayFeature is not None:
+            args.update({"displayFeature": displayFeature})
         await self._connection.call("Emulation.setDeviceMetricsOverride", args)
 
     async def setScrollbarsHidden(self, hidden: bool) -> None:
@@ -176,7 +181,7 @@ class Emulation:
         """
         await self._connection.call("Emulation.setScrollbarsHidden", {"hidden": hidden})
 
-    async def s(self, disabled: bool) -> None:
+    async def setDocumentCookieDisabled(self, disabled: bool) -> None:
         """
         (EXPERIMENTAL)
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setDocumentCookieDisabled
@@ -236,7 +241,8 @@ class Emulation:
              accuracy: Optional[float] = None
     ) -> None:
         """
-        Переопределяет Положение или Ошибку Геолокации. Пропуск любого из параметров эмулирует положение недоступно.
+        Переопределяет Положение или Ошибку Геолокации. Пропуск любого из параметров эмулирует
+            "положение недоступно".
         https://chromedevtools.github.io/devtools-protocol/tot/Emulation#method-setGeolocationOverride
         :param latitude:            (optional) Широта.
         :param longitude:           (optional) Долгота.
@@ -368,6 +374,7 @@ class Emulation:
         if userAgentMetadata is not None:
             args.update({"userAgentMetadata": userAgentMetadata})
         await self._connection.call("Emulation.setUserAgentOverride", args)
+
 
 class EmulationEvent(DomainEvent):
     virtualTimeBudgetExpired = "Emulation.virtualTimeBudgetExpired"

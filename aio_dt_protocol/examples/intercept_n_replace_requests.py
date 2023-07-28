@@ -2,8 +2,7 @@ import re
 from asyncio import run
 from base64 import b64decode, b64encode
 from pprint import pprint
-from aio_dt_protocol import Browser, Connection, find_instances
-from aio_dt_protocol.data import CommonCallback
+from aio_dt_protocol import Browser
 from aio_dt_protocol.domains.fetch.types import EventRequestPaused, RequestPattern, HeaderEntry
 
 
@@ -15,28 +14,12 @@ REQ_PATTERN = RequestPattern(
     urlPattern="*www.python.org/", resourceType="Document", requestStage="Response")
 
 
-async def run_browser(
-        dbp: int = 9222,
-        bro_exe: str = "chrome",
-        callback: CommonCallback = None) -> tuple[Browser, Connection]:
-
-    if browser_instances := find_instances(dbp, bro_exe):
-        browser = Browser(debug_port=dbp, browser_pid=browser_instances[dbp])
-    else:
-        profile_name = bro_exe.capitalize() + "_Profile"
-        browser = Browser(
-            debug_port=dbp, browser_exe=bro_exe, profile_path=profile_name
-        )
-
-    return browser, await browser.waitFirstTab(callback=callback)
-
-
 async def intercept() -> None:
     """ Пример получения данных страницы ещё
     до их включения в рендер.
     """
 
-    browser, conn = await run_browser()
+    browser, conn = await Browser.run()
 
     # ? Корутина, которая будет вызываться всякий раз, когда удовлетворяются
     # ? условия шаблона "req_pattern"
@@ -83,7 +66,7 @@ async def replace() -> None:
             });
         </script>"""
 
-    browser, conn = await run_browser()
+    browser, conn = await Browser.run()
 
     # ? number и text будут переданы из браузера, а bind_arg указан при регистрации
     async def test_func(number: int, text: str, bind_arg: dict) -> None:
@@ -95,7 +78,9 @@ async def replace() -> None:
         {"name": "test", "value": True}  # ! bind_arg
     )
 
-    await conn.extend.pyCallAddOnload()
+    # ! pyCallAddOnload() автоматически включается в предзагрузку
+    # ! при вызове bindFunction()
+    # await conn.extend.pyCallAddOnload()
 
     async def catch_data_for_response(data: EventRequestPaused) -> None:
 
@@ -161,7 +146,7 @@ async def re_proxy() -> None:
     req_pattern = RequestPattern(
         urlPattern="*", requestStage="Request"
     )
-    browser, conn = await run_browser()
+    browser, conn = await Browser.run()
 
     async def catch_data_for_response(data: EventRequestPaused) -> None:
         headers, body = await req(

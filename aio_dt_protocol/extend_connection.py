@@ -149,7 +149,10 @@ class Extend:
         return json.loads(response.value)
 
     async def injectJS(self, expression: str) -> any:
-        """ Выполняет JavaScript-выражение во фрейме верхнего уровня. """
+        """ Выполняет JavaScript-выражение во фрейме верхнего уровня.
+        Возвращает только простые типы в естественном виде, для сложных
+        используйте сериализацию в JSON, или evaluate() домена Runtime.
+        """
         try:
             response = await self._connection.Runtime.evaluate(
                 expression=expression,

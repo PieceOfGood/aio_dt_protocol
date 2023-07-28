@@ -18,10 +18,42 @@ from enum import Enum
 from .connection import Connection
 from .data import TargetConnectionInfo, TargetConnectionType, CommonCallback
 from .exceptions import FlagArgumentContainError, NoTargetWithGivenIdFound
-from .utils import get_request, find_browser_executable_path, log, async_util_call
+from .utils import (
+    get_request,
+    find_browser_executable_path,
+    log,
+    async_util_call,
+    find_instances,
+    prepare_url
+)
 
 
 class Browser:
+
+    @classmethod
+    async def run(
+            cls,
+            debug_port: int = 9222,
+            browser_name: str = "chrome",
+            callback: CommonCallback = None,
+            **options
+    ) -> Tuple["Browser", "Connection"]:
+        if browser_instances := find_instances(debug_port, browser_name):
+            browser = Browser(debug_port=debug_port, browser_pid=browser_instances[debug_port])
+            running_state = "CONNECT TO EXISTING BROWSER"
+        else:
+            browser = Browser(
+                debug_port=debug_port,
+                browser_exe=browser_name,
+                **options
+            )
+            running_state = "CREATE NEW BROWSER"
+
+        if options.get("verbose"):
+            log(running_state)
+
+        return browser, await browser.waitFirstTab(callback=callback)
+
 
     def __init__(
             self,
@@ -60,7 +92,13 @@ class Browser:
                                     если значение установлено в True. (Linux, Windows)
 
         :param url:             Адрес, которым будет инициирован старт браузера.
-                                    Со значением по умолчанию, будет открыта пустая страница.
+                                    Со значением по умолчанию, будет открыта дефолтная страница.
+                                    Пустая строка откроет пустую страницу(about:blank).
+                                    Может принимать HTML-разметку, как в виде строки, так и в
+                                    наборе байт при конвертировании в base64. Поскольку subprocess
+                                    имеет ограничения на длину принимаемых параметров, слишком
+                                    длинная строка приведёт к краху.
+                                    https://stackoverflow.com/questions/2381241/what-is-the-subprocess-popen-max-length-of-the-args-parameter
 
         :param flags:           Экземпляр `FlagBuilder()` напичканный `CMDFlags()`.
                                     https://peter.sh/experiments/chromium-command-line-switches/
@@ -186,36 +224,14 @@ class Browser:
         if data_url_len > 30_000:
             warnings.warn(f"Length data url ({data_url_len}) is approaching to critical length = 32767 symbols!")
 
-        b_name_len = len(self.browser_name)
-        # Если "app" == True:
-        _url_ = (
-            # открыть dataURL без содержимого, если в "url" ничего не передано
-            "--app=data:text/html," if url is None else
-                # иначе установить переданную разметку, если она пришла как строка
-                # и начало этой строки не содержит признаков url-адреса
-                "--app=data:text/html," + quote(url)
-                    if type(url) is str and "http" != url[:4] and self.browser_name != url[:b_name_len] else "--app=" + url
-                        # передать "как есть", раз это строка содержащая url
-                        if type(url) is str and "http" == url[:4] or self.browser_name == url[:b_name_len] else
-                            # иначе декодировать и установить её как Base64
-                            "--app=data:text/html;Base64," + url.decode()
-
-            # иначе, открыть пустую страницу, если в "url" ничего не передано
-        ) if app else "about:blank" if url is None else (
-            # иначе передать разметку как data-url, если начало этой строки
-            # не содержит признаков url-адреса
-            "data:text/html," + quote(url)
-                if type(url) is str and "http" != url[:4] and self.browser_name != url[:b_name_len] else url
-                    # или передать "как есть", раз это строка содержащая url
-                    if type(url) is str and "http" == url[:4] or self.browser_name == url[:b_name_len] else
-                        # иначе декодировать и установить её как Base64
-                        "data:text/html;Base64," + url.decode()
-        )
+        url = prepare_url(url, self.browser_name, app)
 
         self.is_headless_mode = False
-        self.browser_pid = browser_pid if browser_pid > 0 else self._run_browser(_url_, flags, position, sizes)
+        self.browser_pid = browser_pid if browser_pid > 0 else self._run_browser(url, flags, position, sizes)
 
-    def _run_browser(self, url: str, flags: "FlagBuilder", position: Optional[Tuple[int, int]] = None,
+    def _run_browser(self, url: Optional[str] = None,
+                     flags: Optional["FlagBuilder"] = None,
+                     position: Optional[Tuple[int, int]] = None,
                      sizes: Optional[Tuple[int, int]] = None) -> int:
         """
         Запускает браузер с переданными флагами.
@@ -241,7 +257,8 @@ class Browser:
             (CMDFlags.Render.force_dark_mode, []),
         )
         run_args = [ self.browser_path ]
-        flag_box.custom(url)
+        if url:
+            flag_box.custom(url)
 
         # ! Default mode
         if self.profile_path:
@@ -313,7 +330,7 @@ class Browser:
         result = await async_util_call(
             get_request, f"http://127.0.0.1:{self.debug_port}/json/list")
 
-        if self.verbose: log("GetPageList() => " + result)
+        if self.verbose: log("getPageList() => " + result)
         return json.loads(result)
 
     async def getConnectionBy(
