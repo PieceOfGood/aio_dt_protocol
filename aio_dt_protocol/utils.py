@@ -6,11 +6,13 @@ import urllib.request
 from pathlib import Path
 from typing import Optional, Dict, Callable, Union
 from urllib.parse import quote
+from .data import BrowserInstanceInfo
 
 
-def get_request(url: str) -> str:
-    with urllib.request.urlopen(url) as response:
-        return response.read().decode('utf-8')
+def make_request(url: str, method="GET") -> str:
+    req = urllib.request.Request(url, method=method)
+    with urllib.request.urlopen(req) as response:
+        return response.read().decode("utf-8")
 
 
 def find_browser_executable_path(exe="chrome") -> str:
@@ -64,7 +66,7 @@ async def async_util_call(function: Callable, *args) -> any:
     )
 
 
-def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> Dict[int, int]:
+def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> Dict[int, BrowserInstanceInfo]:
     """ !!! ВНИМАНИЕ !!! На Windows 11 может быть отключен компонент WMI("Windows Management
     Instrumentation"), его нужно либо включить в разделе “Программы и компоненты” панели
     управления, либо установить из официальных источников.
@@ -72,24 +74,24 @@ def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> D
     Используется для обнаружения уже запущенных браузеров в режиме отладки.
     Например:
             if browser_instances := find_instances():
-                port, pid = [(k, v) for k, v in browser_instances.items()][0]
-                browser_instance = Browser(debug_port=port, chrome_pid=pid)
+                port, instance_info = [(k, v) for k, v in browser_instances.items()][0]
+                browser_instance = Browser(instance_info=instance_info)
             else:
                 browser_instance = Browser()
 
             # Или для конкретного, известного порта:
             if browser_instances := find_instances(port):
-                pid = browser_instances[port]
-                browser_instance = Browser(debug_port=port, chrome_pid=pid)
+                instance_info = browser_instances[port]
+                browser_instance = Browser(instance_info=instance_info)
             else:
                 browser_instance = Browser()
     :param for_port:    - порт, для которого осуществляется поиск.
     :param browser:     - браузер, для которого запрашивается поиск.
-    :return:            - словарь, ключами которого являются используемые порты запущенных
-                            браузеров, а значениями, их ProcessID, или пустой словарь,
-                            если ничего не найдено.
-                            { 9222: 16017, 9223: 2001, ... }
+    :return:
     """
+    win_exp = re.compile(r"^\"[^\"]+(?<=\\)(\w+\.\w+)\".*?--remote-debugging-port=(\d+).*?(\d+)\s*$")
+    linux_exp = re.compile(r"^[/\w]+/(\w+).*?--remote-debugging-port=(\d+)")
+
     result = {}
     if sys.platform == "win32":
         if "chrom" in browser: browser = "chrome.exe"
@@ -99,10 +101,16 @@ def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> D
         cmd = f"WMIC PROCESS WHERE NAME='{browser}' GET Commandline,Processid"
         for line in subprocess.Popen(cmd, stdout=subprocess.PIPE).stdout:
             if b"--type=renderer" not in line and b"--remote-debugging-port=" in line:
-                port, pid = re.findall(r"--remote-debugging-port=(\d+).*?(\d+)\s*$", line.decode())[0]
-                port, pid = int(port), int(pid)
-                if for_port == port: return {port: pid}
-                result[port] = pid
+                name, port, pid = win_exp.findall(line.decode())[0]
+                inst = BrowserInstanceInfo(
+                    name=name,
+                    port=(port := int(port)),
+                    pid=int(pid),
+                    headless=b"--headless" in line
+                )
+                if for_port == port:
+                    return {port: inst}
+                result[port] = inst
 
     elif sys.platform == "linux":
         if "chrom" in browser: browser = "chrome"
@@ -114,9 +122,16 @@ def find_instances(for_port: Optional[int] = None, browser: str = "chrome") -> D
         for pid in itr:
             with open("/proc/" + str(pid) + "/cmdline") as f: cmd_line =  f.read()[:-1]
             if "--type=renderer" not in cmd_line and "--remote-debugging-port=" in cmd_line:
-                port = int(re.findall(r"--remote-debugging-port=(\d+)", cmd_line)[0])
-                if for_port == port: return {port: pid}
-                result[port] = pid
+                name, port = linux_exp.findall(cmd_line)[0]
+                inst = BrowserInstanceInfo(
+                    name=name,
+                    port=(port := int(port)),
+                    pid=pid,
+                    headless="--headless" in cmd_line
+                )
+                if for_port == port:
+                    return {port: inst}
+                result[port] = inst
     else:
         raise OSError(f"Platform '{sys.platform}' — not supported")
     return {} if for_port else result

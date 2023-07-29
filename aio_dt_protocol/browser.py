@@ -9,17 +9,16 @@ except ModuleNotFoundError:
     import json
 import warnings
 import re, os, sys, signal, subprocess
-from urllib.parse import quote
 from os.path import expanduser
 from inspect import iscoroutinefunction
 from typing import List, Dict, Union, Optional, Tuple, Literal
 from collections.abc import Sequence
 from enum import Enum
 from .connection import Connection
-from .data import TargetConnectionInfo, TargetConnectionType, CommonCallback
+from .data import TargetConnectionInfo, TargetConnectionType, CommonCallback, BrowserInstanceInfo
 from .exceptions import FlagArgumentContainError, NoTargetWithGivenIdFound
 from .utils import (
-    get_request,
+    make_request,
     find_browser_executable_path,
     log,
     async_util_call,
@@ -39,31 +38,25 @@ class Browser:
             **options
     ) -> Tuple["Browser", "Connection"]:
         if browser_instances := find_instances(debug_port, browser_name):
-            browser = Browser(debug_port=debug_port, browser_pid=browser_instances[debug_port])
-            running_state = "CONNECT TO EXISTING BROWSER"
+            browser = Browser(instance_info=browser_instances[debug_port])
         else:
             browser = Browser(
                 debug_port=debug_port,
                 browser_exe=browser_name,
                 **options
             )
-            running_state = "CREATE NEW BROWSER"
-
-        if options.get("verbose"):
-            log(running_state)
 
         return browser, await browser.waitFirstTab(callback=callback)
 
 
     def __init__(
-            self,
+            self, *,
             profile_path: str = "testProfile",
             dev_tool_profiles:  bool = False,
             url: Optional[Union[str, bytes]] = None,
             flags:  Optional["FlagBuilder"] = None,
             browser_path: str = "",
             debug_port:   Union[str, int] = 9222,
-            browser_pid:  int = 0,
             app:         bool = False,
             browser_exe:  str = "chrome",
             proxy_address:str = "http://127.0.0.1",
@@ -72,7 +65,7 @@ class Browser:
             position: Optional[Tuple[int, int]] = None,
             sizes:    Optional[Tuple[int, int]] = None,
             prevent_restore: bool = False,
-
+            instance_info: Optional[BrowserInstanceInfo] = None
     ) -> None:
         """
         Все параметры — не обязательны.
@@ -108,12 +101,6 @@ class Browser:
 
         :param debug_port:      Используется порт по умолчанию 9222.
 
-        :param browser_pid:     ProcessID браузера. Используется методом kill(). Если
-                                    передано значение большее нуля, считается, что производится
-                                    подключение к уже существующему экземпляру браузера. Чтобы
-                                    найти запущенный браузер в режиме отладки, воспользуйтесь
-                                    `find_instances()`.
-
         :param app:             Запускает браузер в окне без пользовательского интерфейса,
                                     вроде адресной строки, кнопок навигации и прочих атрибутов.
                                     Распространяется только на первую страницу браузера. Прочие
@@ -135,7 +122,11 @@ class Browser:
         :param sizes:           Кортеж с длиной и шириной в которые будет установлено окно браузера.
 
         :param prevent_restore: Предотвращать восстановление предыдущей сессии после крашей.
+
+        :param instance_info:   Если передано, считается, что браузер уже был запущен и мы к
+                                    нему подключились.
         """
+
         if sys.platform not in ("win32", "linux"): raise OSError(f"Platform '{sys.platform}' — not supported")
         self.dev_tool_profiles = dev_tool_profiles if profile_path else False
 
@@ -177,18 +168,20 @@ class Browser:
                 # os.chmod(preferences_path, READ_WRITE)
                 if verbose: log("Файл настроек — только для чтения")
 
-        if browser_exe == "chrome":
+        if "chrome" in browser_exe:
             self.browser_name = "chrome"
             browser_exe = "chrome" if sys.platform == "win32" else "google-chrome"
-        elif browser_exe == "brave":
+        elif "brave" in browser_exe:
             self.browser_name = "brave"
             browser_exe = "brave" if sys.platform == "win32" else "brave-browser"
-        elif browser_exe == "chromium":
+        elif "chromium" in browser_exe:
             self.browser_name = "chrome"
             browser_exe = "chromium" if sys.platform == "win32" else "chromium-browser"
         elif "edge" in browser_exe:
             self.browser_name = "edge"
             browser_exe = "msedge" if sys.platform == "win32" else "microsoft-edge"
+        else:
+            self.browser_name = browser_exe
 
         # ? Константы URL соответствующих вкладок
         self.NEW_TAB:       str = self.browser_name + "://newtab/"          # дефолтная вкладка
@@ -200,6 +193,18 @@ class Browser:
         self.WALLET:        str = self.browser_name + "://wallet/"          # кошельки (brave only)
         self.EXTENSIONS:    str = self.browser_name + "://extensions/"      # расширения
         self.FLAGS:         str = self.browser_name + "://flags/"           # экспериментальные технологии
+
+        self.proxy_addres = proxy_address
+        self.proxy_port = str(proxy_port)
+        self.verbose = verbose
+
+        if instance_info:
+            self.is_headless_mode = instance_info.headless
+            self.browser_pid = instance_info.pid
+            self.debug_port = str(instance_info.port)
+            if verbose:
+                log(f"Connected to {self.debug_port} port | Headless mod: {self.is_headless_mode}")
+            return
 
         if sys.platform == "win32":
             browser_path = browser_path if browser_path else find_browser_executable_path(browser_exe)
@@ -213,21 +218,23 @@ class Browser:
         if int(debug_port) <= 0:
             raise ValueError(f"Значение 'debug_port' => '{debug_port}' — должно быть положительным целым числом!")
         self.debug_port = str(debug_port)
-        self.proxy_addres = proxy_address
-        self.proxy_port = str(proxy_port)
-        self.verbose = verbose
 
         # https://stackoverflow.com/questions/2381241/what-is-the-subprocess-popen-max-length-of-the-args-parameter
-        # data_url_len_is_high = len(url[0]) > 32_767
         data_url_len = len(url) if url else 0
-        # print("url =", url)
+
         if data_url_len > 30_000:
             warnings.warn(f"Length data url ({data_url_len}) is approaching to critical length = 32767 symbols!")
 
+        self.is_headless_mode = self.profile_path == ""
+        if self.is_headless_mode:
+            app = False
+            if url is None:
+                url = ""
         url = prepare_url(url, self.browser_name, app)
 
-        self.is_headless_mode = False
-        self.browser_pid = browser_pid if browser_pid > 0 else self._run_browser(url, flags, position, sizes)
+        self.browser_pid = self._run_browser(url, flags, position, sizes)
+        if verbose:
+            log(f"Running at {self.debug_port} port | Headless mod: {self.is_headless_mode}")
 
     def _run_browser(self, url: Optional[str] = None,
                      flags: Optional["FlagBuilder"] = None,
@@ -271,7 +278,6 @@ class Browser:
         # ! Headless mode
         else:
             flag_box.add(CMDFlags.Headless.headless)
-            self.is_headless_mode = True
 
         if self.proxy_port:
             flag_box.add(CMDFlags.Other.proxy_server, self.proxy_addres + ":" + self.proxy_port)
@@ -328,10 +334,19 @@ class Browser:
                 }, { ... } ]
         """
         result = await async_util_call(
-            get_request, f"http://127.0.0.1:{self.debug_port}/json/list")
+            make_request, f"http://127.0.0.1:{self.debug_port}/json/list")
 
         if self.verbose: log("getPageList() => " + result)
         return json.loads(result)
+
+    async def queryNewTab(self, url: str = "about:blank") -> Connection:
+        result: str = await async_util_call(
+            make_request, f"http://127.0.0.1:{self.debug_port}/json/new?{url}", "PUT")
+
+        if self.verbose: log("queryNewTab() => " + result)
+        result: dict = json.loads(result)
+        return await self.getConnectionByID(result["id"])
+
 
     async def getConnectionBy(
             self, key: Union[str, int],
@@ -344,7 +359,7 @@ class Browser:
         :param key:                 По ключу из словаря. Список ключей смотри
                                         в возвращаемых значениях GetPageList()
         :param value:               Значение ключа, которому должен соответствовать выбор
-        :param match_mode:          Значение ключа:
+        :param match_mode:          Соответствие ключа:
                                         "exact"      - полностью совпадает с value,
                                         "contains"   - содержит value,
                                         "startswith" - начинается с value
@@ -364,17 +379,17 @@ class Browser:
 
         counter = 0; v = value.lower()
         for page_data in await self.getConnectionList():
-            data = page_data[key]
+            data: str = page_data[key].lower()
             if ((match_mode == "exact" and data == v)
                 or (match_mode == "contains" and data.find(v) > -1 )
-                    or (match_mode == "startswith" and data.find(v) == 0)):
+                    or (match_mode == "startswith" and data.startswith(v))):
                 if counter == index:
                     conn = Connection(
                         page_data["webSocketDebuggerUrl"],
                         page_data["id"],
                         page_data["devtoolsFrontendUrl"],
                         callback,
-                        self.profile_path == "",
+                        self.is_headless_mode,
                         self.verbose,
                         self.browser_name
                     )
@@ -533,7 +548,7 @@ class Browser:
             self, timeout: float = 20.0,
             callback: CommonCallback = None) -> Connection:
         """ Дожидается получения соединения или вызывает исключение
-        'asyncio.exceptions.TimeoutError' по истечении таймаута.
+        'TimeoutError' по истечении таймаута.
         """
         return await asyncio.wait_for(self.getFirstTab(callback), timeout)
 

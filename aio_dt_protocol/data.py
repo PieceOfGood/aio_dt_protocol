@@ -8,6 +8,14 @@ T = TypeVar("T")
 
 
 @dataclass
+class BrowserInstanceInfo:
+    name: str
+    pid: int
+    port: int
+    headless: bool
+
+
+@dataclass
 class GeoInfo:
     ip: str
     timezone: str
