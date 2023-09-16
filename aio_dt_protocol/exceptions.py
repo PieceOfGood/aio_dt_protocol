@@ -108,7 +108,7 @@ def highlight_eval_error(error_text: str, expression: str) -> str:
 def highlight_promise_error(error_text: str) -> str:
     lines = error_text.split("\n")
     e_type, e_title = lines[0].split(":")
-    print(error_text)
+
     return "".join([
         f"\x1b[36m{e_type}: \x1b[37m",
         f"\x1b[91m\x1b[4m{e_title.strip()}\x1b[0m",

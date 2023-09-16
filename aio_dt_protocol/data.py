@@ -24,7 +24,7 @@ class GeoInfo:
     languages: list[str]
     city: str
     state_province: str
-    proxy_type: str
+    proxy_type: Optional[str] = None
 
 
 class __Base(Generic[T]):

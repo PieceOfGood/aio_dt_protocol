@@ -9,7 +9,7 @@ from .data import ViewportRect, WindowRect, GeoInfo
 import base64, re
 from typing import Optional
 
-from .exceptions import EvaluateError, JavaScriptError, NullProperty
+from .exceptions import EvaluateError, JavaScriptError, NullProperty, PromiseEvaluateError
 
 
 class Extend:
@@ -180,7 +180,7 @@ class Extend:
 
     async def getGeoInfo(self) -> GeoInfo:
         """ Возвращает информацию о местоположении точки выхода браузера в сеть,
-        вычисленному по IP.
+        вычисленному по IP. Не работает на дефолтной странице браузера.
         """
         async_fn_js = """\
         async function get_geo_info() {
@@ -191,7 +191,14 @@ class Extend:
 
         promise = """fetch('https://time.gologin.com/').then(res => res.text())"""
 
-        result: dict = await self._connection.extend.evalPromise(promise)
+        try:
+            result: dict = await self._connection.extend.evalPromise(promise)
+        except PromiseEvaluateError:
+            if "://newtab" in await self._connection.extend.getUrl():
+                raise RuntimeError("Doesn't work on the default browser page. Please "
+                                   "first go to a blank url, or any other address.")
+            raise
+
         result.update(
             geo=dict(
                 latitude=float(result["ll"][0]),
