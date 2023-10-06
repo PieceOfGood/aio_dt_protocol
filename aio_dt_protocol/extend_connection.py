@@ -1,10 +1,5 @@
-try:
-    import ujson as json
-except ModuleNotFoundError:
-    import json
-
 from .actions import Actions
-from .data import ViewportRect, WindowRect, GeoInfo
+from .data import ViewportRect, WindowRect, GeoInfo, Serializer
 
 import base64, re
 from typing import Optional
@@ -72,14 +67,14 @@ class Extend:
         """ Возвращает список с длиной и шириной вьюпорта браузера.
         """
         code = "(()=>{return JSON.stringify([window.innerWidth,window.innerHeight]);})();"
-        data = json.loads(await self.injectJS(code))
+        data: tuple[int, int] = Serializer.decode(await self.injectJS(code))
         return ViewportRect(int(data[0]), int(data[1]))
 
     async def getWindowRect(self) -> WindowRect:
         """ Возвращает список с длиной и шириной окна браузера.
         """
         code = "(()=>{return JSON.stringify([window.outerWidth,window.outerHeight]);})();"
-        data = json.loads(await self.injectJS(code))
+        data: tuple[int, int] = Serializer.decode(await self.injectJS(code))
         return WindowRect(int(data[0]), int(data[1]))
 
     async def getUrl(self) -> str:
@@ -146,7 +141,7 @@ class Extend:
             generatePreview=False
         )
 
-        return json.loads(response.value)
+        return Serializer.decode(response.value)
 
     async def injectJS(self, expression: str) -> any:
         """ Выполняет JavaScript-выражение во фрейме верхнего уровня.

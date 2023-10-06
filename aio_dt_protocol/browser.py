@@ -1,12 +1,6 @@
 import asyncio
 from urllib.error import URLError
 
-try:
-    import ujson as json
-    HAS_UJSON = True
-except ModuleNotFoundError:
-    HAS_UJSON = False
-    import json
 import warnings
 import re, os, sys, signal, subprocess
 from os.path import expanduser
@@ -15,7 +9,13 @@ from typing import List, Dict, Union, Optional, Tuple, Literal
 from collections.abc import Sequence
 from enum import Enum
 from .connection import Connection
-from .data import TargetConnectionInfo, TargetConnectionType, CommonCallback, BrowserInstanceInfo
+from .data import (
+    TargetConnectionInfo,
+    TargetConnectionType,
+    CommonCallback,
+    BrowserInstanceInfo,
+    Serializer
+)
 from .exceptions import FlagArgumentContainError, NoTargetWithGivenIdFound
 from .utils import (
     make_request,
@@ -32,15 +32,19 @@ class Browser:
     @classmethod
     async def run(
             cls,
+            url: Optional[str] = None,
             debug_port: int = 9222,
             browser_name: str = "chrome",
             callback: CommonCallback = None,
             **options
     ) -> Tuple["Browser", "Connection"]:
+        """ Запускает браузер с опциональными параметрами.
+        """
         if browser_instances := find_instances(debug_port, browser_name):
             browser = Browser(instance_info=browser_instances[debug_port])
         else:
             browser = Browser(
+                url=url,
                 debug_port=debug_port,
                 browser_exe=browser_name,
                 **options
@@ -59,7 +63,7 @@ class Browser:
             debug_port:   Union[str, int] = 9222,
             app:         bool = False,
             browser_exe:  str = "chrome",
-            proxy_address:str = "http://127.0.0.1",
+            proxy_address: str = "http://127.0.0.1",
             proxy_port:   Union[str, int] = "",
             verbose:     bool = False,
             position: Optional[Tuple[int, int]] = None,
@@ -111,13 +115,19 @@ class Browser:
                                     Например: chrome, brave. Если 'browser_path' окажется пустым,
                                     будет произведена попытка найти его в системе по этому имени.
 
+        :param proxy_address:   Поскольку браузер не поддерживает авторизованные сессии для
+                                    прокси-серверов, для этой задачи следует использовать
+                                    посредника. Например, 3proxy, доступный как для Windows,
+                                    так и для Linux. Браузер будет использовать указанный адрес
+                                    только в том случае, если указан порт.
+
         :param proxy_port:      Если установлено, браузер будет запущен с флагом 'proxy' и
                                     все его запросы будут перенаправляться на этот порт, на
-                                    локальном хосте.
+                                    указанном адресе.
 
         :param verbose:         Печатать некие подробности процесса?
 
-        :param position:        Кортеж с иксом и игреком, в которых откроется окно браузера.
+        :param position:        Кортеж координат с иксом и игреком, в которых откроется окно браузера.
 
         :param sizes:           Кортеж с длиной и шириной в которые будет установлено окно браузера.
 
@@ -127,11 +137,10 @@ class Browser:
                                     нему подключились.
         """
 
-        if sys.platform not in ("win32", "linux"): raise OSError(f"Platform '{sys.platform}' — not supported")
-        self.dev_tool_profiles = dev_tool_profiles if profile_path else False
+        if sys.platform not in ("win32", "linux"):
+            raise OSError(f"Platform '{sys.platform}' — not supported")
 
-        if verbose and not HAS_UJSON:
-            log("Call 'python -m pip install ujson' for install", lvl="[- UJSON IS NOT INSTALLED -]")
+        self.dev_tool_profiles = dev_tool_profiles if profile_path else False
 
         if self.dev_tool_profiles:
             self.profile_path = os.path.join(expanduser("~"), "DevTools_Profiles", profile_path)
@@ -194,7 +203,7 @@ class Browser:
         self.EXTENSIONS:    str = self.browser_name + "://extensions/"      # расширения
         self.FLAGS:         str = self.browser_name + "://flags/"           # экспериментальные технологии
 
-        self.proxy_addres = proxy_address
+        self.proxy_address = proxy_address
         self.proxy_port = str(proxy_port)
         self.verbose = verbose
 
@@ -280,7 +289,7 @@ class Browser:
             flag_box.add(CMDFlags.Headless.headless)
 
         if self.proxy_port:
-            flag_box.add(CMDFlags.Other.proxy_server, self.proxy_addres + ":" + self.proxy_port)
+            flag_box.add(CMDFlags.Other.proxy_server, self.proxy_address + ":" + self.proxy_port)
             if self.verbose:
                 log(f"Run browser {self.browser_name!r} on port: {self.debug_port} with proxy " +
                       f"on http://127.0.0.1:{self.proxy_port}")
@@ -337,14 +346,14 @@ class Browser:
             make_request, f"http://127.0.0.1:{self.debug_port}/json/list")
 
         if self.verbose: log("getPageList() => " + result)
-        return json.loads(result)
+        return Serializer.decode(result)
 
     async def queryNewTab(self, url: str = "about:blank") -> Connection:
         result: str = await async_util_call(
             make_request, f"http://127.0.0.1:{self.debug_port}/json/new?{url}", "PUT")
 
         if self.verbose: log("queryNewTab() => " + result)
-        result: dict = json.loads(result)
+        result: dict = Serializer.decode(result)
         return await self.getConnectionByID(result["id"])
 
 
@@ -402,7 +411,7 @@ class Browser:
     async def getConnection(
             self, index: int = 0,
             conn_type: str = "page",
-            callback: CommonCallback = None) -> Connection:
+            callback: CommonCallback = None) -> Optional[Connection]:
         """
         Получает страницу браузера по индексу. По умолчанию, первую.
         :param index:       - Желаемый индекс страницы начиная с нуля.
@@ -415,7 +424,7 @@ class Browser:
 
     async def getConnectionByID(
             self, conn_id: str,
-            callback: CommonCallback = None) -> Connection:
+            callback: CommonCallback = None) -> Optional[Connection]:
         """
         Получает страницу браузера по уникальному идентификатору.
         :param conn_id:     - Желаемый идентификатор страницы. Он же 'targetId'.
@@ -429,7 +438,7 @@ class Browser:
             self, value: str,
             match_mode: Literal["exact", "contains", "startswith"] = "startswith",
             index: int = 0,
-            callback: CommonCallback = None) -> Connection:
+            callback: CommonCallback = None) -> Optional[Connection]:
         """
         Получает страницу браузера по заголовку. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -449,7 +458,7 @@ class Browser:
             self, value: str,
             match_mode: Literal["exact", "contains", "startswith"] = "startswith",
             index: int = 0,
-            callback: CommonCallback = None) -> Connection:
+            callback: CommonCallback = None) -> Optional[Connection]:
         """
         Получает страницу браузера по её URL. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.

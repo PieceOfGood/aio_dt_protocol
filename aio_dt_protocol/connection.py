@@ -1,7 +1,3 @@
-try:
-    import ujson as json
-except ModuleNotFoundError:
-    import json
 import asyncio
 from websockets.client import WebSocketClientProtocol, connect
 from websockets.exceptions import ConnectionClosedError
@@ -11,7 +7,7 @@ from typing import Callable, Optional, Union, Tuple, Dict, Any, Iterable, Corout
 from .exceptions import get_cdtp_error
 from .utils import log
 
-from .data import DomainEvent, Sender, Receiver, CommonCallback
+from .data import DomainEvent, Sender, Receiver, CommonCallback, Serializer
 from .extend_connection import Extend
 
 from .domains.background_service import BackgroundService
@@ -160,14 +156,14 @@ class Connection:
 
         if not wait_for_response:
             self.responses[_id] = None
-            await self._send(json.dumps(data))
+            await self._send(Serializer.encode(data))
             return
 
         que = asyncio.Queue()
         sender, receiver = Sender[dict](que), Receiver[dict](que)
         self.responses[_id] = sender
 
-        await self._send(json.dumps(data))
+        await self._send(Serializer.encode(data))
 
         response = await receiver.recv()
         if "error" in response:
@@ -195,7 +191,7 @@ class Connection:
     async def _recv(self) -> None:
         while self.connected:
             try:
-                data_msg: dict = json.loads(await self._ws_session.recv())
+                data_msg: dict = Serializer.decode(await self._ws_session.recv())
             # ! Браузер разорвал соединение
             except ConnectionClosedError as e:
                 if self.verbose: log(f"ConnectionClosedError {e!r}")
@@ -226,7 +222,7 @@ class Connection:
                     function, args = handle
                     asyncio.create_task(
                         function(
-                            *json.loads(payload),
+                            *Serializer.decode(payload),
                             *args
                         )
                     )

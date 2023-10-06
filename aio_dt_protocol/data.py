@@ -1,3 +1,4 @@
+import json
 from typing import Optional, TypeVar, Generic, Tuple, Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
@@ -5,6 +6,17 @@ from asyncio import Queue
 
 CommonCallback = Optional[Callable[[dict], Coroutine[None, None, None]]]
 T = TypeVar("T")
+
+
+class Serializer:
+    """ Сериализатор данных. Позволяет настроить используемый
+    кодировщик/декодировщик JSON.
+
+    encode — кодирует данные в JSON, должен возвращать тип str
+    decode — декодирует данные из JSON
+    """
+    encode: Callable[[any], str] = json.dumps
+    decode: Callable[[str | bytes], any] = json.loads
 
 
 @dataclass

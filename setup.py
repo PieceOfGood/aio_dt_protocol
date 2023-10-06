@@ -34,10 +34,6 @@ setup(
     packages=PACKAGES,
     install_requires=["websockets>=10.0.0"],
 
-    extras_require=dict(
-        ujson=["ujson"],
-    ),
-
     classifiers=[
         "License :: OSI Approved :: BSD License",
         "Programming Language :: Python :: 3.8",

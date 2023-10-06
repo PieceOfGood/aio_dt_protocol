@@ -5,16 +5,9 @@
 Имеет одну зависимость:
 https://github.com/aaugustin/websockets
 
-И так как всё общение через протокол основано на формате JSON, по желанию можно установить в окружение ujson:
-https://github.com/ultrajson/ultrajson
-
 ### Установка
 ```shell
 pip install aio-dt-protocol
-```
-Или установить сразу вместе с [ujson](https://github.com/ultrajson/ultrajson)
-```shell
-pip install aio-dt-protocol[ujson]
 ```
 
 ### Примеры:
@@ -170,3 +163,20 @@ if __name__ == '__main__':
     asyncio.run(main())
 
 ```
+
+### Custom serializer
+Поскольку обмен данными по протоколу использует формат JSON, а под капотом используется стандартная реализация, то чтобы поменять этот механизм используется глобальный объект `Serializer`. Например:
+```python
+from aio_dt_protocol import Browser, Serializer
+from msgspec import json
+
+async def main() -> None:
+    
+    Serializer.decode = json.decode
+    Serializer.encode = lambda x: json.encode(x).decode("utf-8")
+    
+    browser, conn = await Browser.run()
+    ...
+```
+Будьте внимательны!
+Метод, сериализующий данные в JSON, должен возвращать тип `str`, так как [только в этом случае](https://websockets.readthedocs.io/en/stable/reference/asyncio/client.html#websockets.client.WebSocketClientProtocol.send) сообщение отправляется в текстовом фрейме, что и ожидается при обмене по протоколу.

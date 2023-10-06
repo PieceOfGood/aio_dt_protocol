@@ -1,8 +1,3 @@
-try:
-    import ujson as json
-except ModuleNotFoundError:
-    import json
-
 from typing import Optional, List, Dict, Union
 from .types import (
     PropertyDescriptor,
@@ -12,7 +7,7 @@ from .types import (
     SerializationOptions,
     RemoteObject,
 )
-from ...data import DomainEvent
+from ...data import DomainEvent, Serializer
 from ...exceptions import (
     PromiseEvaluateError,
     highlight_promise_error,
@@ -69,7 +64,7 @@ class Runtime:
         if "exceptionDetails" in response:
             raise PromiseEvaluateError(
                 highlight_promise_error(response["result"]["description"]) +
-                "\n" + json.dumps(response["exceptionDetails"])
+                "\n" + Serializer.encode(response["exceptionDetails"])
             )
         if not skip_complex_types:
             return [PropertyDescriptor(**p) for p in response["result"]]
@@ -190,7 +185,7 @@ class Runtime:
         if "exceptionDetails" in response:
             raise PromiseEvaluateError(
                 highlight_promise_error(response["result"]["description"]) +
-                "\n" + json.dumps(response["exceptionDetails"])
+                "\n" + Serializer.encode(response["exceptionDetails"])
             )
         return RemoteObject(**response["result"])
 
