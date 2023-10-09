@@ -7,6 +7,7 @@ class WindowInfo:
     windowId: int
     bounds: "Bounds"
 
+
 @dataclass
 class Bounds:
     """ Описывает положение, размер и состояние окна браузера """
@@ -20,6 +21,7 @@ class Bounds:
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None}
+
 
 @dataclass
 class Version:

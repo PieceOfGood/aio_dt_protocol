@@ -152,7 +152,7 @@ class Browser:
 
     async def setDockTile(self, badgeLabel: Optional[str] = None, image: Optional[str] = None) -> None:
         """
-        (EXPERIMENTAL)
+        !(EXPERIMENTAL)
         Задать сведения о док-плитке для конкретной платформы.
         https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-setDockTile
         :param badgeLabel:      (optional) Значок метки(?)
@@ -174,8 +174,7 @@ class Browser:
             downloadPath: Optional[str] = None,
             eventsEnabled: Optional[bool] = None
     ) -> None:
-        """
-        Устанавливает поведение при загрузке файлов.
+        """  Устанавливает поведение при загрузке файлов.
         https://chromedevtools.github.io/devtools-protocol/tot/Page#method-setDownloadBehavior
         :param behavior:            Разрешить все или отклонить все запросы на загрузку, или использовать поведение
                                         Chrome по умолчанию, если доступно (в противном случае запретить).
@@ -193,9 +192,22 @@ class Browser:
         if eventsEnabled is not None: args.update(eventsEnabled=eventsEnabled)
         await self._connection.call("Browser.setDownloadBehavior", args)
 
-    async def close(self) -> bool:
+    async def setWindowBounds(self, bounds: Bounds, windowId: Optional[int] = None) -> None:
+        """ Устанавливает позицию и/или размер окна.
+        !(EXPERIMENTAL)
+        https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-setWindowBounds
+        :param bounds:          Новые границы окна, а так же состояние.
+        :param windowId:        Идентификатор окна.
         """
-        Изящно завершает работу браузера.
+        if windowId is None:
+            windowId = (await self._connection.Target.getWindowForTarget()).windowId
+        await self._connection.call(
+            "Browser.setWindowBounds",
+            {"windowId": windowId, "bounds": bounds.to_dict()}
+        )
+
+    async def close(self) -> bool:
+        """ Изящно завершает работу браузера.
         https://chromedevtools.github.io/devtools-protocol/tot/Browser#method-close
         :return:        Закрылся/был закрыт
         """
