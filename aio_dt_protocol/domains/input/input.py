@@ -1,6 +1,8 @@
 import time
 from .types import TouchPoint
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, TYPE_CHECKING
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Input:
@@ -10,9 +12,6 @@ class Input:
     __slots__ = ("_connection",)
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
 
 # region [ |>*<|=== Domains ===|>*<| ] Input [ |>*<|=== Domains ===|>*<| ]

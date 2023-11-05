@@ -1,6 +1,8 @@
-from typing import Optional, List, Awaitable, Callable
+from typing import Optional, List, Awaitable, Callable, TYPE_CHECKING
 from ...data import DomainEvent
 from .types import TargetInfo
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Target:
@@ -10,9 +12,6 @@ class Target:
     __slots__ = ("_connection", "targets_discovered")
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.targets_discovered = False
 

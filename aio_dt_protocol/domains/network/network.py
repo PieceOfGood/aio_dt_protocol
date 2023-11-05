@@ -1,6 +1,8 @@
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from ...data import DomainEvent
 from .types import ConnectionType, LoadNetworkResourcePageResult, Cookie
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Network:
@@ -10,9 +12,6 @@ class Network:
     __slots__ = ("_connection", "enabled")
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.enabled   = False
 

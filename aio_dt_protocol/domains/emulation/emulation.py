@@ -1,5 +1,7 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from ...data import DomainEvent
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Emulation:
@@ -9,9 +11,6 @@ class Emulation:
     __slots__ = ("_connection",)
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
 
     async def canEmulate(self) -> bool:

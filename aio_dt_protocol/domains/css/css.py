@@ -1,5 +1,7 @@
-from typing import List
+from typing import List, TYPE_CHECKING
 from ...data import DomainEvent
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class CSS:
@@ -10,9 +12,6 @@ class CSS:
     __slots__ = ("_connection", "enabled", "_style_sheets")
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.enabled = False
         self._style_sheets: List[str] = []  # Если домен CSS активирован, сюда попадут все 'styleSheetId' страницы

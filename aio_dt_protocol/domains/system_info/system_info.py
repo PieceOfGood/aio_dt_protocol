@@ -1,5 +1,7 @@
-from typing import List
+from typing import List, TYPE_CHECKING
 from .types import ProcessInfo, SystemData, GPUInfo
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class SystemInfo:
@@ -9,8 +11,6 @@ class SystemInfo:
     __slots__ = ("_connection",)
 
     def __init__(self, conn) -> None:
-        from ...connection import Connection
-
         self._connection: Connection = conn
 
     async def getSystemInfo(self) -> SystemData:

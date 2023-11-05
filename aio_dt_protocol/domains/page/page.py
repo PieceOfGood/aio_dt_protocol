@@ -1,9 +1,10 @@
 import asyncio
-from urllib.parse import quote
-from typing import Optional, Union, Callable, Awaitable
+from typing import Optional, Union, Callable, Awaitable, TYPE_CHECKING
 from ...data import DomainEvent
 from ...utils import prepare_url
 from .types import FrameTree, LifecycleEventData
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Page:
@@ -15,9 +16,6 @@ class Page:
         "lifecycle_events_enabled", "loading_state", "network_idle_state"
     )
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.enabled = False
         self.loading_state_watcher_enabled = False

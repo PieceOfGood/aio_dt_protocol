@@ -1,4 +1,7 @@
 from ...data import DomainEvent
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 class BackgroundService:
     """
@@ -7,9 +10,6 @@ class BackgroundService:
     __slots__ = ("_connection", "observing_started", "recording_started")
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.observing_started = False
         self.recording_started = False

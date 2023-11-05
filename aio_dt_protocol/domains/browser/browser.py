@@ -1,6 +1,8 @@
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from ...data import DomainEvent
 from .types import Version, Bounds, WindowInfo
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Browser:
@@ -10,9 +12,6 @@ class Browser:
     __slots__ = ("_connection",)
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
 
     async def setPermission(

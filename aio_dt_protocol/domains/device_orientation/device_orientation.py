@@ -1,4 +1,6 @@
-
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 class DeviceOrientation:
     """
@@ -7,8 +9,6 @@ class DeviceOrientation:
     __slots__ = ("_connection",)
 
     def __init__(self, conn) -> None:
-        from ...connection import Connection
-
         self._connection: Connection = conn
 
     async def clearDeviceOrientationOverride(self) -> None:

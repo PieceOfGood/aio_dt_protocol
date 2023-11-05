@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Union
+from typing import Optional, List, Dict, Union, TYPE_CHECKING
 from .types import (
     PropertyDescriptor,
     ContextManager,
@@ -14,6 +14,8 @@ from ...exceptions import (
     EvaluateError,
     highlight_eval_error
 )
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Runtime:
@@ -23,9 +25,6 @@ class Runtime:
     __slots__ = ("_connection", "enabled", "context_manager")
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.enabled = False
         self.context_manager = ContextManager()

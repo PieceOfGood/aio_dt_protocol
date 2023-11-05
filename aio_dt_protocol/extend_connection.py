@@ -2,9 +2,11 @@ from .actions import Actions
 from .data import ViewportRect, WindowRect, GeoInfo, Serializer
 
 import base64, re
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from .exceptions import EvaluateError, JavaScriptError, NullProperty, PromiseEvaluateError
+if TYPE_CHECKING:
+    from .connection import Connection
 
 
 class Extend:
@@ -13,9 +15,6 @@ class Extend:
     __slots__ = ("_connection", "action", "_py_call_script_id")
 
     def __init__(self, conn) -> None:
-
-        from .connection import Connection
-
         self._connection: Connection = conn
         self._py_call_script_id: str = ""
         self.action = Actions(conn)             # Совершает действия на странице. Клики;

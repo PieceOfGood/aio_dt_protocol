@@ -1,9 +1,11 @@
 import re
-from typing import Optional, Union, List
+from typing import Optional, Union, List, TYPE_CHECKING
 from .dom_element import Node
 from ..runtime.types import RemoteObject
 from ...exceptions import CouldNotFindNodeWithGivenID, RootIDNoLongerExists
 from ...data import DomainEvent
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class DOM:
@@ -13,9 +15,6 @@ class DOM:
     __slots__ = ("_connection", "enabled")
 
     def __init__(self, conn) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.enabled = False
 

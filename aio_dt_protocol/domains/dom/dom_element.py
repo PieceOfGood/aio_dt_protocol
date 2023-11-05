@@ -1,12 +1,15 @@
 import re
 import asyncio
-from typing import List, Dict, Optional, Union, Literal
+from typing import List, Dict, Optional, Union, Literal, TYPE_CHECKING
 from .types import NodeCenter, NodeRect, BoxModel, StyleProp
 from ...domains.runtime.types import Script, RemoteObject
 from ...exceptions import (
     CouldNotFindNodeWithGivenID, RootIDNoLongerExists, NodeNotResolved, NodeNotDescribed,
     StateError
 )
+if TYPE_CHECKING:
+    from ...connection import Connection
+
 
 def to_dict_attrs(a: list) -> Union[dict, None]:
     if not a: return None
@@ -53,9 +56,6 @@ class Node:
         compatibilityMode: Optional[Literal["QuirksMode", "LimitedQuirksMode", "NoQuirksMode"]] = None
 
     ) -> None:
-
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.nodeId = nodeId
         self.backendNodeId = backendNodeId

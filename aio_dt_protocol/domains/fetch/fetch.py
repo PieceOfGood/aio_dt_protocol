@@ -1,6 +1,8 @@
-from typing import Optional, List, Callable, Awaitable
+from typing import Optional, List, Callable, Awaitable, TYPE_CHECKING
 from ...data import DomainEvent
 from .types import EventRequestPaused, EventAuthRequired, HeaderEntry, RequestPattern
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Fetch:

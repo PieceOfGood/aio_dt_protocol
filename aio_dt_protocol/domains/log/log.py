@@ -1,4 +1,7 @@
 from ...data import DomainEvent
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ...connection import Connection
 
 
 class Log:
@@ -9,8 +12,6 @@ class Log:
     __slots__ = ("_connection", "enabled")
 
     def __init__(self, conn) -> None:
-        from ...connection import Connection
-
         self._connection: Connection = conn
         self.enabled = False
 
