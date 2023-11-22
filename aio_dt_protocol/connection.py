@@ -143,9 +143,13 @@ class Connection:
 
     async def call(
         self, domain_and_method: str,
-        params:  Optional[dict] = None,
-        wait_for_response: bool = True
+        params:  Optional[dict] = None
     ) -> Optional[dict]:
+        """ Низкоуровневый метод, позволяющий вызывать методы протокола.
+        :param domain_and_method:   Название домена и метода через точку,
+            как это описано в протоколе. Например: "Page.enable"
+        :param params:              Параметры
+        """
         self._id += 1
         _id = self._id
         data = {
@@ -153,11 +157,6 @@ class Connection:
             "params": params if params else {},
             "method": domain_and_method
         }
-
-        if not wait_for_response:
-            self.responses[_id] = None
-            await self._send(Serializer.encode(data))
-            return
 
         que = asyncio.Queue()
         sender, receiver = Sender[dict](que), Receiver[dict](que)
@@ -260,8 +259,7 @@ class Connection:
 
     async def _detach(self) -> None:
         """  Отключается от страницы. Вызывается автоматически при закрытии браузера,
-        или текущей страницы. Принудительный вызов не закрывает страницу,
-        а лишь разрывает с ней соединение.
+        или текущей страницы.
         """
         if not self.connected:
             return
