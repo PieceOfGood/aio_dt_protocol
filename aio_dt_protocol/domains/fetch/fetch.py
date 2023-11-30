@@ -99,8 +99,7 @@ class Fetch:
             responseHeaders: Optional[List[HeaderEntry]] = None,
             binaryResponseHeaders:  Optional[str] = None,
             body:                   Optional[str] = None,
-            responsePhrase:         Optional[str] = None,
-            wait_for_response:               bool = False
+            responsePhrase:         Optional[str] = None
     ) -> None:
         """
         Предоставляет браузеру ответ на запрос.
@@ -121,7 +120,6 @@ class Fetch:
         :param responsePhrase:          (optional) Текстовое представление responseCode. Если
                                             отсутствует, используется стандартная фраза,
                                             соответствующая responseCode.
-        :param wait_for_response:       (optional) Дожидаться ответа?
         :return:
         """
         args = {"requestId": requestId, "responseCode": responseCode}
@@ -133,7 +131,7 @@ class Fetch:
         if body is not None: args.update({"body": body})
         if responsePhrase is not None: args.update({"responsePhrase": responsePhrase})
         # print("fulfillRequest args", json.dumps(args, indent=4))
-        await self._connection.call("Fetch.fulfillRequest", args, wait_for_response=wait_for_response)
+        await self._connection.call("Fetch.fulfillRequest", args)
 
     async def continueRequest(
         self, requestId: str,
@@ -142,7 +140,6 @@ class Fetch:
         postData:           Optional[str] = None,
         headers:     Optional[List[dict]] = None,
         interceptResponse: Optional[bool] = None,
-        wait_for_response:           bool = False
     ) -> None:
         """
         Продолжает запрос, дополнительно изменяя некоторые его параметры.
@@ -158,7 +155,6 @@ class Fetch:
                                             { "name": "Content-Type", "value": "application/json; charset=UTF-8" }
                                         ]
         :param interceptResponse:   (optional) Если установлено, переопределяет поведение перехвата ответа для этого запроса.
-        :param wait_for_response:   (optional) Дожидаться ответа?
         :return:
         """
         args = {"requestId": requestId}
@@ -167,7 +163,7 @@ class Fetch:
         if postData is not None: args.update({"postData": postData})
         if headers is not None: args.update({"headers": headers})
         if interceptResponse is not None: args.update({"interceptResponse": interceptResponse})
-        await self._connection.call("Fetch.continueRequest", args, wait_for_response=wait_for_response)
+        await self._connection.call("Fetch.continueRequest", args)
 
     async def continueWithAuth(self, requestId: str, authChallengeResponse: list) -> None:
         """
