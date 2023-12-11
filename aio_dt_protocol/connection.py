@@ -26,7 +26,7 @@ from .domains.runtime import Runtime
 from .domains.system_info import SystemInfo
 from .domains.target import Target
 
-CoroTypeNone = Coroutine[None, None, None]
+CoroTypeNone = Coroutine[Any, Any, None]
 
 
 class Connection:
@@ -106,7 +106,6 @@ class Connection:
         self.Runtime = Runtime(self)
         self.SystemInfo = SystemInfo(self)
         self.Target = Target(self)
-
 
     @property
     def connected(self) -> bool:
@@ -193,7 +192,8 @@ class Connection:
                 data_msg: dict = Serializer.decode(await self._ws_session.recv())
             # ! Браузер разорвал соединение
             except ConnectionClosedError as e:
-                if self.verbose: log(f"ConnectionClosedError {e!r}")
+                if self.verbose:
+                    log(f"ConnectionClosedError {e!r}")
                 await self._detach()
                 return
 

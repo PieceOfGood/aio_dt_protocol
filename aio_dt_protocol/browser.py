@@ -243,7 +243,7 @@ class Browser:
 
         self.browser_pid = self._run_browser(url, flags, position, sizes)
         if verbose:
-            log(f"Running at {self.debug_port} port | Headless mod: {self.is_headless_mode}")
+            log(f"Headless mod: {self.is_headless_mode}")
 
     def _run_browser(self, url: Optional[str] = None,
                      flags: Optional["FlagBuilder"] = None,
@@ -302,8 +302,7 @@ class Browser:
 
         run_args += flag_box.flags()
 
-        pipe = subprocess.PIPE if not self.verbose else None
-        return subprocess.Popen(run_args, stdout=pipe, stderr=pipe).pid
+        return subprocess.Popen(run_args).pid
 
     def kill(self) -> None:
         """  Убивает процесс браузера. """
@@ -707,6 +706,8 @@ class CMDFlags:
         incognito = "--incognito"
         # ! Принимает путь к каталогу, где будет позиционирован весь кеш браузера, включая профили и прочее.
         user_data_dir = "--user-data-dir="      # * $
+        # ! Принимает имя профиля внутри каталога user-data-dir. Если не указан, используется имя "Default".
+        profile_directory = "--profile-directory="      # * $
 
     class Performance(CMDFlag):
         # ? Performance & web platform behavior

@@ -49,7 +49,7 @@ class Extend:
             return
 
         py_call_js = """\
-        function py_call(funcName,...args){eval(funcName+"(`"+JSON.stringify(args)+"`)");}"""
+        function py_call(funcName,...args){window[funcName](JSON.stringify(args));}"""
         self._py_call_script_id = await self._connection.Page.addScriptOnLoad(py_call_js)
         await self.injectJS(py_call_js)
 
