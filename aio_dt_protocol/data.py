@@ -8,6 +8,76 @@ CommonCallback = Optional[Callable[[dict], Coroutine[None, None, None]]]
 T = TypeVar("T")
 
 
+class BrowserLink:
+    """ Внутренние адреса браузера.
+    """
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    @property
+    def blank(self) -> str:
+        """ Ссылка на пустую страницу.
+        """
+        return "about:blank"
+
+    @property
+    def new_tab(self) -> str:
+        """ Ссылка на дефолтную новую вкладку.
+        """
+        return self._name + "://newtab/"
+
+    @property
+    def settings(self) -> str:
+        """ Ссылка на страницу настроек.
+        """
+        return self._name + "://settings/"
+
+    @property
+    def rewards(self) -> str:
+        """ ! ТОЛЬКО для Brave браузера !
+        Ссылка на страницу с наградами.
+        """
+        return self._name + "://rewards/"
+
+    @property
+    def history(self) -> str:
+        """ Ссылка на историю.
+        """
+        return self._name + "://history/"
+
+    @property
+    def bookmarks(self) -> str:
+        """ Ссылка на закладки.
+        """
+        return self._name + "://bookmarks/"
+
+    @property
+    def downloads(self) -> str:
+        """ Ссылка на загрузки.
+        """
+        return self._name + "://downloads/"
+
+    @property
+    def extensions(self) -> str:
+        """ Ссылка на расширения.
+        """
+        return self._name + "://extensions/"
+
+    @property
+    def wallet(self) -> str:
+        """ ! ТОЛЬКО для Brave браузера !
+        Ссылка на кошельки.
+        """
+        return self._name + "://wallet/"
+
+    @property
+    def flags(self) -> str:
+        """ Ссылка на экспериментальные технологии.
+        """
+        return self._name + "://flags/"
+
+
 class Serializer:
     """ Сериализатор данных. Позволяет настроить используемый
     кодировщик/декодировщик JSON.

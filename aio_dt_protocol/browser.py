@@ -14,7 +14,8 @@ from .data import (
     TargetConnectionType,
     CommonCallback,
     BrowserInstanceInfo,
-    Serializer
+    Serializer,
+    BrowserLink
 )
 from .exceptions import FlagArgumentContainError, NoTargetWithGivenIdFound
 from .utils import (
@@ -56,6 +57,7 @@ class Browser:
     def __init__(
             self, *,
             profile_path: str = "testProfile",
+            profile_name: str = "Default",
             dev_tool_profiles:  bool = False,
             url: Optional[Union[str, bytes]] = None,
             flags:  Optional["FlagBuilder"] = None,
@@ -75,13 +77,15 @@ class Browser:
         Все параметры — не обязательны.
         ==============================================================================================
 
-        :param profile_path:    Путь до каталога, в который будет сохранена сессия профиля.
+        :param profile_path:    Путь до каталога, в который хранит сессии профилей.
                                     Если не передан, или указано название папки, браузер
                                     сам создаст папку, по месту вызывающего кода. Если указан
                                     несуществующий путь, он будет создан.
 
                                         [-!!!-] ВАЖНО [-!!!-] - для запуска в режиме "headless",
                                         в "profile_path" нужно передать пустую строку.
+
+        :param profile_name:    Название профиля, соответствующее имени папки внутри 'profile_path'.
 
         :param dev_tool_profiles:   Если 'profile_path' указан как имя папки, а не путь,
                                     профиль с указанным именем будет создан/получен в домашней
@@ -151,7 +155,9 @@ class Browser:
 
         preferences_path = ""
         if self.profile_path:
-            preferences_path = os.path.join(self.profile_path, "Default", "Preferences")
+            preferences_path = os.path.join(self.profile_path, profile_name, "Preferences")
+
+        self.profile_name = profile_name
 
         self.first_run = self.profile_path == "" or not os.path.exists(self.profile_path)
 
@@ -168,7 +174,11 @@ class Browser:
                 if exit_type := re.search(r'"exit_type":"(\w+)"', preferences):
                     # ? НЕ нормальный
                     if exit_type.group(1) != "Normal":
-                        result = re.sub(r'"exit_type":"\w+"', '"exit_type":"Normal"', preferences)
+                        result = re.sub(
+                            r'"exit_type":"\w+"',
+                            '"exit_type":"Normal"',
+                            preferences
+                        )
                         with open(preferences_path, "w") as f: f.write(result)
                 # ? Только для чтения
                 # os.chmod(preferences_path, READ_ONLY)
@@ -192,16 +202,8 @@ class Browser:
         else:
             self.browser_name = browser_exe
 
-        # ? Константы URL соответствующих вкладок
-        self.NEW_TAB:       str = self.browser_name + "://newtab/"          # дефолтная вкладка
-        self.SETTINGS:      str = self.browser_name + "://settings/"        # настройки
-        self.BRAVE_REWARDS: str = self.browser_name + "://rewards/"         # вознаграждения (brave only)
-        self.HISTORY:       str = self.browser_name + "://history/"         # история переходов
-        self.BOOKMARKS:     str = self.browser_name + "://bookmarks/"       # закладки
-        self.DOWNLOADS:     str = self.browser_name + "://downloads/"       # загрузки
-        self.WALLET:        str = self.browser_name + "://wallet/"          # кошельки (brave only)
-        self.EXTENSIONS:    str = self.browser_name + "://extensions/"      # расширения
-        self.FLAGS:         str = self.browser_name + "://flags/"           # экспериментальные технологии
+        # ? URL соответствующих вкладок
+        self.link = BrowserLink(self.browser_name)
 
         self.proxy_address = proxy_address
         self.proxy_port = str(proxy_port)
@@ -221,18 +223,19 @@ class Browser:
             browser_path = browser_path if browser_path else os.popen("which " + browser_exe).read().strip()
 
         if not os.path.exists(browser_path) or not os.path.isfile(browser_path):
-            raise FileNotFoundError(f"Переданный 'browser_path' => '{browser_path}' — не существует, или содержит ошибку")
+            raise FileNotFoundError(f"Путь до исполняемого файла '{browser_path}' "
+                                    "— не существует, или содержит ошибку")
         self.browser_path = browser_path
 
         if int(debug_port) <= 0:
-            raise ValueError(f"Значение 'debug_port' => '{debug_port}' — должно быть положительным целым числом!")
+            raise ValueError(f"Значение 'debug_port' — должно быть положительным целым числом!")
         self.debug_port = str(debug_port)
 
-        # https://stackoverflow.com/questions/2381241/what-is-the-subprocess-popen-max-length-of-the-args-parameter
-        data_url_len = len(url) if url else 0
-
-        if data_url_len > 30_000:
-            warnings.warn(f"Length data url ({data_url_len}) is approaching to critical length = 32767 symbols!")
+        if (data_url_len := len(url) if url else 0) > 30_000:
+            warnings.warn(f"Длина полученного url({data_url_len}) приближается "
+                          "к критическому значению = 32767 символов!\n"
+                          "https://stackoverflow.com/questions/2381241/what-is-"
+                          "the-subprocess-popen-max-length-of-the-args-parameter")
 
         self.is_headless_mode = self.profile_path == ""
         if self.is_headless_mode:
@@ -279,6 +282,7 @@ class Browser:
         # ! Default mode
         if self.profile_path:
             flag_box.add(CMDFlags.Common.user_data_dir, self.profile_path)
+            flag_box.add(CMDFlags.Common.profile_directory, self.profile_name)
             if position is not None:
                 flag_box.add(CMDFlags.Screen.window_position, *position)
             if sizes is not None:
