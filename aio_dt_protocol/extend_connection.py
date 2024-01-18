@@ -1,7 +1,8 @@
 from .actions import Actions
 from .data import ViewportRect, WindowRect, GeoInfo, Serializer
 
-import base64, re
+import base64
+import re
 from typing import Optional, TYPE_CHECKING
 
 from .exceptions import EvaluateError, JavaScriptError, NullProperty, PromiseEvaluateError
@@ -60,7 +61,6 @@ class Extend:
         if self.py_call_enabled:
             await self._connection.Page.removeScriptOnLoad(self._py_call_script_id)
             self._py_call_script_id = ""
-
 
     async def getViewportRect(self) -> ViewportRect:
         """ Возвращает список с длиной и шириной вьюпорта браузера.
@@ -201,7 +201,7 @@ class Extend:
             ),
             languages=result["languages"].split(","),
             state_province=result.get("stateProv"),
-            proxy_type=(pt:=result.get("proxyType"))
+            proxy_type=(pt := result.get("proxyType"))
         )
         del result["ll"]
         del result["accuracy"]

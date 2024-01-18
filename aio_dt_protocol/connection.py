@@ -57,14 +57,14 @@ class Connection:
             browser_name: str
     ) -> None:
         """
-        :param ws_url:              Адрес WebSocket
-        :param conn_id:             Идентификатор страницы
-        :param frontend_url:        devtoolsFrontendUrl по которому происходит подключение к дебаггеру
+        :param ws_url:              Адрес WebSocket.
+        :param conn_id:             Идентификатор страницы.
+        :param frontend_url:        devtoolsFrontendUrl по которому происходит подключение к дебаггеру.
         :param callback:            Колбэк, который будет получать все данные,
-                                        приходящие по WebSocket в виде словарей
+                                        приходящие по WebSocket в виде словарей.
         :param is_headless_mode:    "Headless" включён?
         :param verbose:             Печатать некие подробности процесса?
-        :param browser_name:        Имя браузера
+        :param browser_name:        Имя браузера.
         """
 
         self.ws_url = ws_url
@@ -78,7 +78,7 @@ class Connection:
         self._connected = False
         self._ws_session: Optional[WebSocketClientProtocol] = None
         self._receiver_loop: Optional[asyncio.Task] = None
-        self._on_detach_listener: Tuple[Callable[[any], CoroTypeNone], list, dict] = tuple()
+        self._on_detach_listener: Optional[Tuple[Callable[[any], CoroTypeNone], list, dict]] = None
         self._bindings: Dict[str, Tuple[Callable[[any], CoroTypeNone], Tuple[Any, ...]]] = {}
         self._listeners_for_event: Dict[
             str, Dict[
@@ -209,7 +209,7 @@ class Connection:
             # Если коллбэк функция была определена, она будет получать все
             #   уведомления из инстанса страницы.
             if self.callback is not None:
-                asyncio.create_task(self.callback(data_msg))
+                _ = asyncio.create_task(self.callback(data_msg))
 
             # ? Был вызов из контекста страницы
             if method == "Runtime.bindingCalled":
@@ -219,7 +219,7 @@ class Connection:
                 # ? Есть вызываемый объект с таким именем
                 if handle := self._bindings.get(name):
                     function, args = handle
-                    asyncio.create_task(
+                    _ = asyncio.create_task(
                         function(
                             *Serializer.decode(payload),
                             *args
@@ -229,7 +229,7 @@ class Connection:
             if listeners := self._listeners_for_event.get(method):
                 p = data_msg.get("params") or {}
                 for listener, largs in listeners.items():
-                    asyncio.create_task(
+                    _ = asyncio.create_task(
                         listener(       # корутина
                             p,          # её "params" — всегда передаётся
                             *largs      # список bind-аргументов
@@ -355,7 +355,8 @@ class Connection:
         if not iscoroutinefunction(listener):
             raise TypeError("Listener must be a async callable object!")
         if m := self._listeners_for_event.get(e):
-            if listener in m: m.pop(listener)
+            if listener in m:
+                m.pop(listener)
 
 
     def removeListenersForEvent(self, event: Union[str, DomainEvent]) -> None:

@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ...connection import Connection
 
+
 class BackgroundService:
     """
     #   https://chromedevtools.github.io/devtools-protocol/tot/BackgroundService
@@ -59,6 +60,7 @@ class BackgroundService:
         if self.observing_started:
             await self._connection.call("BackgroundService.stopObserving", {"service": service})
             self.observing_started = False
+
 
 class BackgroundServiceEvent(DomainEvent):
     backgroundServiceEventReceived = "BackgroundService.backgroundServiceEventReceived"

@@ -617,7 +617,7 @@ class FlagBuilder:
     для запуска браузера.
     """
     def __init__(self) -> None:
-        self._flags: Dict[str, Tuple[str]] = {}
+        self._flags: Dict[str, Tuple[str, ...]] = {}
 
     def add(self, flag: "CMDFlag", *args: Union[str, int, float]) -> None:
         """ Принимает один флаг и его аргументы. """
