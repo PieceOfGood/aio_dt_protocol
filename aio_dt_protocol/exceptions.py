@@ -96,7 +96,9 @@ def highlight_eval_error(error_text: str, expression: str) -> str:
     line, pos = tuple(map(int, error_text.split(":")[-2:]))
     lines = expression.split("\n")
     l = lines[line - 1]
-    word = re.match(r"\w+\b", l[pos - 1:]).group(0)
+    matched = re.match(r".*?\w+\b", l[pos - 1:])
+    word = matched.group(0)
+
     l = "".join([l[:pos - 1], f"\x1b[91m\x1b[4m{word}\x1b[0m", l[len(word) + pos - 1:]])
     return "\n".join([
         error_text,

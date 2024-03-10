@@ -2,7 +2,9 @@ import asyncio
 from websockets.client import WebSocketClientProtocol, connect
 from websockets.exceptions import ConnectionClosedError
 from inspect import iscoroutinefunction
-from typing import Callable, Optional, Union, Tuple, Dict, Any, Iterable, Coroutine
+from typing import (
+    Callable, Optional, Union, Tuple, Dict, Any, Iterable,
+    Awaitable)
 
 from .exceptions import get_cdtp_error
 from .utils import log
@@ -26,7 +28,7 @@ from .domains.runtime import Runtime
 from .domains.system_info import SystemInfo
 from .domains.target import Target
 
-CoroTypeNone = Coroutine[Any, Any, None]
+Handler = Callable[..., Awaitable[None]]
 
 
 class Connection:
@@ -78,12 +80,12 @@ class Connection:
         self._connected = False
         self._ws_session: Optional[WebSocketClientProtocol] = None
         self._receiver_loop: Optional[asyncio.Task] = None
-        self._on_detach_listener: Optional[Tuple[Callable[[any], CoroTypeNone], list, dict]] = None
-        self._bindings: Dict[str, Tuple[Callable[[any], CoroTypeNone], Tuple[Any, ...]]] = {}
+        self._on_detach_listener: Optional[Tuple[Handler], Tuple[Any, ...]] = None
+        self._bindings: Dict[str, Tuple[Handler, Tuple[Any, ...]]] = {}
         self._listeners_for_event: Dict[
             str, Dict[
-                Callable[[dict, tuple], CoroTypeNone],
-                Tuple[Any, ...]
+                Callable[[dict, Tuple[Any, ...]], Awaitable[None]],
+                Iterable[Any]
             ]
         ] = {}
         self.on_close_event = asyncio.Event()
@@ -238,9 +240,11 @@ class Connection:
 
     async def waitForClose(self) -> None:
         """ Дожидается, пока не будет потеряно соединение со страницей. """
-        if self.verbose: log(f"Wait wor close connection {self.conn_id}")
+        if self.verbose:
+            log(f"Wait wor close connection {self.conn_id}")
         await self.on_close_event.wait()
-        if self.verbose: log(f"Wait for close connection done {self.conn_id}")
+        if self.verbose:
+            log(f"Wait for close connection done {self.conn_id}")
 
     async def activate(self) -> None:
         self._ws_session = await connect(self.ws_url, ping_interval=None)
@@ -252,10 +256,10 @@ class Connection:
         """ Принудительно разрывает соединение. """
         if not self.connected:
             return
-        if self.verbose: log(f"[ DISCONNECT ] {self.conn_id}")
+        if self.verbose:
+            log(f"[ DISCONNECT ] {self.conn_id}")
         if not self._ws_session.closed:
             await self._ws_session.close()
-
 
     async def _detach(self) -> None:
         """  Отключается от страницы. Вызывается автоматически при закрытии браузера,
@@ -265,43 +269,50 @@ class Connection:
             return
 
         self._receiver_loop.cancel()
-        if self.verbose: log(f"[ DETACH ] {self.conn_id}")
+        if self.verbose:
+            log(f"[ DETACH ] {self.conn_id}")
         self._connected = False
 
         if self._on_detach_listener:
-            function, args, kvargs = self._on_detach_listener
-            await function(*args, **kvargs)
+            function, args = self._on_detach_listener
+            await function(*args)
 
         self.on_close_event.set()
 
     def clearOnDetach(self) -> None:
-        self._on_detach_listener = tuple()
+        
+        self._on_detach_listener = None
 
-    def setOnDetach(self, function: Callable[[any], CoroTypeNone], *args, **kvargs) -> bool:
+    def setOnDetach(self, function: Handler, *bind_args: Any) -> None:
         """  Регистрирует асинхронный коллбэк, который будет вызван с соответствующими аргументами
         при разрыве соединения со страницей.
+        
+        :param function:    awaitable-объект
+        :param bind_args:        последовательность аргументов, которые будут переданы
+            function в последнюю очередь
         """
         if not iscoroutinefunction(function):
             raise TypeError("OnDetach-listener must be a async callable object!")
-        if not self.connected:
-            return False
-        self._on_detach_listener = function, args, kvargs
-        return True
+        self._on_detach_listener = function, bind_args
 
-    async def bindFunction(self, function: Callable[[any], CoroTypeNone], *args: Any) -> None:
+    async def bindFunction(self, function: Handler, *bind_args: Any) -> None:
         """ Регистрирует имя в глобальном контексте страницы. Это имя затем используется
         в вызове функции, принимающей ровно один, строковый аргумент, который передаётся
         в тело события `Runtime.bindingCalled`.
+        
+        :param function:    awaitable-объект
+        :param bind_args:   последовательность аргументов, которые будут переданы
+            function в последнюю очередь
         """
         if not iscoroutinefunction(function):
             raise TypeError("Listener must be a async callable object!")
 
-        self._bindings[function.__name__] = function, args
+        self._bindings[function.__name__] = function, bind_args
         await self.Runtime.addBinding(function.__name__)
         await self.extend.pyCallAddOnload()
 
     async def bindFunctions(
-            self, *handlers_n_args: Tuple[Callable[[any], CoroTypeNone], Iterable]) -> None:
+            self, *handlers_n_args: Tuple[Handler, Iterable]) -> None:
         """ Выполняет множественную регистрацию.
         :param handlers_n_args:     Список двухэлементных последовательностей,
         в которых:
@@ -313,7 +324,7 @@ class Connection:
             await self.bindFunction(function, *args)
         await self.extend.pyCallAddOnload()
 
-    async def unbindFunctions(self, *functions: Union[Callable[[any], CoroTypeNone], str]) -> None:
+    async def unbindFunctions(self, *functions: Union[Callable[[any], Awaitable[None]], str]) -> None:
         """ Прекращает генерацию событий `Runtime.bindingCalled` для указанных имён.
         :param functions:  Список функций, или их имён.
         """
@@ -323,7 +334,11 @@ class Connection:
             await self.Runtime.removeBinding(name)
 
     async def addListenerForEvent(
-        self, event: Union[str, DomainEvent], listener: Callable[[dict, tuple], CoroTypeNone], *args) -> None:
+        self,
+            event: Union[str, DomainEvent],
+            listener: Callable[[dict, Iterable], Awaitable[None]],
+            *args
+    ) -> None:
         """ Регистрирует слушателя, который будет вызываться при генерации определённых событий
         в браузере. Список таких событий можно посмотреть в разделе "Events" почти
         у каждого домена по адресу: https://chromedevtools.github.io/devtools-protocol/
@@ -345,7 +360,7 @@ class Connection:
         self._listeners_for_event[e][listener] = args
 
     def removeListenerForEvent(
-            self, event: Union[str, DomainEvent], listener: Callable[[dict, tuple], CoroTypeNone]) -> None:
+            self, event: Union[str, DomainEvent], listener: Callable[[dict, Iterable], Awaitable[None]]) -> None:
         """  Удаляет регистрацию слушателя для указанного события.
         :param event:           Имя метода, для которого была регистрация.
         :param listener:        Колбэк-функция, которую нужно удалить.
@@ -358,7 +373,6 @@ class Connection:
             if listener in m:
                 m.pop(listener)
 
-
     def removeListenersForEvent(self, event: Union[str, DomainEvent]) -> None:
         """
         Удаляет регистрацию метода и слушателей вместе с ним для указанного события.
@@ -370,4 +384,5 @@ class Connection:
             self._listeners_for_event.pop(e)
 
     def __del__(self) -> None:
-        if self.verbose: log(f"[ DELETED ] {self.conn_id}")
+        if self.verbose:
+            log(f"[ DELETED ] {self.conn_id}")

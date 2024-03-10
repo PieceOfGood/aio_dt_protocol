@@ -36,7 +36,7 @@ class Browser:
             url: Optional[str] = None,
             debug_port: int = 9222,
             browser_name: str = "chrome",
-            callback: CommonCallback = None,
+            callback: Optional[CommonCallback] = None,
             **options
     ) -> Tuple["Browser", "Connection"]:
         """ Запускает браузер с опциональными параметрами.
@@ -208,11 +208,13 @@ class Browser:
         self.proxy_address = proxy_address
         self.proxy_port = str(proxy_port)
         self.verbose = verbose
+        self.is_connected = False
 
         if instance_info:
             self.is_headless_mode = instance_info.headless
             self.browser_pid = instance_info.pid
             self.debug_port = str(instance_info.port)
+            self.is_connected = True
             if verbose:
                 log(f"Connected to {self.debug_port} port | Headless mod: {self.is_headless_mode}")
             return
@@ -315,11 +317,44 @@ class Browser:
         except PermissionError:
             pass
 
+    async def activateTarget(self, target: Union[TargetConnectionInfo, str]) -> str:
+        """ Выводит страницу на передний план (активирует вкладку).
+        :param target:         Объект, описывающий соединение с
+            целевой вкладкой, которую требуется активировать, или её ID.
+        """
+        target_id = target.id if isinstance(target, TargetConnectionInfo) else target
+        result = await async_util_call(
+            make_request,
+            f"http://127.0.0.1:{self.debug_port}/"
+            f"json/activate/{target_id}"
+        )
+        return result # "Target activated" if success
+
     async def getAllTargetsConnectionInfo(self) -> List[TargetConnectionInfo]:
         """ Возвращает список описаний соединений со всеми
         существующими типами соединений.
         """
         return [TargetConnectionInfo(**i) for i in await self.getConnectionList()]
+
+    async def getConnectionInfoByUrl(
+            self, url: str,
+            match_mode: Literal["exact", "contains", "startswith"] = "startswith"
+    ) -> Optional[TargetConnectionInfo]:
+        """ Возвращает описание соединения, соответствующее переданному адресу.
+        :param url:             Адрес
+        :param match_mode:      Режим сравнения.
+            Может быть только:
+                * exact      - полное соответствие URL и value
+                * contains   - URL содержит value
+                * startswith - URL начинается с value
+        """
+        if match_mode == "exact":
+            return next((ti for ti in await self.getAllTargetsConnectionInfo() if ti.url == url), None)
+        elif match_mode == "contains":
+            return next((ti for ti in await self.getAllTargetsConnectionInfo() if url in ti.url), None)
+        elif match_mode == "startswith":
+            return next((ti for ti in await self.getAllTargetsConnectionInfo() if ti.url.startswith(url)), None)
+        raise ValueError(f"Unknown match_mode: {match_mode!r}")
 
     async def getConnectionsByType(
             self, conn_type: Union[str, TargetConnectionType]) -> List[TargetConnectionInfo]:
@@ -365,7 +400,7 @@ class Browser:
             value: Union[str, int],
             match_mode: Literal["exact", "contains", "startswith"] = "exact",
             index: int = 0,
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """
         Организует выбор нужного соединения из процессов браузера по следующим критериям:
         :param key:                 По ключу из словаря. Список ключей смотри
@@ -414,7 +449,7 @@ class Browser:
     async def getConnection(
             self, index: int = 0,
             conn_type: str = "page",
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """
         Получает страницу браузера по индексу. По умолчанию, первую.
         :param index:       - Желаемый индекс страницы начиная с нуля.
@@ -427,7 +462,7 @@ class Browser:
 
     async def getConnectionByID(
             self, conn_id: str,
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """
         Получает страницу браузера по уникальному идентификатору.
         :param conn_id:     - Желаемый идентификатор страницы. Он же 'targetId'.
@@ -441,7 +476,7 @@ class Browser:
             self, value: str,
             match_mode: Literal["exact", "contains", "startswith"] = "startswith",
             index: int = 0,
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """
         Получает страницу браузера по заголовку. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -461,7 +496,7 @@ class Browser:
             self, value: str,
             match_mode: Literal["exact", "contains", "startswith"] = "startswith",
             index: int = 0,
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """
         Получает страницу браузера по её URL. По умолчанию, первую.
         :param value:       - Текст, который будет сопоставляться при поиске.
@@ -482,9 +517,10 @@ class Browser:
             newWindow: bool = False,
             background: bool = False,
             wait_for_create: bool = True,
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """
-        Создаёт новую вкладку в браузере.
+        Создаёт новую вкладку в браузере, используя для этого существующие
+        подключения.
         :param url:                     - (optional) Адрес будет открыт при создании.
         :param newWindow:               - (optional) Если 'True' — страница будет открыта в новом окне.
         :param background:              - (optional) Если 'True' — страница будет открыта в фоне.
@@ -499,11 +535,27 @@ class Browser:
         else:
             page = await self.getConnectionByID(page_id)
         return page
+
+    async def newTab(self, url: str = "about:blank") -> Optional[Connection]:
+        """ Создаёт новую вкладку в браузере, посредством HTTP запроса.
+        Вкладка будет открыта в последнем активном окне браузера.
+        :param url:                     - (optional) Адрес будет открыт при создании.
+        :return:                    * <Connection>
+        """
+        result = await async_util_call(
+            make_request,
+            f"http://127.0.0.1:{self.debug_port}/"
+            f"json/new?{url}",
+            "PUT"
+        )
+
+        data = Serializer.decode(result)
+        return await self.getConnectionByID(data["id"])
     
     async def showInspector(
             self, conn: Connection,
             new_window: bool = True,
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """
         Открывает новую вкладку с дебаггером для инспектируемой страницы.
         :param conn:            - Инспектируемая страница. Может принадлежать любому браузеру.
@@ -517,7 +569,7 @@ class Browser:
     async def createPopupWindow(
             self, conn: Connection,
             url: str = "about:blank",
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """ Создаёт всплывающее окно с минимумом интерфейса браузера".
         :param url:             - Адрес, ресурс которого будет загружен
         :param conn:            - Родительская страница, инициатор
@@ -529,7 +581,7 @@ class Browser:
 
     async def getConnectionByOpener(
             self, conn: Connection,
-            callback: CommonCallback = None) -> Optional[Connection]:
+            callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """ Возвращает последнее созданное соединение со страницей, открытие которого
         инициировано с конкретной страницы. Например, при использовании JavaScript
         "window.open()".
@@ -543,7 +595,7 @@ class Browser:
 
     async def getConnectionsByOpener(
             self, conn: Connection,
-            callback: CommonCallback = None) -> List[Connection]:
+            callback: Optional[CommonCallback] = None) -> List[Connection]:
         """ Возвращает список всех соединений, открытие которых инициировано с конкретной
         страницы. Например, при использовании JavaScript "window.open()".
         :param conn:            - Родительская страница, инициатор открытых окон
@@ -558,13 +610,13 @@ class Browser:
 
     async def waitFirstTab(
             self, timeout: float = 20.0,
-            callback: CommonCallback = None) -> Connection:
+            callback: Optional[CommonCallback] = None) -> Connection:
         """ Дожидается получения соединения или вызывает исключение
         'TimeoutError' по истечении таймаута.
         """
         return await asyncio.wait_for(self.getFirstTab(callback), timeout)
 
-    async def getFirstTab(self, callback: CommonCallback = None) -> Connection:
+    async def getFirstTab(self, callback: Optional[CommonCallback] = None) -> Connection:
         """
         Безусловно дожидается соединения со страницей.
         """
@@ -579,6 +631,19 @@ class Browser:
         """ Корректно закрывает браузер если остались ещё его инстансы """
         if conn := await self.getConnection():
             await conn.Browser.close()
+
+    async def closeTarget(self, target: Union[TargetConnectionInfo, str]) -> str:
+        """ Закрывает указанное соединение.
+        :param target:         Объект, описывающий соединение с
+            целевой вкладкой, которую требуется закрыть, или её ID.
+        """
+        target_id = target.id if isinstance(target, TargetConnectionInfo) else target
+        result = await async_util_call(
+            make_request,
+            f"http://127.0.0.1:{self.debug_port}/"
+            f"json/close/{target_id}"
+        )
+        return result # "Target is closing" if success
 
     async def closeAllTabsExcept(self, *except_list: Connection) -> None:
         """ Закрывает все страницы браузера, кроме переданных. """

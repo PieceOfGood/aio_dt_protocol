@@ -275,15 +275,14 @@ class Node:
             return m.group(1)
         return html
 
-    async def getInnerText(self, with_new_line_symbols: bool = True) -> str:
+    async def getInnerText(self) -> List[str]:
         """
-        Возвращает текстовое содержимое элемента.
-        :param with_new_line_symbols:     (optional) — Оставлять символы новой строки?
-        :return:                        Текст.
+        Список текстовых фрагментов составляющих общее содержимое элемента,
+        расположенных между всеми его нодами.
+        :return:
         """
-        pattern = r"<.*?>" if with_new_line_symbols else r"(<.*?>)|\n"
         html = await self.getOuterHTML()
-        return re.sub(pattern, "", html).strip()
+        return re.findall(r">([^<]+)<", html)
 
     async def setOuterHTML(self, outerHTML: str) -> None:
         """

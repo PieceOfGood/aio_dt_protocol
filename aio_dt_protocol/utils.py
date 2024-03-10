@@ -6,13 +6,17 @@ import urllib.request
 from pathlib import Path
 from typing import Optional, Dict, Callable, Union
 from urllib.parse import quote
+from urllib.error import HTTPError
 from .data import BrowserInstanceInfo
 
 
 def make_request(url: str, method="GET") -> str:
     req = urllib.request.Request(url, method=method)
-    with urllib.request.urlopen(req) as response:
-        return response.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(req) as response:
+            return response.read().decode("utf-8")
+    except HTTPError as e:
+        return f"{e.code}: {e.reason}"
 
 
 def find_browser_executable_path(exe="chrome") -> str:

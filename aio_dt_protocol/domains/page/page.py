@@ -50,7 +50,7 @@ class Page:
         """ Уведомляет событие loading_state, что основной фрейм страницы завершил загрузку.
         :param state:           Вкл/выкл
         """
-        async def load_watcher_wrapper(params: dict) -> None:
+        async def load_watcher_wrapper(params: dict, *_) -> None:
             if params["frameId"] == self._connection.conn_id:
                 self.loading_state.set()
 
@@ -435,7 +435,7 @@ class Page:
         :param handler:            Awaitable объект, которому будут переданы данные события.
         :return:
         """
-        async def life_cycle_event_wrapper(params: dict) -> None:
+        async def life_cycle_event_wrapper(params: dict, *_) -> None:
             await handler(LifecycleEventData(**params))
 
         if self.lifecycle_events_enabled != enabled:
@@ -454,7 +454,7 @@ class Page:
 
         Этот метод активируется автоматически при совершении переходов по URL-адресам
         """
-        async def idle_watcher_wrapper(params: dict) -> None:
+        async def idle_watcher_wrapper(params: dict, *_) -> None:
             if params["frameId"] == self._connection.conn_id:
                 if params["name"] == "networkIdle":
                     self.network_idle_state.set()
