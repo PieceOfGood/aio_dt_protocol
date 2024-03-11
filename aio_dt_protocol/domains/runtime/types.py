@@ -203,13 +203,13 @@ class ContextManager:
     contexts: List['ContextDescription'] = []
     is_watch: bool = False
 
-    async def on_create(self, data: dict) -> None:
+    async def on_create(self, data: dict, _) -> None:
         self.contexts.append(ContextDescription(**data.get("context")))
 
-    async def on_clear(self, data: dict) -> None:
+    async def on_clear(self, data: dict, _) -> None:
         self.contexts = []
 
-    async def on_destroy(self, data: dict) -> None:
+    async def on_destroy(self, data: dict, _) -> None:
         context_id: int = data.get("executionContextId")
         ii = -1
         for i, ctx in enumerate(self.contexts):

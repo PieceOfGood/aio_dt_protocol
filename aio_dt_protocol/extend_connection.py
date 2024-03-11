@@ -5,7 +5,14 @@ import base64
 import re
 from typing import Optional, TYPE_CHECKING
 
-from .exceptions import EvaluateError, JavaScriptError, NullProperty, PromiseEvaluateError
+from .exceptions import (
+    EvaluateError,
+    JavaScriptError,
+    ReferenceError,
+    NullProperty,
+    PromiseEvaluateError
+)
+
 if TYPE_CHECKING:
     from .connection import Connection
 
@@ -166,6 +173,8 @@ class Extend:
                     prop = "unmatched error: " + error
                 raise NullProperty("InjectJS() Exception with injected code:"
                                    f"\n'{expression}'\nNull property:\n{prop}")
+            if "ReferenceError" in error:
+                raise ReferenceError(error)
 
             raise JavaScriptError("JavaScriptError: InjectJS() Exception with "
                                   f"injected code:\n'{expression}'\nDescription:\n{error}")

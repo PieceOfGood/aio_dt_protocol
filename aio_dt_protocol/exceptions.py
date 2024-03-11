@@ -4,11 +4,13 @@ import re
 
 class MyBaseException(Exception): pass
 
-class JavaScriptError(MyBaseException): pass
+class EvaluateError(MyBaseException): pass
+
+class JavaScriptError(EvaluateError): pass
+
+class ReferenceError(JavaScriptError): pass
 
 class NullProperty(MyBaseException): pass
-
-class EvaluateError(MyBaseException): pass
 
 class PromiseEvaluateError(MyBaseException): pass
 
