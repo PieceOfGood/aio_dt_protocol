@@ -8,9 +8,20 @@ class EvaluateError(MyBaseException): pass
 
 class JavaScriptError(EvaluateError): pass
 
-class ReferenceError(JavaScriptError): pass
+class JsReferenceError(JavaScriptError): pass
 
-class NullProperty(MyBaseException): pass
+class JsTypeError(JavaScriptError): pass
+
+class JsEvalError(JavaScriptError): pass
+
+class JsInternalError(JavaScriptError): pass
+
+class JsRangeError(JavaScriptError): pass
+
+class JsSyntaxError(JavaScriptError): pass
+
+class JsURIError(JavaScriptError): pass
+
 
 class PromiseEvaluateError(MyBaseException): pass
 
@@ -58,7 +69,7 @@ class NoSessionForGivenTargetId(MyBaseException): pass        # !
 class InvalidURLError(MyBaseException): pass        # !
 
 
-exception_store = {
+PROTOCOL_EXCEPTION_STORE = {
     "Target crashed": TargetCrashed,
     "Position out of bounds": PositionOutOfBounds,
     "Could not find node with given id": CouldNotFindNodeWithGivenID,
@@ -78,8 +89,19 @@ exception_store = {
 }
 
 
+JAVASCRIPT_EXCEPTIONS = {
+    "ReferenceError": JsReferenceError,
+    "TypeError": JsTypeError,
+    "EvalError": JsEvalError,
+    "InternalError": JsInternalError,
+    "RangeError": JsRangeError,
+    "SyntaxError": JsSyntaxError,
+    "URIError": JsURIError,
+}
+
+
 def get_cdtp_error(error_text: str) -> Optional[Type[MyBaseException]]:
-    for title, ex in exception_store.items():
+    for title, ex in PROTOCOL_EXCEPTION_STORE.items():
         if title in error_text:
             return ex
     return None
@@ -90,7 +112,7 @@ def highlight_eval_error(error_text: str, expression: str) -> str:
     """
     if "SyntaxError" in error_text:
         return "\n".join([
-            "\nIn your code:"
+            "\nIn your code: "
             f"\x1b[37m{expression}\x1b[0m\n"
             f"\x1b[36mSyntaxError: \x1b[91m\x1b[4m{error_text[13:]}\x1b[0m",
         ])

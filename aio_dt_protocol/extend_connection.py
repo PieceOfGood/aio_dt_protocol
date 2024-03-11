@@ -6,11 +6,10 @@ import re
 from typing import Optional, TYPE_CHECKING
 
 from .exceptions import (
+    PromiseEvaluateError,
     EvaluateError,
     JavaScriptError,
-    ReferenceError,
-    NullProperty,
-    PromiseEvaluateError
+    JAVASCRIPT_EXCEPTIONS
 )
 
 if TYPE_CHECKING:
@@ -166,19 +165,12 @@ class Extend:
             )
         except EvaluateError as error:
             error = str(error)
-            if "of null" in error:
-                if match := re.match(r"[\w\s:]+['|\"]([^'\"]+)", error):
-                    prop = match.group(1)
-                else:
-                    prop = "unmatched error: " + error
-                raise NullProperty("InjectJS() Exception with injected code:"
-                                   f"\n'{expression}'\nNull property:\n{prop}")
-            if "ReferenceError" in error:
-                raise ReferenceError(error)
-
+            if match := re.match(r"^([^:]+):\s?(.*)", error, re.DOTALL):
+                error_type, error_message = match.groups()
+                if ex := JAVASCRIPT_EXCEPTIONS.get(error_type):
+                    raise ex(error_message)
             raise JavaScriptError("JavaScriptError: InjectJS() Exception with "
                                   f"injected code:\n'{expression}'\nDescription:\n{error}")
-
         return response.value
 
     async def getGeoInfo(self) -> GeoInfo:
