@@ -109,25 +109,32 @@ class GeoInfo:
     proxy_type: Optional[str] = None
 
 
-class __Base(Generic[T]):
+class BaseQueue(Generic[T]):
     def __init__(self, que: Queue[T]) -> None:
         self.que = que
 
 
-class Sender(__Base[T]):
+class Sender(BaseQueue[T]):
     async def send(self, data: T) -> None:
         await self.que.put(data)
 
 
-class Receiver(__Base[T]):
+class Receiver(BaseQueue[T]):
     async def recv(self) -> T:
         return await self.que.get()
 
 
 class Channel(Generic[T]):
-    @classmethod
-    def one_way(cls) -> Tuple[Sender[T], Receiver[T]]:
-        que: Queue = Queue()
+    """ Channel[T] - создаёт инстанс однонаправленного
+    канала указанного типа, вызов которого всякий раз
+    создаёт новый канал и возвращает его отправителя
+    с получателем, ожидающих сообщения установленного
+    ранее типа. Например:
+        channel = Channel[int]()
+        sender, receiver = channel()
+    """
+    def __call__(self) -> Tuple[Sender[T], Receiver[T]]:
+        que: Queue[T] = Queue()
         return Sender[T](que), Receiver[T](que)
 
 

@@ -9,7 +9,7 @@ from typing import (
 from .exceptions import get_cdtp_error
 from .utils import log
 
-from .data import DomainEvent, Sender, Receiver, CommonCallback, Serializer
+from .data import DomainEvent, Sender, Channel, CommonCallback, Serializer
 from .extend_connection import Extend
 
 from .domains.background_service import BackgroundService
@@ -29,6 +29,8 @@ from .domains.system_info import SystemInfo
 from .domains.target import Target
 
 Handler = Callable[..., Awaitable[None]]
+
+REQUEST_CHANNEL = Channel[dict]()
 
 
 class Connection:
@@ -159,8 +161,7 @@ class Connection:
             "method": domain_and_method
         }
 
-        que = asyncio.Queue()
-        sender, receiver = Sender[dict](que), Receiver[dict](que)
+        sender, receiver = REQUEST_CHANNEL()
         self.responses[_id] = sender
 
         await self._send(Serializer.encode(data))
