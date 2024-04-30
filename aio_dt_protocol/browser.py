@@ -53,7 +53,6 @@ class Browser:
 
         return browser, await browser.waitFirstTab(callback=callback)
 
-
     def __init__(
             self, *,
             profile_path: str = "testProfile",
@@ -179,13 +178,16 @@ class Browser:
                             '"exit_type":"Normal"',
                             preferences
                         )
-                        with open(preferences_path, "w") as f: f.write(result)
+                        with open(preferences_path, "w") as f:
+                            f.write(result)
                 # ? Только для чтения
                 # os.chmod(preferences_path, READ_ONLY)
-                if verbose: log("Файл настроек — изменён и сохранён")
+                if verbose:
+                    log("Файл настроек — изменён и сохранён")
             else:
                 # os.chmod(preferences_path, READ_WRITE)
-                if verbose: log("Файл настроек — только для чтения")
+                if verbose:
+                    log("Файл настроек — только для чтения")
 
         if "chrome" in browser_exe:
             self.browser_name = "chrome"
@@ -221,7 +223,7 @@ class Browser:
 
         if sys.platform == "win32":
             browser_path = browser_path if browser_path else find_browser_executable_path(browser_exe)
-        else:   #  ! sys.platform == "linux"
+        else:   # ! sys.platform == "linux"
             browser_path = browser_path if browser_path else os.popen("which " + browser_exe).read().strip()
 
         if not os.path.exists(browser_path) or not os.path.isfile(browser_path):
@@ -297,8 +299,8 @@ class Browser:
         if self.proxy_port:
             flag_box.add(CMDFlags.Other.proxy_server, self.proxy_address + ":" + self.proxy_port)
             if self.verbose:
-                log(f"Run browser {self.browser_name!r} on port: {self.debug_port} with proxy " +
-                      f"on http://127.0.0.1:{self.proxy_port}")
+                log(f"Run browser {self.browser_name!r} on port: {self.debug_port} "
+                    f"with proxy on http://127.0.0.1:{self.proxy_port}")
         else:
             if self.verbose:
                 log(f"Run browser {self.browser_name!r} on port: {self.debug_port}")
@@ -328,7 +330,7 @@ class Browser:
             f"http://127.0.0.1:{self.debug_port}/"
             f"json/activate/{target_id}"
         )
-        return result # "Target activated" if success
+        return result   # "Target activated" if success
 
     async def getAllTargetsConnectionInfo(self) -> List[TargetConnectionInfo]:
         """ Возвращает список описаний соединений со всеми
@@ -383,17 +385,18 @@ class Browser:
         result = await async_util_call(
             make_request, f"http://127.0.0.1:{self.debug_port}/json/list")
 
-        if self.verbose: log("getPageList() => " + result)
+        if self.verbose:
+            log("getPageList() => " + result)
         return Serializer.decode(result)
 
     async def queryNewTab(self, url: str = "about:blank") -> Connection:
         result: str = await async_util_call(
             make_request, f"http://127.0.0.1:{self.debug_port}/json/new?{url}", "PUT")
 
-        if self.verbose: log("queryNewTab() => " + result)
+        if self.verbose:
+            log("queryNewTab() => " + result)
         result: dict = Serializer.decode(result)
         return await self.getConnectionByID(result["id"])
-
 
     async def getConnectionBy(
             self, key: Union[str, int],
@@ -424,11 +427,11 @@ class Browser:
         if callback is not None and not iscoroutinefunction(callback):
             raise TypeError("Argument 'callback' must be a coroutine")
 
-        counter = 0; v = value.lower()
+        counter, v = 0, value.lower()
         for page_data in await self.getConnectionList():
             data: str = page_data[key].lower()
             if ((match_mode == "exact" and data == v)
-                or (match_mode == "contains" and data.find(v) > -1 )
+                or (match_mode == "contains" and data.find(v) > -1)
                     or (match_mode == "startswith" and data.startswith(v))):
                 if counter == index:
                     conn = Connection(
@@ -524,6 +527,9 @@ class Browser:
         :param url:                     - (optional) Адрес будет открыт при создании.
         :param newWindow:               - (optional) Если 'True' — страница будет открыта в новом окне.
         :param background:              - (optional) Если 'True' — страница будет открыта в фоне.
+        :param wait_for_create:         - (optional) Если 'True' — ожидает окончания создания страницы.
+        :param callback:                - (optional) Корутина, которой будет передаваться контекст абсолютно
+                                            всех событий страницы в виде словаря.
         :return:                    * <Connection>
         """
         while not (tmp := await self.getConnection(callback=callback)):
@@ -560,6 +566,8 @@ class Browser:
         Открывает новую вкладку с дебаггером для инспектируемой страницы.
         :param conn:            - Инспектируемая страница. Может принадлежать любому браузеру.
         :param new_window:      - Создать target в отдельном окне?
+        :param callback:        - Корутина, которой будет передаваться контекст абсолютно
+                                    всех событий страницы в виде словаря.
         :return:        <Connection>
         """
         return await self.createTab(
@@ -571,8 +579,10 @@ class Browser:
             url: str = "about:blank",
             callback: Optional[CommonCallback] = None) -> Optional[Connection]:
         """ Создаёт всплывающее окно с минимумом интерфейса браузера".
-        :param url:             - Адрес, ресурс которого будет загружен
-        :param conn:            - Родительская страница, инициатор
+        :param url:             - Адрес, ресурс которого будет загружен.
+        :param conn:            - Родительская страница, инициатор.
+        :param callback:        - Корутина, которой будет передаваться контекст абсолютно
+                                    всех событий страницы в виде словаря.
         :return:        Connection or None
         """
         await conn.extend.injectJS(
@@ -586,6 +596,8 @@ class Browser:
         инициировано с конкретной страницы. Например, при использовании JavaScript
         "window.open()".
         :param conn:            - Родительская страница, инициатор
+        :param callback:        - Корутина, которой будет передаваться контекст абсолютно
+                                    всех событий страницы в виде словаря.
         :return:        Connection or None
         """
         for target_info in await conn.Target.getTargets():
@@ -599,6 +611,8 @@ class Browser:
         """ Возвращает список всех соединений, открытие которых инициировано с конкретной
         страницы. Например, при использовании JavaScript "window.open()".
         :param conn:            - Родительская страница, инициатор открытых окон
+        :param callback:        - Корутина, которой будет передаваться контекст абсолютно
+                                    всех событий страницы в виде словаря.
         :return:        List[Connection]
         """
         connections = []
@@ -625,7 +639,8 @@ class Browser:
                 while (conn := await self.getConnection(callback=callback)) is None:
                     await asyncio.sleep(.5)
                 return conn
-            except URLError: await asyncio.sleep(1)
+            except URLError:
+                await asyncio.sleep(1)
 
     async def close(self) -> None:
         """ Корректно закрывает браузер если остались ещё его инстансы """
@@ -742,6 +757,7 @@ class FlagBuilder:
 
 
 class CMDFlag(Enum): pass
+
 
 class CMDFlags:
     """https://github.com/GoogleChrome/chrome-launcher/blob/master/docs/chrome-flags-for-tools.md"""
@@ -925,8 +941,6 @@ class CMDFlags:
         # ! Принуждает использовать темный режим в пользовательском интерфейсе для платформ, которые его поддерживают.
         force_dark_mode = "--force-dark-mode"
 
-
-
     class Screen(CMDFlag):
         # ? Window & screen management
         # ! Запускает браузер в режиме KIOSK
@@ -943,7 +957,7 @@ class CMDFlags:
         # ! Каждая ссылка запускается в новом окне.
         new_window = '--new-window'
         # ! Принимает X и Y позицию верхнего левого угла, окна браузера.
-        window_position="--window-position="            # * $
+        window_position = "--window-position="            # * $
         # ! Принимает ширину и высоту окна браузера.
         window_size = "--window-size="                  # * $
 

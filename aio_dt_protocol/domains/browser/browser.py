@@ -199,7 +199,7 @@ class Browser:
         :param windowId:        Идентификатор окна.
         """
         if windowId is None:
-            windowId = (await self._connection.Target.getWindowForTarget()).windowId
+            windowId = (await self.getWindowForTarget()).windowId
         await self._connection.call(
             "Browser.setWindowBounds",
             {"windowId": windowId, "bounds": bounds.to_dict()}

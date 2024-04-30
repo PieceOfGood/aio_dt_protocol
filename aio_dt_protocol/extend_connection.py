@@ -3,7 +3,7 @@ from .data import ViewportRect, WindowRect, GeoInfo, Serializer
 
 import base64
 import re
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Any, TYPE_CHECKING
 
 from .exceptions import (
     PromiseEvaluateError,
@@ -126,7 +126,7 @@ class Extend:
             "`).scrollIntoView({'behavior':'smooth', 'block': 'center'});"
         )
 
-    async def evalPromise(self, expression: str) -> dict:
+    async def evalPromise(self, expression: str) -> Any:
         """ Выполняет асинхронный код на странице и дожидается
         получения результата.
         """
@@ -145,10 +145,9 @@ class Extend:
             returnByValue=False,
             generatePreview=False
         )
+        return response.value
 
-        return Serializer.decode(response.value)
-
-    async def injectJS(self, expression: str) -> any:
+    async def injectJS(self, expression: str) -> Any:
         """ Выполняет JavaScript-выражение во фрейме верхнего уровня.
         Возвращает только простые типы в естественном виде, для сложных
         используйте сериализацию в JSON, или evaluate() домена Runtime.
@@ -187,26 +186,26 @@ class Extend:
         promise = """fetch('https://time.gologin.com/').then(res => res.text())"""
 
         try:
-            result: dict = await self._connection.extend.evalPromise(promise)
+            result: str = await self._connection.extend.evalPromise(promise)
         except PromiseEvaluateError:
             if "://newtab" in await self._connection.extend.getUrl():
                 raise RuntimeError("Doesn't work on the default browser page. Please "
                                    "first go to a blank url, or any other address.")
             raise
-
-        result.update(
+        data: dict = Serializer.decode(result)
+        data.update(
             geo=dict(
-                latitude=float(result["ll"][0]),
-                longitude=float(result["ll"][1]),
-                accuracy=float(result["accuracy"])
+                latitude=float(data["ll"][0]),
+                longitude=float(data["ll"][1]),
+                accuracy=float(data["accuracy"])
             ),
-            languages=result["languages"].split(","),
-            state_province=result.get("stateProv"),
-            proxy_type=(pt := result.get("proxyType"))
+            languages=data["languages"].split(","),
+            state_province=data.get("stateProv"),
+            proxy_type=(pt := data.get("proxyType"))
         )
-        del result["ll"]
-        del result["accuracy"]
-        del result["stateProv"]
+        del data["ll"]
+        del data["accuracy"]
+        del data["stateProv"]
         if pt is not None:
-            del result["proxyType"]
-        return GeoInfo(**result)
+            del data["proxyType"]
+        return GeoInfo(**data)
